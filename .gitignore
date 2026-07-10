@@ -1,0 +1,64 @@
+# Out-of-source builds and packages
+/build/
+/build-*/
+/out/
+/dist/
+/Testing/
+
+# CMake local/generated state
+/CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.ninja
+.ninja_*
+
+# Qt and IDE user state
+*.user
+*.user.*
+.qtcreator/
+.vscode/
+.vs/
+.idea/
+
+# Compiler and linker outputs
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# Test and coverage outputs
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+/coverage/
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+
+# Secrets and local tooling
+.env
+.env.*
+!.env.example
+.codex/
+.agents/
+
+# Temporary and OS files
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

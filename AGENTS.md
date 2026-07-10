@@ -1,0 +1,45 @@
+# SmartMate 开发规则
+
+本文件约束整个仓库。后续任何修改都必须保持以下MVVM边界。
+
+## 固定依赖方向
+
+`View（QML）→ ViewModel → Model Service → Repository接口`
+
+Persistence只实现Repository接口。`src/app`是唯一组合根，可以看见具体实现。禁止反向依赖和跨层捷径。
+
+## 各层职责
+
+- `src/model`必须负责实体、状态转换、业务校验、依赖与规划算法、统计、服务编排和Repository接口。
+- 领域实体和算法必须是普通C++类型；禁止依赖View、ViewModel、Qt Quick、QML运行时或Qt SQL。
+- 引入持久化后，SQL与`QSettings`只能位于`src/model/persistence`。
+- `src/viewmodel`只负责可观察展示状态、命令、输入草稿和错误映射；禁止编写SQL、业务规则、具体持久化代码或操纵View。
+- ViewModel只可使用QML类型注册元数据；禁止使用`QQmlEngine`、`QQmlContext`、`QQuickItem`等视图控制API。
+- ViewModel之间禁止直接调用；`AppViewModel`可以拥有并协调子ViewModel。
+- `src/view`中的QML只负责布局、绑定、动画和转发事件；禁止调用Service/Repository，禁止实现校验、状态转换、排序和规划。
+- `src/app`只负责进程配置、对象创建、依赖注入和启动QML引擎。
+
+## 明确禁止
+
+- 禁止Controller层和`*Controller`类型。
+- 禁止Service Locator和全局业务单例。
+- 禁止C++通过`findChild`、`setProperty`等方式操纵QML控件。
+- 禁止向QML暴露`QSqlTableModel`。
+- 禁止用列表行号作为任务身份，必须使用`TaskId`。
+- 禁止由QML创建ViewModel；其生命周期必须由C++管理。
+- 禁止View或ViewModel绕过Model Service直接写Repository。
+
+## 修改流程
+
+修改前必须说明所属层、目标数据流和测试方式。新增业务规则必须放入Model并添加Model测试；新增可绑定状态必须放入ViewModel并验证通知信号。改变层边界前必须先更新`docs/architecture.md`。
+
+修改后运行：
+
+```powershell
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug --output-on-failure
+cmake --build --preset debug --target all_qmllint
+```
+
+禁止提交构建产物、运行数据库、IDE用户配置、凭据、生成缓存或无关改动。

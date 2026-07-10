@@ -1,0 +1,70 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "MinGW Makefiles",
+      "environment": {
+        "PATH": "$env{QT_MINGW_ROOT}/bin;$env{QT_ROOT}/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "$env{QT_MINGW_ROOT}/bin/g++.exe",
+        "CMAKE_MAKE_PROGRAM": "$env{QT_MINGW_ROOT}/bin/mingw32-make.exe",
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT}",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Qt MinGW Debug",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Qt MinGW Release",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "inheritConfigureEnvironment": true,
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "inheritConfigureEnvironment": true,
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
