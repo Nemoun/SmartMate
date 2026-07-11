@@ -6,6 +6,7 @@ AppViewModel::AppViewModel(model::TaskService &taskService, QObject *parent)
     : QObject(parent)
     , m_taskList(taskService)
     , m_taskEditor(taskService)
+    , m_taskDependencies(new TaskDependencyViewModel(taskService, this))
 {
 }
 
@@ -22,6 +23,11 @@ TaskListViewModel *AppViewModel::taskList() noexcept
 TaskEditorViewModel *AppViewModel::taskEditor() noexcept
 {
     return &m_taskEditor;
+}
+
+TaskDependencyViewModel *AppViewModel::taskDependencies() noexcept
+{
+    return m_taskDependencies;
 }
 
 } // namespace smartmate::viewmodel

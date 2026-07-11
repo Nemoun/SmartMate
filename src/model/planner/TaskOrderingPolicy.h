@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "domain/TaskDependency.h"
 
 #include <QDateTime>
 #include <QList>
@@ -24,6 +25,7 @@ enum class TaskOrderReason {
 struct PlannedTask final {
     Task task;
     TaskOrderReason reason;
+    TaskDependencyState dependencyState;
 
     friend bool operator==(const PlannedTask &, const PlannedTask &) = default;
 };
@@ -34,5 +36,12 @@ struct PlannedTask final {
 /// 也不会把随时间变化的派生排名写入 Repository。
 [[nodiscard]] QList<PlannedTask> orderTasks(const QList<Task> &tasks,
                                             const QDateTime &nowUtc);
+
+/// 先排列当前 Ready 任务，再以拓扑顺序排列 Blocked 任务；同一候选集合继续复用
+/// 逾期、优先级、截止时间和稳定 ID 规则。
+[[nodiscard]] QList<PlannedTask> orderTasks(
+    const QList<Task> &tasks,
+    const QList<TaskDependency> &dependencies,
+    const QDateTime &nowUtc);
 
 } // namespace smartmate::model

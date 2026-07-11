@@ -43,6 +43,11 @@ public:
         EstimatedMinutesRole,
         ArchivedRole,
         OrderReasonTextRole,
+        BlockedRole,
+        BlockingReasonTextRole,
+        PredecessorCountRole,
+        UnlockCountRole,
+        CanEditDependenciesRole,
     };
     Q_ENUM(Role)
 
@@ -83,6 +88,16 @@ signals:
     void errorOccurred(const QString &message);
 
 private:
+    /// Model 依赖状态的界面投影；中文原因在 reload() 时一次生成，QML 不拼接图数据。
+    struct DependencyProjection {
+        bool blocked{false};
+        QString blockingReasonText;
+        int predecessorCount{0};
+        int unlockCount{0};
+
+        bool operator==(const DependencyProjection &) const = default;
+    };
+
     [[nodiscard]] static QString statusText(model::TaskStatus status);
     [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] static model::TaskId parseTaskId(const QString &taskId);
@@ -97,6 +112,7 @@ private:
     QList<model::Task> m_allTasks;
     QList<model::Task> m_visibleTasks;
     QHash<model::TaskId, QString> m_orderReasonTexts;
+    QHash<model::TaskId, DependencyProjection> m_dependencyProjections;
     bool m_showArchived{false};
     QString m_searchText;
     // 0表示全部，1～4分别映射Low～Urgent；非法索引不会替换当前条件。

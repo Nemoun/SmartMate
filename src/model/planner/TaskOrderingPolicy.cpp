@@ -1,5 +1,9 @@
 #include "planner/TaskOrderingPolicy.h"
 
+#include "dependencies/TaskDependencyGraph.h"
+
+#include <QHash>
+
 #include <algorithm>
 #include <utility>
 
@@ -88,6 +92,24 @@ namespace {
     return stableId(left) < stableId(right);
 }
 
+[[nodiscard]] bool baseOrderComesBefore(const Task &left,
+                                        const Task &right,
+                                        const QDateTime &nowUtc)
+{
+    const int leftGroup = statusGroup(left.status());
+    const int rightGroup = statusGroup(right.status());
+    if (leftGroup != rightGroup) {
+        return leftGroup < rightGroup;
+    }
+    if (left.status() == TaskStatus::Todo) {
+        return todoComesBefore(left, right, nowUtc);
+    }
+    if (leftGroup >= 2) {
+        return recentlyUpdatedComesBefore(left, right);
+    }
+    return stableId(left) < stableId(right);
+}
+
 [[nodiscard]] TaskOrderReason reasonFor(const Task &task,
                                         const QDateTime &nowUtc)
 {
@@ -122,33 +144,106 @@ namespace {
 
 QList<PlannedTask> orderTasks(const QList<Task> &tasks, const QDateTime &nowUtc)
 {
-    QList<Task> orderedTasks = tasks;
-    std::sort(orderedTasks.begin(), orderedTasks.end(),
-              [&nowUtc](const Task &left, const Task &right) {
-                  const int leftGroup = statusGroup(left.status());
-                  const int rightGroup = statusGroup(right.status());
-                  if (leftGroup != rightGroup) {
-                      return leftGroup < rightGroup;
-                  }
+    return orderTasks(tasks, {}, nowUtc);
+}
 
-                  if (left.status() == TaskStatus::Todo) {
-                      return todoComesBefore(left, right, nowUtc);
-                  }
-                  if (leftGroup >= 2) {
-                      // 已完成与已取消共享一个分组；归档位于独立的最后分组，
-                      // 两者都使用最近更新优先的确定性顺序。
-                      return recentlyUpdatedComesBefore(left, right);
-                  }
+QList<PlannedTask> orderTasks(const QList<Task> &tasks,
+                              const QList<TaskDependency> &dependencies,
+                              const QDateTime &nowUtc)
+{
+    const TaskDependencyGraph graph{tasks, dependencies};
+    QList<const Task *> readyTasks;
+    QList<const Task *> blockedTasks;
+    QList<const Task *> terminalTasks;
+    QList<const Task *> archivedTasks;
+    QHash<TaskId, const Task *> blockedById;
 
-                  // 业务规则保证最多一个进行中任务；稳定 ID 仍为异常输入兜底。
-                  return stableId(left) < stableId(right);
-              });
+    for (const Task &task : tasks) {
+        if (task.status() == TaskStatus::Archived) {
+            archivedTasks.append(&task);
+            continue;
+        }
+        if (task.status() == TaskStatus::Done
+            || task.status() == TaskStatus::Cancelled) {
+            terminalTasks.append(&task);
+            continue;
+        }
+        if (graph.dependencyState(task.id()).blocked) {
+            blockedTasks.append(&task);
+            blockedById.insert(task.id(), &task);
+        } else {
+            readyTasks.append(&task);
+        }
+    }
+
+    const auto baseComparator = [&nowUtc](const Task *left, const Task *right) {
+        return baseOrderComesBefore(*left, *right, nowUtc);
+    };
+    std::sort(readyTasks.begin(), readyTasks.end(), baseComparator);
+    std::sort(terminalTasks.begin(), terminalTasks.end(), baseComparator);
+    std::sort(archivedTasks.begin(), archivedTasks.end(), baseComparator);
+
+    // Blocked 分组内部使用 Kahn 排序。跨越 Ready→Blocked 的边无需计入入度，
+    // 因为整个 Ready 分组已经固定出现在 Blocked 之前。
+    QHash<TaskId, int> blockedIndegrees;
+    QHash<TaskId, QList<TaskId>> blockedSuccessors;
+    for (const Task *task : blockedTasks) {
+        blockedIndegrees.insert(task->id(), 0);
+    }
+    for (const TaskDependency &dependency : dependencies) {
+        if (blockedById.contains(dependency.predecessorId)
+            && blockedById.contains(dependency.successorId)) {
+            ++blockedIndegrees[dependency.successorId];
+            blockedSuccessors[dependency.predecessorId].append(dependency.successorId);
+        }
+    }
+
+    QList<const Task *> availableBlocked;
+    for (const Task *task : blockedTasks) {
+        if (blockedIndegrees.value(task->id()) == 0) {
+            availableBlocked.append(task);
+        }
+    }
+
+    QList<const Task *> topologicalBlocked;
+    while (!availableBlocked.isEmpty()) {
+        std::sort(availableBlocked.begin(), availableBlocked.end(), baseComparator);
+        const Task *task = availableBlocked.takeFirst();
+        topologicalBlocked.append(task);
+        for (const TaskId &successorId : blockedSuccessors.value(task->id())) {
+            const int newIndegree = blockedIndegrees.value(successorId) - 1;
+            blockedIndegrees.insert(successorId, newIndegree);
+            if (newIndegree == 0) {
+                availableBlocked.append(blockedById.value(successorId));
+            }
+        }
+    }
+
+    // Service 会拒绝持久化环；若直接调用策略时输入了坏图，仍稳定保留全部任务。
+    if (topologicalBlocked.size() != blockedTasks.size()) {
+        QList<const Task *> cyclicRemainder;
+        for (const Task *task : blockedTasks) {
+            if (!topologicalBlocked.contains(task)) {
+                cyclicRemainder.append(task);
+            }
+        }
+        std::sort(cyclicRemainder.begin(), cyclicRemainder.end(), baseComparator);
+        topologicalBlocked.append(cyclicRemainder);
+    }
+
+    QList<const Task *> orderedTasks;
+    orderedTasks.reserve(tasks.size());
+    orderedTasks.append(readyTasks);
+    orderedTasks.append(topologicalBlocked);
+    orderedTasks.append(terminalTasks);
+    orderedTasks.append(archivedTasks);
 
     QList<PlannedTask> plan;
     plan.reserve(orderedTasks.size());
-    for (Task &task : orderedTasks) {
-        const TaskOrderReason reason = reasonFor(task, nowUtc);
-        plan.append(PlannedTask{std::move(task), reason});
+    for (const Task *task : orderedTasks) {
+        plan.append(PlannedTask{*task,
+                                reasonFor(*task, nowUtc),
+                                graph.dependencyState(task->id())});
     }
     return plan;
 }

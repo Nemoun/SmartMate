@@ -7,6 +7,8 @@ qt_add_qml_module(smartmate_viewmodel
         AppViewModel.cpp
         TaskEditorViewModel.h
         TaskEditorViewModel.cpp
+        TaskDependencyViewModel.h
+        TaskDependencyViewModel.cpp
         TaskErrorMapper.h
         TaskErrorMapper.cpp
         TaskListViewModel.h

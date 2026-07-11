@@ -23,6 +23,11 @@ set_source_files_properties(qml/DurationPickerDialog.qml
         QT_RESOURCE_ALIAS DurationPickerDialog.qml
 )
 
+set_source_files_properties(qml/TaskDependencyDialog.qml
+    PROPERTIES
+        QT_RESOURCE_ALIAS TaskDependencyDialog.qml
+)
+
 qt_add_qml_module(smartmate_ui
     STATIC
     URI SmartMate.View
@@ -33,6 +38,7 @@ qt_add_qml_module(smartmate_ui
         qml/TaskEditorDialog.qml
         qml/DateTimePickerDialog.qml
         qml/DurationPickerDialog.qml
+        qml/TaskDependencyDialog.qml
     IMPORTS
         TARGET smartmate_viewmodel
     DEPENDENCIES

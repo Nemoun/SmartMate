@@ -138,6 +138,7 @@ Page {
 
             ListView {
                 id: taskListView
+                objectName: "taskListView"
                 anchors.fill: parent
                 anchors.margins: 12
                 clip: true
@@ -155,6 +156,11 @@ Page {
                     required property string priorityText
                     required property string deadlineText
                     required property string orderReasonText
+                    required property bool blocked
+                    required property string blockingReasonText
+                    required property int predecessorCount
+                    required property int unlockCount
+                    required property bool canEditDependencies
                     required property int estimatedMinutes
 
                     width: ListView.view.width
@@ -209,6 +215,16 @@ Page {
                                 elide: Text.ElideRight
                             }
 
+                            Label {
+                                Layout.fillWidth: true
+                                visible: !taskDelegate.canEditDependencies
+                                         && taskDelegate.predecessorCount > 0
+                                text: qsTr("前置任务：%1 项（只读）")
+                                      .arg(taskDelegate.predecessorCount)
+                                color: "#667085"
+                                font.pixelSize: 13
+                            }
+
                             // 推荐理由由 Model 规划结果产生，View 只展示 ViewModel 映射后的文本。
                             Label {
                                 objectName: "recommendationReasonLabel"
@@ -219,6 +235,31 @@ Page {
                                 font.pixelSize: 13
                                 elide: Text.ElideRight
                             }
+
+                            Label {
+                                objectName: "blockingReasonLabel_" + taskDelegate.taskId
+                                Layout.fillWidth: true
+                                visible: taskDelegate.blocked
+                                text: qsTr("阻塞：%1").arg(taskDelegate.blockingReasonText)
+                                color: "#b54708"
+                                font.pixelSize: 13
+                                font.bold: true
+                                elide: Text.ElideRight
+
+                                HoverHandler { id: blockingReasonHover }
+                                ToolTip.visible: blockingReasonHover.hovered
+                                ToolTip.text: taskDelegate.blockingReasonText
+                                ToolTip.delay: 400
+                            }
+
+                            Label {
+                                objectName: "unlockCountLabel_" + taskDelegate.taskId
+                                Layout.fillWidth: true
+                                visible: taskDelegate.unlockCount > 0
+                                text: qsTr("完成后可解锁 %1 项任务").arg(taskDelegate.unlockCount)
+                                color: "#027a48"
+                                font.pixelSize: 13
+                            }
                         }
 
                         Button {
@@ -226,6 +267,23 @@ Page {
                             onClicked: {
                                 if (root.appViewModel.taskEditor.beginEdit(taskDelegate.taskId))
                                     editorDialog.open()
+                            }
+                        }
+
+                        Button {
+                            objectName: "editDependenciesButton_" + taskDelegate.taskId
+                            text: taskDelegate.predecessorCount > 0
+                                  ? qsTr("依赖 (%1)").arg(taskDelegate.predecessorCount)
+                                  : qsTr("依赖")
+                            visible: taskDelegate.canEditDependencies
+                            onClicked: {
+                                if (root.appViewModel.taskDependencies.beginEdit(
+                                            taskDelegate.taskId)) {
+                                    dependencyDialog.open()
+                                } else {
+                                    errorDialog.message = root.appViewModel.taskDependencies.errorMessage
+                                    errorDialog.open()
+                                }
                             }
                         }
 
@@ -272,6 +330,14 @@ Page {
         editor: root.appViewModel.taskEditor
     }
 
+    // 依赖编辑使用独立草稿；保存前的多选不会改变任务图或列表排序。
+    TaskDependencyDialog {
+        id: dependencyDialog
+        objectName: "taskDependencyDialog"
+        anchors.centerIn: Overlay.overlay
+        editor: root.appViewModel.taskDependencies
+    }
+
     // 归档确认属于交互流程；真正的状态转换仍由 ViewModel 命令转交 Service。
     Dialog {
         id: archiveDialog
@@ -311,7 +377,10 @@ Page {
             text: errorDialog.message
         }
 
-        onClosed: root.appViewModel.taskList.clearError()
+        onClosed: {
+            root.appViewModel.taskList.clearError()
+            root.appViewModel.taskDependencies.clearError()
+        }
     }
 
     Connections {

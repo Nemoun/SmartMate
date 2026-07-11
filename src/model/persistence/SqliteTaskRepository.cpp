@@ -288,9 +288,10 @@ void SqliteTaskRepository::initializeSchema()
 
     // user_version是迁移入口；旧程序拒绝更高版本，避免误写新Schema。
     const int schemaVersion = versionQuery.value(0).toInt();
-    if (schemaVersion > 1) {
+    versionQuery.finish();
+    if (schemaVersion > 2) {
         throwPersistenceError(
-            QStringLiteral("SQLite schema version %1 is newer than supported version 1")
+            QStringLiteral("SQLite schema version %1 is newer than supported version 2")
                 .arg(schemaVersion));
     }
 
@@ -335,8 +336,51 @@ void SqliteTaskRepository::initializeSchema()
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_single_in_progress "
                 "ON tasks(status) WHERE status = 'in_progress'"));
 
-        if (schemaVersion == 0) {
-            executeStatement(database, QStringLiteral("PRAGMA user_version = 1"));
+        // v2新增Finish-to-Start关系。复合主键防止重复边，CHECK和外键负责
+        // 自依赖与悬空端点；业务层仍提供更友好的结构化错误。
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE TABLE IF NOT EXISTS task_dependencies ("
+                "predecessor_id TEXT NOT NULL, "
+                "successor_id TEXT NOT NULL, "
+                "PRIMARY KEY (predecessor_id, successor_id), "
+                "CHECK (predecessor_id <> successor_id), "
+                "FOREIGN KEY (predecessor_id) REFERENCES tasks(id) ON DELETE RESTRICT, "
+                "FOREIGN KEY (successor_id) REFERENCES tasks(id) ON DELETE RESTRICT"
+                ")"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor "
+                "ON task_dependencies(successor_id, predecessor_id)"));
+
+        // SQLite不能用普通约束表达有向无环图；递归CTE从新边的后继出发，
+        // 若能到达其前驱，插入该边就会闭合一个环并被中止。
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE TRIGGER IF NOT EXISTS trg_task_dependencies_prevent_cycle "
+                "BEFORE INSERT ON task_dependencies "
+                "FOR EACH ROW "
+                "WHEN EXISTS ("
+                "  WITH RECURSIVE reachable(task_id) AS ("
+                "    SELECT successor_id FROM task_dependencies "
+                "      WHERE predecessor_id = NEW.successor_id "
+                "    UNION "
+                "    SELECT dependency.successor_id "
+                "      FROM task_dependencies AS dependency "
+                "      JOIN reachable "
+                "        ON dependency.predecessor_id = reachable.task_id"
+                "  ) "
+                "  SELECT 1 FROM reachable WHERE task_id = NEW.predecessor_id"
+                ") "
+                "BEGIN "
+                "  SELECT RAISE(ABORT, 'task dependency would create a cycle'); "
+                "END"));
+
+        if (schemaVersion < 2) {
+            executeStatement(database, QStringLiteral("PRAGMA user_version = 2"));
         }
 
         if (!database.commit()) {
@@ -425,6 +469,84 @@ bool SqliteTaskRepository::update(const Task &task)
         throwDatabaseError(QStringLiteral("Cannot update task"), query.lastError());
     }
     return query.numRowsAffected() > 0;
+}
+
+QList<TaskDependency> SqliteTaskRepository::findAllDependencies() const
+{
+    auto database = QSqlDatabase::database(m_connectionName, false);
+    QSqlQuery query(database);
+    if (!query.exec(QStringLiteral(
+            "SELECT predecessor_id, successor_id "
+            "FROM task_dependencies "
+            "ORDER BY successor_id ASC, predecessor_id ASC"))) {
+        throwDatabaseError(QStringLiteral("Cannot list task dependencies"),
+                           query.lastError());
+    }
+
+    QList<TaskDependency> dependencies;
+    while (query.next()) {
+        const TaskId predecessorId = TaskId::fromString(query.value(0).toString());
+        const TaskId successorId = TaskId::fromString(query.value(1).toString());
+        if (predecessorId.isNull() || successorId.isNull()) {
+            throwPersistenceError(
+                QStringLiteral("SQLite contains an invalid task dependency id"));
+        }
+        dependencies.append(TaskDependency{predecessorId, successorId});
+    }
+    return dependencies;
+}
+
+void SqliteTaskRepository::replacePredecessors(
+    const TaskId &successorId,
+    const QList<TaskId> &predecessorIds)
+{
+    auto database = QSqlDatabase::database(m_connectionName, false);
+    if (!database.transaction()) {
+        throwDatabaseError(
+            QStringLiteral("Cannot start task dependency transaction"),
+            database.lastError());
+    }
+
+    try {
+        QSqlQuery deleteQuery(database);
+        deleteQuery.prepare(QStringLiteral(
+            "DELETE FROM task_dependencies WHERE successor_id = :successor_id"));
+        deleteQuery.bindValue(
+            QStringLiteral(":successor_id"),
+            successorId.toString(QUuid::WithoutBraces));
+        if (!deleteQuery.exec()) {
+            throwDatabaseError(QStringLiteral("Cannot replace task predecessors"),
+                               deleteQuery.lastError());
+        }
+        deleteQuery.finish();
+
+        QSqlQuery insertQuery(database);
+        insertQuery.prepare(QStringLiteral(
+            "INSERT INTO task_dependencies (predecessor_id, successor_id) "
+            "VALUES (:predecessor_id, :successor_id)"));
+        for (const TaskId &predecessorId : predecessorIds) {
+            insertQuery.bindValue(
+                QStringLiteral(":predecessor_id"),
+                predecessorId.toString(QUuid::WithoutBraces));
+            insertQuery.bindValue(
+                QStringLiteral(":successor_id"),
+                successorId.toString(QUuid::WithoutBraces));
+            if (!insertQuery.exec()) {
+                throwDatabaseError(QStringLiteral("Cannot insert task dependency"),
+                                   insertQuery.lastError());
+            }
+            insertQuery.finish();
+        }
+
+        if (!database.commit()) {
+            throwDatabaseError(
+                QStringLiteral("Cannot commit task dependency transaction"),
+                database.lastError());
+        }
+    } catch (...) {
+        database.rollback();
+        throw;
+    }
 }
 
 } // namespace smartmate::model::persistence

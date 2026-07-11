@@ -42,6 +42,35 @@ constexpr int priorityFilterOptionCount = 5;
     }
     return {};
 }
+
+[[nodiscard]] QString blockingReasonText(
+    const QList<model::TaskId> &blockingIds,
+    const QHash<model::TaskId, QString> &taskTitles,
+    const QHash<QString, int> &titleCounts)
+{
+    if (blockingIds.isEmpty()) {
+        return QStringLiteral("存在尚未完成的前置任务");
+    }
+
+    QStringList visibleTitles;
+    visibleTitles.reserve(blockingIds.size());
+    for (const model::TaskId &id : blockingIds) {
+        const QString title = taskTitles.value(id);
+        if (title.isEmpty()) {
+            visibleTitles.push_back(
+                QStringLiteral("未知任务（%1）")
+                    .arg(id.toString(QUuid::WithoutBraces).left(8)));
+        } else if (titleCounts.value(title) > 1) {
+            visibleTitles.push_back(
+                QStringLiteral("“%1”（%2）")
+                    .arg(title, id.toString(QUuid::WithoutBraces).left(8)));
+        } else {
+            visibleTitles.push_back(QStringLiteral("“%1”").arg(title));
+        }
+    }
+    return QStringLiteral("等待%1完成")
+        .arg(visibleTitles.join(QStringLiteral("、")));
+}
 }
 
 TaskListViewModel::TaskListViewModel(model::TaskService &taskService, QObject *parent)
@@ -52,6 +81,8 @@ TaskListViewModel::TaskListViewModel(model::TaskService &taskService, QObject *p
     // Service 是多个 ViewModel 共享的状态源；成功写入后的统一信号会触发
     // 列表重建，无需让编辑器或 QML 手动刷新本列表。
     connect(&m_taskService, &model::TaskService::tasksChanged, this,
+            &TaskListViewModel::reload);
+    connect(&m_taskService, &model::TaskService::dependenciesChanged, this,
             &TaskListViewModel::reload);
     connect(&m_reloadTimer, &QTimer::timeout, this, &TaskListViewModel::reload);
     m_reloadTimer.start(60'000);
@@ -100,6 +131,16 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
         return task.status() == model::TaskStatus::Archived;
     case OrderReasonTextRole:
         return m_orderReasonTexts.value(task.id());
+    case BlockedRole:
+        return m_dependencyProjections.value(task.id()).blocked;
+    case BlockingReasonTextRole:
+        return m_dependencyProjections.value(task.id()).blockingReasonText;
+    case PredecessorCountRole:
+        return m_dependencyProjections.value(task.id()).predecessorCount;
+    case UnlockCountRole:
+        return m_dependencyProjections.value(task.id()).unlockCount;
+    case CanEditDependenciesRole:
+        return task.status() == model::TaskStatus::Todo;
     default:
         return {};
     }
@@ -119,6 +160,11 @@ QHash<int, QByteArray> TaskListViewModel::roleNames() const
         {EstimatedMinutesRole, "estimatedMinutes"},
         {ArchivedRole, "archived"},
         {OrderReasonTextRole, "orderReasonText"},
+        {BlockedRole, "blocked"},
+        {BlockingReasonTextRole, "blockingReasonText"},
+        {PredecessorCountRole, "predecessorCount"},
+        {UnlockCountRole, "unlockCount"},
+        {CanEditDependenciesRole, "canEditDependencies"},
     };
 }
 
@@ -211,21 +257,45 @@ void TaskListViewModel::reload()
     setError({});
     QList<model::Task> allTasks;
     QHash<model::TaskId, QString> orderReasonTexts;
+    QHash<model::TaskId, QString> taskTitles;
+    QHash<QString, int> titleCounts;
+    QHash<model::TaskId, DependencyProjection> dependencyProjections;
     allTasks.reserve(result.value->size());
     orderReasonTexts.reserve(result.value->size());
+    taskTitles.reserve(result.value->size());
+    titleCounts.reserve(result.value->size());
+    dependencyProjections.reserve(result.value->size());
+    for (const model::PlannedTask &plannedTask : *result.value) {
+        taskTitles.insert(plannedTask.task.id(), plannedTask.task.title());
+        ++titleCounts[plannedTask.task.title()];
+    }
     // Model决定推荐顺序和语义理由；ViewModel只保存中文展示映射并继续筛选。
     for (const model::PlannedTask &plannedTask : *result.value) {
         allTasks.push_back(plannedTask.task);
         orderReasonTexts.insert(plannedTask.task.id(),
                                 orderReasonText(plannedTask.reason));
+        const model::TaskDependencyState &state = plannedTask.dependencyState;
+        dependencyProjections.insert(
+            plannedTask.task.id(),
+            DependencyProjection{
+                state.blocked,
+                state.blocked
+                    ? blockingReasonText(state.unsatisfiedPredecessorIds,
+                                         taskTitles, titleCounts)
+                    : QString{},
+                static_cast<int>(state.predecessorIds.size()),
+                state.unlockCount,
+            });
     }
     // 分钟定时刷新若没有产生新顺序或理由，不重置QML模型，避免列表滚动位置跳动。
-    if (m_allTasks == allTasks && m_orderReasonTexts == orderReasonTexts) {
+    if (m_allTasks == allTasks && m_orderReasonTexts == orderReasonTexts
+        && m_dependencyProjections == dependencyProjections) {
         return;
     }
 
     m_allTasks = std::move(allTasks);
     m_orderReasonTexts = std::move(orderReasonTexts);
+    m_dependencyProjections = std::move(dependencyProjections);
     rebuildVisibleTasks();
 }
 

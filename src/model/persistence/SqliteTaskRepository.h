@@ -1,5 +1,6 @@
 #pragma once
 
+#include "repositories/ITaskDependencyRepository.h"
 #include "repositories/ITaskRepository.h"
 
 #include <QString>
@@ -7,7 +8,8 @@
 namespace smartmate::model::persistence {
 
 /// 构造时打开数据库并初始化Schema；对象生命周期同时管理其专属Qt SQL连接。
-class SqliteTaskRepository final : public ITaskRepository {
+class SqliteTaskRepository final : public ITaskRepository,
+                                   public ITaskDependencyRepository {
 public:
     explicit SqliteTaskRepository(QString databasePath);
     ~SqliteTaskRepository() override;
@@ -21,6 +23,9 @@ public:
     [[nodiscard]] std::optional<Task> findById(const TaskId &id) const override;
     void insert(const Task &task) override;
     [[nodiscard]] bool update(const Task &task) override;
+    [[nodiscard]] QList<TaskDependency> findAllDependencies() const override;
+    void replacePredecessors(const TaskId &successorId,
+                             const QList<TaskId> &predecessorIds) override;
 
 private:
     void configureConnection(bool inMemory);

@@ -1,12 +1,16 @@
 #include "services/TaskService.h"
 
+#include "dependencies/TaskDependencyGraph.h"
 #include "domain/TaskConstraints.h"
 #include "planner/TaskOrderingPolicy.h"
 
 #include <QDateTime>
+#include <QSet>
 
+#include <algorithm>
 #include <exception>
 #include <optional>
+#include <utility>
 
 namespace smartmate::model {
 namespace {
@@ -40,16 +44,33 @@ constexpr int maximumDescriptionLength = 5000;
     return false;
 }
 
-[[nodiscard]] bool containsOtherInProgressTask(const QList<Task> &tasks,
-                                               const std::optional<TaskId> &excludedId)
+[[nodiscard]] QString stableId(const TaskId &taskId)
 {
+    return taskId.toString(QUuid::WithoutBraces);
+}
+
+void normalizeIds(QList<TaskId> &taskIds)
+{
+    std::sort(taskIds.begin(), taskIds.end(), [](const TaskId &left,
+                                                 const TaskId &right) {
+        return stableId(left) < stableId(right);
+    });
+    taskIds.erase(std::unique(taskIds.begin(), taskIds.end()), taskIds.end());
+}
+
+[[nodiscard]] QList<TaskId> otherInProgressTaskIds(
+    const QList<Task> &tasks,
+    const std::optional<TaskId> &excludedId)
+{
+    QList<TaskId> result;
     for (const Task &task : tasks) {
         if (task.status() == TaskStatus::InProgress
             && (!excludedId.has_value() || task.id() != *excludedId)) {
-            return true;
+            result.append(task.id());
         }
     }
-    return false;
+    normalizeIds(result);
+    return result;
 }
 
 [[nodiscard]] TaskResult persistenceFailure(const RepositoryException &exception)
@@ -65,11 +86,13 @@ constexpr int maximumDescriptionLength = 5000;
     const RepositoryException &writeFailure)
 {
     try {
-        if (containsOtherInProgressTask(
-                repository.findAll(), std::optional<TaskId>{attemptedTaskId})) {
+        const QList<TaskId> conflictingIds = otherInProgressTaskIds(
+            repository.findAll(), std::optional<TaskId>{attemptedTaskId});
+        if (!conflictingIds.isEmpty()) {
             return TaskResult::failure(
                 TaskError::InProgressConflict,
-                QStringLiteral("Another task became in progress before this write completed."));
+                QStringLiteral("Another task became in progress before this write completed."),
+                TaskErrorContext{{}, conflictingIds, {}});
         }
     } catch (...) {
         // 无法确认竞争时保留原写入错误，避免把普通持久化故障误报为状态冲突。
@@ -107,6 +130,181 @@ constexpr int maximumDescriptionLength = 5000;
                                    QStringLiteral("Unexpected repository failure."));
 }
 
+[[nodiscard]] TaskDependencyListResult dependencyPersistenceFailure(
+    const RepositoryException &exception)
+{
+    return TaskDependencyListResult::failure(
+        TaskError::PersistenceFailure, QString::fromUtf8(exception.what()));
+}
+
+[[nodiscard]] TaskDependencyListResult unexpectedDependencyPersistenceFailure()
+{
+    return TaskDependencyListResult::failure(
+        TaskError::PersistenceFailure,
+        QStringLiteral("Unexpected dependency repository failure."));
+}
+
+[[nodiscard]] TaskError graphError(const DependencyGraphError error)
+{
+    switch (error) {
+    case DependencyGraphError::None:
+        return TaskError::None;
+    case DependencyGraphError::MissingTask:
+        return TaskError::DependencyEndpointNotFound;
+    case DependencyGraphError::SelfDependency:
+        return TaskError::DependencySelfReference;
+    case DependencyGraphError::DuplicateDependency:
+        return TaskError::DependencyDuplicate;
+    case DependencyGraphError::Cycle:
+        return TaskError::DependencyCycle;
+    }
+    return TaskError::DependencyCycle;
+}
+
+[[nodiscard]] TaskErrorContext graphContext(
+    const DependencyGraphValidation &validation)
+{
+    return {{}, validation.conflictingTaskIds, validation.cyclePath};
+}
+
+template<typename T>
+[[nodiscard]] ServiceResult<T> graphFailure(
+    const DependencyGraphValidation &validation)
+{
+    return ServiceResult<T>::failure(
+        graphError(validation.error),
+        QStringLiteral("Task dependency graph validation failed."),
+        graphContext(validation));
+}
+
+[[nodiscard]] const Task *findTaskInList(const QList<Task> &tasks,
+                                         const TaskId &taskId)
+{
+    const auto iterator = std::find_if(tasks.cbegin(), tasks.cend(),
+                                       [&taskId](const Task &task) {
+                                           return task.id() == taskId;
+                                       });
+    return iterator == tasks.cend() ? nullptr : &*iterator;
+}
+
+void replaceTaskSnapshot(QList<Task> &tasks, const Task &replacement)
+{
+    const auto iterator = std::find_if(tasks.begin(), tasks.end(),
+                                       [&replacement](const Task &task) {
+                                           return task.id() == replacement.id();
+                                       });
+    if (iterator != tasks.end()) {
+        *iterator = replacement;
+    }
+}
+
+[[nodiscard]] TaskStatus effectiveStatus(const Task &task) noexcept
+{
+    if (task.status() == TaskStatus::Archived) {
+        return task.statusBeforeArchive().value_or(TaskStatus::Todo);
+    }
+    return task.status();
+}
+
+[[nodiscard]] bool requiresSatisfiedPredecessors(const Task &task) noexcept
+{
+    const TaskStatus status = effectiveStatus(task);
+    return status == TaskStatus::InProgress || status == TaskStatus::Done;
+}
+
+struct ProtectedDependencyViolation final {
+    TaskId successorId;
+    QList<TaskId> blockingTaskIds;
+};
+
+/// 检查当前以及归档前为 InProgress/Done 的后继，供读计划与所有写入路径复用。
+[[nodiscard]] QList<ProtectedDependencyViolation> protectedStateViolations(
+    const QList<Task> &tasks,
+    const TaskDependencyGraph &graph)
+{
+    QList<ProtectedDependencyViolation> violations;
+    for (const Task &task : tasks) {
+        if (!requiresSatisfiedPredecessors(task)) {
+            continue;
+        }
+        QList<TaskId> blockers = graph.unsatisfiedPredecessorIds(task.id());
+        if (!blockers.isEmpty()) {
+            violations.append({task.id(), std::move(blockers)});
+        }
+    }
+    return violations;
+}
+
+[[nodiscard]] TaskErrorContext stateViolationContext(
+    const QList<ProtectedDependencyViolation> &violations)
+{
+    QList<TaskId> blockingTaskIds;
+    QList<TaskId> conflictingTaskIds;
+    for (const ProtectedDependencyViolation &violation : violations) {
+        blockingTaskIds.append(violation.blockingTaskIds);
+        conflictingTaskIds.append(violation.successorId);
+    }
+    normalizeIds(blockingTaskIds);
+    normalizeIds(conflictingTaskIds);
+    return {blockingTaskIds, conflictingTaskIds, {}};
+}
+
+/// 写任务前验证“已开始或已完成的后继，其全部前置必须完成”的领域不变量。
+[[nodiscard]] std::optional<TaskResult> dependencyStateFailure(
+    const QList<Task> &tasks,
+    const QList<TaskDependency> &dependencies,
+    const TaskId &changedTaskId)
+{
+    const TaskDependencyGraph graph{tasks, dependencies};
+    const DependencyGraphValidation validation = graph.validation();
+    if (!validation.ok()) {
+        return graphFailure<Task>(validation);
+    }
+
+    QList<ProtectedDependencyViolation> changedTaskViolations;
+    QList<ProtectedDependencyViolation> otherViolations;
+    for (const ProtectedDependencyViolation &violation
+         : protectedStateViolations(tasks, graph)) {
+        if (violation.successorId == changedTaskId) {
+            changedTaskViolations.append(violation);
+        } else {
+            otherViolations.append(violation);
+        }
+    }
+
+    if (!changedTaskViolations.isEmpty()) {
+        return TaskResult::failure(
+            TaskError::TaskBlocked,
+            QStringLiteral("A blocked task cannot enter or restore an active/completed state."),
+            stateViolationContext(changedTaskViolations));
+    }
+
+    if (!otherViolations.isEmpty()) {
+        return TaskResult::failure(
+            TaskError::DependencyStateConflict,
+            QStringLiteral("The status change would invalidate an active or completed successor."),
+            stateViolationContext(otherViolations));
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] QList<TaskDependency> dependenciesForSuccessor(
+    const QList<TaskDependency> &dependencies,
+    const TaskId &successorId)
+{
+    QList<TaskDependency> result;
+    for (const TaskDependency &dependency : dependencies) {
+        if (dependency.successorId == successorId) {
+            result.append(dependency);
+        }
+    }
+    std::sort(result.begin(), result.end(), [](const TaskDependency &left,
+                                               const TaskDependency &right) {
+        return stableId(left.predecessorId) < stableId(right.predecessorId);
+    });
+    return result;
+}
+
 [[nodiscard]] Task makeTask(const Task &source,
                             const TaskDraft &draft,
                             std::optional<TaskStatus> statusBeforeArchive,
@@ -130,9 +328,12 @@ constexpr int maximumDescriptionLength = 5000;
 
 } // namespace
 
-TaskService::TaskService(ITaskRepository &repository, QObject *parent)
+TaskService::TaskService(ITaskRepository &repository,
+                         ITaskDependencyRepository &dependencyRepository,
+                         QObject *parent)
     : QObject(parent)
     , m_repository(repository)
+    , m_dependencyRepository(dependencyRepository)
 {
 }
 
@@ -189,12 +390,164 @@ TaskListResult TaskService::listTasks() const
 TaskPlanResult TaskService::listRecommendedTasks() const
 {
     try {
-        return TaskPlanResult::success(
-            orderTasks(m_repository.findAll(), QDateTime::currentDateTimeUtc()));
+        const QList<Task> tasks = m_repository.findAll();
+        const QList<TaskDependency> dependencies =
+            m_dependencyRepository.findAllDependencies();
+        const TaskDependencyGraph graph{tasks, dependencies};
+        const DependencyGraphValidation validation = graph.validation();
+        if (!validation.ok()) {
+            return graphFailure<QList<PlannedTask>>(validation);
+        }
+        const QList<ProtectedDependencyViolation> stateViolations =
+            protectedStateViolations(tasks, graph);
+        if (!stateViolations.isEmpty()) {
+            return TaskPlanResult::failure(
+                TaskError::DependencyStateConflict,
+                QStringLiteral("Stored task dependencies violate an active/completed state."),
+                stateViolationContext(stateViolations));
+        }
+        return TaskPlanResult::success(orderTasks(
+            tasks, dependencies, QDateTime::currentDateTimeUtc()));
     } catch (const RepositoryException &exception) {
         return persistencePlanFailure(exception);
     } catch (...) {
         return unexpectedPersistencePlanFailure();
+    }
+}
+
+TaskDependencyListResult TaskService::listDependencies() const
+{
+    try {
+        return TaskDependencyListResult::success(
+            m_dependencyRepository.findAllDependencies());
+    } catch (const RepositoryException &exception) {
+        return dependencyPersistenceFailure(exception);
+    } catch (...) {
+        return unexpectedDependencyPersistenceFailure();
+    }
+}
+
+TaskDependencyListResult TaskService::replaceTaskPredecessors(
+    const TaskId &taskId,
+    const QList<TaskId> &predecessorIds)
+{
+    try {
+        const QList<Task> tasks = m_repository.findAll();
+        const Task *target = findTaskInList(tasks, taskId);
+        if (target == nullptr) {
+            return TaskDependencyListResult::failure(
+                TaskError::DependencyEndpointNotFound,
+                QStringLiteral("Dependency target task was not found."),
+                TaskErrorContext{{}, {taskId}, {}});
+        }
+        if (target->status() != TaskStatus::Todo) {
+            return TaskDependencyListResult::failure(
+                TaskError::DependencyTargetNotEditable,
+                QStringLiteral("Only an active Todo task can replace predecessors."),
+                TaskErrorContext{{}, {taskId}, {}});
+        }
+
+        QList<TaskId> normalizedPredecessors = predecessorIds;
+        normalizeIds(normalizedPredecessors);
+        if (normalizedPredecessors.size() != predecessorIds.size()) {
+            QList<TaskId> duplicateIds;
+            QSet<TaskId> seenIds;
+            for (const TaskId &predecessorId : predecessorIds) {
+                if (seenIds.contains(predecessorId)) {
+                    duplicateIds.append(predecessorId);
+                } else {
+                    seenIds.insert(predecessorId);
+                }
+            }
+            normalizeIds(duplicateIds);
+            return TaskDependencyListResult::failure(
+                TaskError::DependencyDuplicate,
+                QStringLiteral("Task predecessor list contains duplicates."),
+                TaskErrorContext{{}, duplicateIds, {}});
+        }
+        if (normalizedPredecessors.contains(taskId)) {
+            return TaskDependencyListResult::failure(
+                TaskError::DependencySelfReference,
+                QStringLiteral("A task cannot depend on itself."),
+                TaskErrorContext{{}, {taskId}, {}});
+        }
+
+        QList<TaskId> missingIds;
+        for (const TaskId &predecessorId : normalizedPredecessors) {
+            if (findTaskInList(tasks, predecessorId) == nullptr) {
+                missingIds.append(predecessorId);
+            }
+        }
+        normalizeIds(missingIds);
+        if (!missingIds.isEmpty()) {
+            return TaskDependencyListResult::failure(
+                TaskError::DependencyEndpointNotFound,
+                QStringLiteral("One or more predecessor tasks were not found."),
+                TaskErrorContext{{}, missingIds, {}});
+        }
+
+        const QList<TaskDependency> currentDependencies =
+            m_dependencyRepository.findAllDependencies();
+        const QList<TaskDependency> currentIncoming =
+            dependenciesForSuccessor(currentDependencies, taskId);
+        QList<TaskId> currentPredecessors;
+        currentPredecessors.reserve(currentIncoming.size());
+        for (const TaskDependency &dependency : currentIncoming) {
+            currentPredecessors.append(dependency.predecessorId);
+        }
+
+        QList<TaskId> ineligibleIds;
+        for (const TaskId &predecessorId : normalizedPredecessors) {
+            const Task *predecessor = findTaskInList(tasks, predecessorId);
+            if (!currentPredecessors.contains(predecessorId)
+                && predecessor != nullptr
+                && predecessor->status() == TaskStatus::Archived) {
+                ineligibleIds.append(predecessorId);
+            }
+        }
+        normalizeIds(ineligibleIds);
+        if (!ineligibleIds.isEmpty()) {
+            return TaskDependencyListResult::failure(
+                TaskError::DependencyPredecessorNotEligible,
+                QStringLiteral("A newly selected predecessor must not be archived."),
+                TaskErrorContext{{}, ineligibleIds, {}});
+        }
+
+        QList<TaskDependency> replacementDependencies;
+        replacementDependencies.reserve(
+            currentDependencies.size() - currentIncoming.size()
+            + normalizedPredecessors.size());
+        for (const TaskDependency &dependency : currentDependencies) {
+            if (dependency.successorId != taskId) {
+                replacementDependencies.append(dependency);
+            }
+        }
+        for (const TaskId &predecessorId : normalizedPredecessors) {
+            replacementDependencies.append({predecessorId, taskId});
+        }
+
+        const DependencyGraphValidation validation =
+            TaskDependencyGraph{tasks, replacementDependencies}.validation();
+        if (!validation.ok()) {
+            return graphFailure<QList<TaskDependency>>(validation);
+        }
+
+        if (currentPredecessors == normalizedPredecessors) {
+            return TaskDependencyListResult::success(currentIncoming);
+        }
+
+        m_dependencyRepository.replacePredecessors(taskId, normalizedPredecessors);
+        QList<TaskDependency> replacedIncoming;
+        replacedIncoming.reserve(normalizedPredecessors.size());
+        for (const TaskId &predecessorId : normalizedPredecessors) {
+            replacedIncoming.append({predecessorId, taskId});
+        }
+        emit dependenciesChanged();
+        return TaskDependencyListResult::success(std::move(replacedIncoming));
+    } catch (const RepositoryException &exception) {
+        return dependencyPersistenceFailure(exception);
+    } catch (...) {
+        return unexpectedDependencyPersistenceFailure();
     }
 }
 
@@ -223,10 +576,14 @@ TaskResult TaskService::createTask(const TaskDraft &draft)
 
     try {
         // 这是单进行中规则的业务预检；写入时发生的竞争由失败后重读兜底。
-        if (draft.status == TaskStatus::InProgress
-            && containsOtherInProgressTask(m_repository.findAll(), std::nullopt)) {
-            return TaskResult::failure(TaskError::InProgressConflict,
-                                       QStringLiteral("Another task is already in progress."));
+        const QList<TaskId> conflictingIds = draft.status == TaskStatus::InProgress
+            ? otherInProgressTaskIds(m_repository.findAll(), std::nullopt)
+            : QList<TaskId>{};
+        if (!conflictingIds.isEmpty()) {
+            return TaskResult::failure(
+                TaskError::InProgressConflict,
+                QStringLiteral("Another task is already in progress."),
+                TaskErrorContext{{}, conflictingIds, {}});
         }
 
         const QDateTime now = QDateTime::currentDateTimeUtc();
@@ -273,15 +630,20 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
     }
 
     try {
-        const std::optional<Task> current = m_repository.findById(id);
-        if (!current.has_value()) {
+        const QList<Task> tasks = m_repository.findAll();
+        const Task *current = findTaskInList(tasks, id);
+        if (current == nullptr) {
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
         }
-        if (draft.status == TaskStatus::InProgress
-            && containsOtherInProgressTask(m_repository.findAll(), id)) {
-            return TaskResult::failure(TaskError::InProgressConflict,
-                                       QStringLiteral("Another task is already in progress."));
+        const QList<TaskId> conflictingIds = draft.status == TaskStatus::InProgress
+            ? otherInProgressTaskIds(tasks, id)
+            : QList<TaskId>{};
+        if (!conflictingIds.isEmpty()) {
+            return TaskResult::failure(
+                TaskError::InProgressConflict,
+                QStringLiteral("Another task is already in progress."),
+                TaskErrorContext{{}, conflictingIds, {}});
         }
 
         std::optional<TaskStatus> statusBeforeArchive;
@@ -296,6 +658,14 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
                                 draft,
                                 statusBeforeArchive,
                                 QDateTime::currentDateTimeUtc());
+        QList<Task> updatedTasks = tasks;
+        replaceTaskSnapshot(updatedTasks, updated);
+        const QList<TaskDependency> dependencies =
+            m_dependencyRepository.findAllDependencies();
+        if (const auto dependencyFailure =
+                dependencyStateFailure(updatedTasks, dependencies, id)) {
+            return *dependencyFailure;
+        }
         try {
             if (!m_repository.update(updated)) {
                 return TaskResult::failure(TaskError::NotFound,
@@ -319,8 +689,9 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
 TaskResult TaskService::archiveTask(const TaskId &id)
 {
     try {
-        const std::optional<Task> current = m_repository.findById(id);
-        if (!current.has_value()) {
+        const QList<Task> tasks = m_repository.findAll();
+        const Task *current = findTaskInList(tasks, id);
+        if (current == nullptr) {
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
         }
@@ -340,6 +711,14 @@ TaskResult TaskService::archiveTask(const TaskId &id)
                                  archivedDraft,
                                  current->status(),
                                  QDateTime::currentDateTimeUtc());
+        QList<Task> archivedTasks = tasks;
+        replaceTaskSnapshot(archivedTasks, archived);
+        const QList<TaskDependency> dependencies =
+            m_dependencyRepository.findAllDependencies();
+        if (const auto dependencyFailure =
+                dependencyStateFailure(archivedTasks, dependencies, id)) {
+            return *dependencyFailure;
+        }
         if (!m_repository.update(archived)) {
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found during archive."));
@@ -356,8 +735,9 @@ TaskResult TaskService::archiveTask(const TaskId &id)
 TaskResult TaskService::restoreTask(const TaskId &id)
 {
     try {
-        const std::optional<Task> current = m_repository.findById(id);
-        if (!current.has_value()) {
+        const QList<Task> tasks = m_repository.findAll();
+        const Task *current = findTaskInList(tasks, id);
+        if (current == nullptr) {
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
         }
@@ -371,10 +751,14 @@ TaskResult TaskService::restoreTask(const TaskId &id)
             // 对缺失或非法的旧数据采用安全的待办状态，避免恢复后仍处于归档。
             restoredStatus = TaskStatus::Todo;
         }
-        if (restoredStatus == TaskStatus::InProgress
-            && containsOtherInProgressTask(m_repository.findAll(), id)) {
-            return TaskResult::failure(TaskError::InProgressConflict,
-                                       QStringLiteral("Another task is already in progress."));
+        const QList<TaskId> conflictingIds = restoredStatus == TaskStatus::InProgress
+            ? otherInProgressTaskIds(tasks, id)
+            : QList<TaskId>{};
+        if (!conflictingIds.isEmpty()) {
+            return TaskResult::failure(
+                TaskError::InProgressConflict,
+                QStringLiteral("Another task is already in progress."),
+                TaskErrorContext{{}, conflictingIds, {}});
         }
 
         const TaskDraft restoredDraft{current->title(),
@@ -388,6 +772,14 @@ TaskResult TaskService::restoreTask(const TaskId &id)
                                  restoredDraft,
                                  std::nullopt,
                                  QDateTime::currentDateTimeUtc());
+        QList<Task> restoredTasks = tasks;
+        replaceTaskSnapshot(restoredTasks, restored);
+        const QList<TaskDependency> dependencies =
+            m_dependencyRepository.findAllDependencies();
+        if (const auto dependencyFailure =
+                dependencyStateFailure(restoredTasks, dependencies, id)) {
+            return *dependencyFailure;
+        }
         try {
             if (!m_repository.update(restored)) {
                 return TaskResult::failure(
