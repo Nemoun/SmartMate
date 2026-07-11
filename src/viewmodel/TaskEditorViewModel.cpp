@@ -14,11 +14,10 @@
 namespace smartmate::viewmodel {
 
 namespace {
-// ComboBox 索引只在展示层转换为领域枚举；生成的草稿仍须由 TaskService
-// 执行完整业务校验。
+// 优先级索引只在展示层转换为领域枚举；生成的草稿仍须由 TaskService
+// 执行完整业务校验。任务状态不属于编辑草稿，必须经由显式状态命令修改。
 [[nodiscard]] model::TaskDraft makeDraft(const QString &title,
                                          const QString &description,
-                                         const int statusIndex,
                                          const int priorityIndex,
                                          std::optional<QDateTime> deadline,
                                          std::optional<int> estimatedMinutes)
@@ -26,7 +25,6 @@ namespace {
     model::TaskDraft draft;
     draft.title = title;
     draft.description = description;
-    draft.status = static_cast<model::TaskStatus>(statusIndex);
     draft.priority = static_cast<model::TaskPriority>(priorityIndex);
     draft.deadline = std::move(deadline);
     draft.estimatedMinutes = estimatedMinutes;
@@ -137,20 +135,9 @@ void TaskEditorViewModel::setDescription(const QString &description)
     updateFormState();
 }
 
-int TaskEditorViewModel::statusIndex() const noexcept
+QString TaskEditorViewModel::currentStatusText() const
 {
-    return m_statusIndex;
-}
-
-void TaskEditorViewModel::setStatusIndex(const int statusIndex)
-{
-    if (m_statusIndex == statusIndex) {
-        return;
-    }
-    m_statusIndex = statusIndex;
-    emit statusIndexChanged();
-    setErrorMessage({});
-    updateFormState();
+    return statusText(m_currentStatus);
 }
 
 int TaskEditorViewModel::priorityIndex() const noexcept
@@ -261,17 +248,6 @@ int TaskEditorViewModel::maximumEstimatedMinutes() const noexcept
     return model::TaskConstraints::maximumEstimatedMinutes;
 }
 
-QStringList TaskEditorViewModel::statusOptions() const
-{
-    return {
-        QStringLiteral("待办"),
-        QStringLiteral("进行中"),
-        QStringLiteral("已完成"),
-        QStringLiteral("已取消"),
-        QStringLiteral("已归档"),
-    };
-}
-
 QStringList TaskEditorViewModel::priorityOptions() const
 {
     return {
@@ -341,7 +317,7 @@ bool TaskEditorViewModel::beginCreate()
     }
 
     replaceCandidates(*candidates.value);
-    replaceDraft(Snapshot{}, {}, false);
+    replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
     return true;
 }
 
@@ -364,13 +340,13 @@ bool TaskEditorViewModel::beginEdit(const QString &taskId)
     Snapshot draft;
     draft.title = task.title();
     draft.description = task.description();
-    draft.statusIndex = static_cast<int>(task.status());
     draft.priorityIndex = static_cast<int>(task.priority());
     draft.deadline = task.deadline();
     draft.estimatedMinutes = task.estimatedMinutes();
 
     replaceCandidates({});
-    replaceDraft(draft, task.id().toString(QUuid::WithoutBraces), true);
+    replaceDraft(draft, task.id().toString(QUuid::WithoutBraces), true,
+                 task.status());
     return true;
 }
 
@@ -586,6 +562,10 @@ bool TaskEditorViewModel::save()
 
     m_taskId = result.value->id().toString(QUuid::WithoutBraces);
     m_editMode = true;
+    if (m_currentStatus != result.value->status()) {
+        m_currentStatus = result.value->status();
+        emit currentStatusTextChanged();
+    }
     emit modeChanged();
     rememberCurrentDraft();
     updateFormState();
@@ -599,7 +579,7 @@ void TaskEditorViewModel::cancel()
     setErrorMessage({});
     // 主表单取消后立即丢弃字段、候选与已接受依赖，下一次打开不会继承旧草稿。
     replaceCandidates({});
-    replaceDraft(Snapshot{}, {}, false);
+    replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
     emit cancelled();
 }
 
@@ -608,7 +588,6 @@ TaskEditorViewModel::Snapshot TaskEditorViewModel::currentSnapshot() const
     return {
         m_title,
         m_description,
-        m_statusIndex,
         m_priorityIndex,
         m_deadline,
         m_estimatedMinutes,
@@ -617,13 +596,14 @@ TaskEditorViewModel::Snapshot TaskEditorViewModel::currentSnapshot() const
 }
 
 void TaskEditorViewModel::replaceDraft(const Snapshot &draft, const QString &taskId,
-                                       const bool editMode)
+                                       const bool editMode,
+                                       const model::TaskStatus currentStatus)
 {
     m_taskId = taskId;
     m_editMode = editMode;
     m_title = draft.title;
     m_description = draft.description;
-    m_statusIndex = draft.statusIndex;
+    m_currentStatus = currentStatus;
     m_priorityIndex = draft.priorityIndex;
     m_deadline = draft.deadline;
     m_estimatedMinutes = draft.estimatedMinutes;
@@ -635,7 +615,7 @@ void TaskEditorViewModel::replaceDraft(const Snapshot &draft, const QString &tas
     emit modeChanged();
     emit titleChanged();
     emit descriptionChanged();
-    emit statusIndexChanged();
+    emit currentStatusTextChanged();
     emit priorityIndexChanged();
     emit deadlineChanged();
     emit estimatedDurationChanged();
@@ -668,20 +648,15 @@ void TaskEditorViewModel::rememberCurrentDraft()
 
 void TaskEditorViewModel::updateFormState()
 {
-    // 类型化选择器已经消除了格式解析；标题、预计范围、状态等业务规则仍由
+    // 类型化选择器已经消除了格式解析；标题、预计范围等业务规则仍由
     // TaskService::validateDraft 统一给出结论。
     QString validationMessage;
     const auto validation = m_taskService.validateDraft(
-        makeDraft(m_title, m_description, m_statusIndex, m_priorityIndex,
+        makeDraft(m_title, m_description, m_priorityIndex,
                   m_deadline, m_estimatedMinutes));
     if (!validation.ok()) {
         validationMessage = taskErrorMessage(validation.error);
     }
-    if (!m_editMode && !m_selectedCreationPredecessors.isEmpty()
-        && m_statusIndex != static_cast<int>(model::TaskStatus::Todo)) {
-        validationMessage = QStringLiteral("设置前置任务后，新任务状态必须为待办。");
-    }
-
     const bool dirty = currentSnapshot() != m_original;
     const bool canSave = dirty && validationMessage.isEmpty();
     if (m_dirty == dirty && m_canSave == canSave
@@ -712,7 +687,7 @@ std::optional<model::TaskDraft> TaskEditorViewModel::buildTaskDraft()
         return std::nullopt;
     }
 
-    return makeDraft(m_title, m_description, m_statusIndex, m_priorityIndex,
+    return makeDraft(m_title, m_description, m_priorityIndex,
                      m_deadline, m_estimatedMinutes);
 }
 

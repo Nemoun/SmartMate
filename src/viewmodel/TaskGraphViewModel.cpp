@@ -39,7 +39,7 @@ struct EdgeProjection final {
     const QHash<QString, int> &titleCounts)
 {
     if (blockingIds.isEmpty()) {
-        return QStringLiteral("存在尚未完成的前置任务");
+        return QStringLiteral("存在尚未完成或取消的前置任务");
     }
 
     QStringList names;
@@ -55,7 +55,8 @@ struct EdgeProjection final {
             names.append(QStringLiteral("“%1”").arg(title));
         }
     }
-    return QStringLiteral("等待%1完成").arg(names.join(QStringLiteral("、")));
+    return QStringLiteral("等待%1完成或取消")
+        .arg(names.join(QStringLiteral("、")));
 }
 } // namespace
 
@@ -80,6 +81,7 @@ public:
         ArrowRightXRole,
         ArrowRightYRole,
         SatisfiedRole,
+        CancelledRole,
         HighlightedRole,
     };
 
@@ -134,7 +136,9 @@ public:
         case ArrowRightYRole:
             return row.arrowRight.y();
         case SatisfiedRole:
-            return row.edge.satisfied;
+            return row.edge.resolution == model::TaskDependencyResolution::Satisfied;
+        case CancelledRole:
+            return row.edge.resolution == model::TaskDependencyResolution::Cancelled;
         case HighlightedRole:
             return !m_selectedTaskId.isNull()
                 && (row.edge.dependency.predecessorId == m_selectedTaskId
@@ -164,6 +168,7 @@ public:
             {ArrowRightXRole, "arrowRightX"},
             {ArrowRightYRole, "arrowRightY"},
             {SatisfiedRole, "satisfied"},
+            {CancelledRole, "cancelled"},
             {HighlightedRole, "highlighted"},
         };
     }

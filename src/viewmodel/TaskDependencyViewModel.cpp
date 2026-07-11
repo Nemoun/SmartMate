@@ -45,8 +45,9 @@ QVariant TaskDependencyViewModel::data(const QModelIndex &index, const int role)
     case ArchivedRole:
         return task.status() == model::TaskStatus::Archived;
     case SelectableRole:
-        // 原有归档关系可以在草稿中撤销和恢复，但不能新增归档前置。
-        return task.status() != model::TaskStatus::Archived
+        // 原有归档或取消关系可以在草稿中撤销和恢复，但不能新增为前置。
+        return (task.status() != model::TaskStatus::Archived
+                && task.status() != model::TaskStatus::Cancelled)
             || m_originalPredecessors.contains(task.id());
     default:
         return {};
@@ -149,7 +150,8 @@ bool TaskDependencyViewModel::beginEdit(const QString &taskId)
         if (task.id() == id) {
             continue;
         }
-        if (task.status() != model::TaskStatus::Archived
+        if ((task.status() != model::TaskStatus::Archived
+             && task.status() != model::TaskStatus::Cancelled)
             || selectedPredecessors.contains(task.id())) {
             candidates.push_back(task);
         }
@@ -171,9 +173,11 @@ bool TaskDependencyViewModel::setPredecessorSelected(const QString &predecessorT
     }
 
     const model::Task &candidate = m_candidates.at(row);
-    if (selected && candidate.status() == model::TaskStatus::Archived
+    if (selected
+        && (candidate.status() == model::TaskStatus::Archived
+            || candidate.status() == model::TaskStatus::Cancelled)
         && !m_originalPredecessors.contains(id)) {
-        setErrorMessage(QStringLiteral("不能新增已归档任务作为前置任务。"));
+        setErrorMessage(QStringLiteral("不能新增已归档或已取消任务作为前置任务。"));
         return false;
     }
     if (m_selectedPredecessors.contains(id) == selected) {
@@ -322,7 +326,7 @@ QString TaskDependencyViewModel::dependencyErrorMessage(
     }
     if (error == model::TaskError::DependencyPredecessorNotEligible
         && !context.conflictingTaskIds.isEmpty()) {
-        return QStringLiteral("不能新增已归档前置任务：%1。")
+        return QStringLiteral("不能新增已归档或已取消前置任务：%1。")
             .arg(formatTasks(context.conflictingTaskIds, QStringLiteral("、")));
     }
     return taskErrorMessage(error);

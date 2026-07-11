@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "domain/TaskStateMachine.h"
 
 #include <QAbstractListModel>
 #include <QHash>
@@ -49,6 +50,12 @@ public:
         UnlockCountRole,
         CanEditTaskRole,
         CanEditDependenciesRole,
+        CanStartRole,
+        CanCancelRole,
+        CanCompleteRole,
+        CanRedoRole,
+        CanArchiveRole,
+        CanRestoreRole,
     };
     Q_ENUM(Role)
 
@@ -73,6 +80,14 @@ public:
     Q_INVOKABLE void reload();
     /// 只清除关键字和优先级条件，活动/归档视图保持不变。
     Q_INVOKABLE void clearFilters();
+    /// 请求 Todo → InProgress；阻塞与单进行中约束由 Model 最终判定。
+    Q_INVOKABLE bool startTask(const QString &taskId);
+    /// 请求 Todo/InProgress → Cancelled；取消确认由 View 负责。
+    Q_INVOKABLE bool cancelTask(const QString &taskId);
+    /// 请求 InProgress → Done，禁止绕过进行中状态。
+    Q_INVOKABLE bool completeTask(const QString &taskId);
+    /// 请求 Done/Cancelled → Todo，并由 Model 重新计算依赖有效性。
+    Q_INVOKABLE bool redoTask(const QString &taskId);
     /// 按稳定TaskId请求软归档，并把领域错误映射为展示状态。
     Q_INVOKABLE bool archiveTask(const QString &taskId);
     /// 按稳定TaskId请求恢复，并保留Service给出的业务约束。
@@ -102,6 +117,7 @@ private:
     [[nodiscard]] static QString statusText(model::TaskStatus status);
     [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] static model::TaskId parseTaskId(const QString &taskId);
+    bool performTransition(const QString &taskId, model::TaskTransition transition);
     void rebuildVisibleTasks();
     void setError(const QString &message);
 

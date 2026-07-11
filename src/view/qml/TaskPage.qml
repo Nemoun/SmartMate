@@ -146,6 +146,12 @@ Page {
                     required property int unlockCount
                     required property bool canEditTask
                     required property bool canEditDependencies
+                    required property bool canStart
+                    required property bool canCancel
+                    required property bool canComplete
+                    required property bool canRedo
+                    required property bool canArchive
+                    required property bool canRestore
                     required property int estimatedMinutes
 
                     width: ListView.view.width
@@ -241,7 +247,8 @@ Page {
                                 objectName: "unlockCountLabel_" + taskDelegate.taskId
                                 Layout.fillWidth: true
                                 visible: taskDelegate.unlockCount > 0
-                                text: qsTr("完成后可解锁 %1 项任务").arg(taskDelegate.unlockCount)
+                                text: qsTr("完成或取消后可解锁 %1 项任务")
+                                      .arg(taskDelegate.unlockCount)
                                 color: "#027a48"
                                 font.pixelSize: 13
                             }
@@ -271,8 +278,41 @@ Page {
                         }
 
                         Button {
+                            objectName: "startTaskButton_" + taskDelegate.taskId
+                            text: qsTr("开始")
+                            visible: taskDelegate.canStart
+                            onClicked: root.appViewModel.taskList.startTask(taskDelegate.taskId)
+                        }
+
+                        Button {
+                            objectName: "completeTaskButton_" + taskDelegate.taskId
+                            text: qsTr("完成")
+                            visible: taskDelegate.canComplete
+                            onClicked: root.appViewModel.taskList.completeTask(taskDelegate.taskId)
+                        }
+
+                        Button {
+                            objectName: "cancelTaskButton_" + taskDelegate.taskId
+                            text: qsTr("取消任务")
+                            visible: taskDelegate.canCancel
+                            onClicked: {
+                                cancelDialog.pendingTaskId = taskDelegate.taskId
+                                cancelDialog.pendingTitle = taskDelegate.title
+                                cancelDialog.open()
+                            }
+                        }
+
+                        Button {
+                            objectName: "redoTaskButton_" + taskDelegate.taskId
+                            text: qsTr("重做")
+                            visible: taskDelegate.canRedo
+                            onClicked: root.appViewModel.taskList.redoTask(taskDelegate.taskId)
+                        }
+
+                        Button {
+                            objectName: "archiveTaskButton_" + taskDelegate.taskId
                             text: qsTr("归档")
-                            visible: !root.appViewModel.taskList.showArchived
+                            visible: taskDelegate.canArchive
                             onClicked: {
                                 archiveDialog.pendingTaskId = taskDelegate.taskId
                                 archiveDialog.pendingTitle = taskDelegate.title
@@ -283,7 +323,7 @@ Page {
                         Button {
                             objectName: "restoreTaskButton_" + taskDelegate.taskId
                             text: qsTr("恢复")
-                            visible: root.appViewModel.taskList.showArchived
+                            visible: taskDelegate.canRestore
                             onClicked: root.appViewModel.taskList.restoreTask(taskDelegate.taskId)
                         }
                     }
@@ -314,9 +354,33 @@ Page {
         editor: root.appViewModel.taskEditor
     }
 
+    // 取消会暂时解除该任务作为前置项的阻塞效果，因此要求用户明确确认。
+    Dialog {
+        id: cancelDialog
+        objectName: "cancelTaskDialog"
+
+        property string pendingTaskId
+        property string pendingTitle
+
+        anchors.centerIn: Overlay.overlay
+        title: qsTr("确认取消任务")
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        Label {
+            width: 380
+            wrapMode: Text.Wrap
+            text: qsTr("确定要取消“%1”吗？它作为前置任务的依赖将暂时失效，重做后会重新生效。")
+                  .arg(cancelDialog.pendingTitle)
+        }
+
+        onAccepted: root.appViewModel.taskList.cancelTask(pendingTaskId)
+    }
+
     // 归档确认属于交互流程；真正的状态转换仍由 ViewModel 命令转交 Service。
     Dialog {
         id: archiveDialog
+        objectName: "archiveTaskDialog"
 
         property string pendingTaskId
         property string pendingTitle

@@ -49,7 +49,7 @@ Dialog {
     closePolicy: Popup.NoAutoClose
     title: editor.editMode ? qsTr("编辑任务") : qsTr("新建任务")
 
-    // 所有控件写回草稿属性，派生的错误文本和 canSave 再通过绑定返回 View。
+    // 可编辑控件写回草稿；状态只读展示，派生错误和 canSave 再通过绑定返回 View。
     contentItem: ScrollView {
         clip: true
 
@@ -98,11 +98,24 @@ Dialog {
                         font.bold: true
                     }
 
-                    ComboBox {
+                    Rectangle {
                         Layout.fillWidth: true
-                        model: root.editor.statusOptions
-                        currentIndex: root.editor.statusIndex
-                        onActivated: index => root.editor.statusIndex = index
+                        implicitHeight: 40
+                        radius: 4
+                        color: "#f2f4f7"
+                        border.color: "#d0d5dd"
+
+                        Label {
+                            objectName: "taskCurrentStatusLabel"
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            verticalAlignment: Text.AlignVCenter
+                            text: root.editor.editMode
+                                  ? root.editor.currentStatusText
+                                  : qsTr("初始状态：待办")
+                            color: "#475467"
+                        }
                     }
                 }
 

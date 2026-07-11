@@ -16,10 +16,10 @@ struct TaskGraphNode final {
     friend bool operator==(const TaskGraphNode &, const TaskGraphNode &) = default;
 };
 
-/// 依赖图中的有向边；满足状态仅取决于前置任务是否完成。
+/// 依赖图中的有向边；解析状态区分完成满足、待满足与取消失效。
 struct TaskGraphEdge final {
     TaskDependency dependency;
-    bool satisfied{false};
+    TaskDependencyResolution resolution{TaskDependencyResolution::Pending};
 
     friend bool operator==(const TaskGraphEdge &, const TaskGraphEdge &) = default;
 };

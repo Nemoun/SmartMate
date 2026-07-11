@@ -9,13 +9,12 @@
 
 namespace smartmate::model {
 
-/// 尚未校验的任务输入；是否满足业务规则必须由 TaskService 判定。
+/// 尚未校验的普通任务字段输入；不包含状态，状态只能由显式领域命令改变。
 struct TaskDraft final {
     QString title;
     /// 未填写描述时使用非 null 空字符串；描述可空不等于数据库中的 SQL NULL。
     QString description{QStringLiteral("")};
     TaskPriority priority{TaskPriority::Normal};
-    TaskStatus status{TaskStatus::Todo};
     /// 空值表示没有截止时间；非空时间会在写入领域实体前统一转换为 UTC。
     std::optional<QDateTime> deadline;
     /// 空值表示未估算，非空值的单位为分钟。

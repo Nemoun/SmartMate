@@ -31,19 +31,6 @@ constexpr int maximumDescriptionLength = 5000;
     return false;
 }
 
-[[nodiscard]] bool isValidStatus(TaskStatus status) noexcept
-{
-    switch (status) {
-    case TaskStatus::Todo:
-    case TaskStatus::InProgress:
-    case TaskStatus::Done:
-    case TaskStatus::Cancelled:
-    case TaskStatus::Archived:
-        return true;
-    }
-    return false;
-}
-
 [[nodiscard]] QString stableId(const TaskId &taskId)
 {
     return taskId.toString(QUuid::WithoutBraces);
@@ -262,7 +249,7 @@ struct ProtectedDependencyViolation final {
     return {blockingTaskIds, conflictingTaskIds, {}};
 }
 
-/// 写任务前验证“已开始或已完成的后继，其全部前置必须完成”的领域不变量。
+/// 写状态前验证“已开始或已完成的后继，其全部前置必须完成或取消”的领域不变量。
 [[nodiscard]] std::optional<TaskResult> dependencyStateFailure(
     const QList<Task> &tasks,
     const QList<TaskDependency> &dependencies,
@@ -318,12 +305,11 @@ struct ProtectedDependencyViolation final {
     return result;
 }
 
-[[nodiscard]] Task makeTask(const Task &source,
-                            const TaskDraft &draft,
-                            std::optional<TaskStatus> statusBeforeArchive,
-                            QDateTime updatedAtUtc)
+[[nodiscard]] Task makeTaskWithDetails(const Task &source,
+                                       const TaskDraft &draft,
+                                       QDateTime updatedAtUtc)
 {
-    // 更新保留稳定 ID 与创建时间，同时统一标题、UTC 截止时间和最后修改时间。
+    // 普通编辑只替换详情；状态与归档恢复点必须原样保留，避免绕过状态机。
     const std::optional<QDateTime> deadline = draft.deadline.has_value()
         ? std::optional<QDateTime>{draft.deadline->toUTC()}
         : std::nullopt;
@@ -331,10 +317,29 @@ struct ProtectedDependencyViolation final {
                 draft.title.trimmed(),
                 draft.description,
                 draft.priority,
-                draft.status,
-                statusBeforeArchive,
+                source.status(),
+                source.statusBeforeArchive(),
                 deadline,
                 draft.estimatedMinutes,
+                source.createdAtUtc(),
+                std::move(updatedAtUtc)};
+}
+
+[[nodiscard]] Task makeTaskWithStatus(
+    const Task &source,
+    const TaskStatus status,
+    std::optional<TaskStatus> statusBeforeArchive,
+    QDateTime updatedAtUtc)
+{
+    // 状态命令不得意外改写用户详情，尤其要保留旧截止时间中的秒和毫秒。
+    return Task{source.id(),
+                source.title(),
+                source.description(),
+                source.priority(),
+                status,
+                std::move(statusBeforeArchive),
+                source.deadline(),
+                source.estimatedMinutes(),
                 source.createdAtUtc(),
                 std::move(updatedAtUtc)};
 }
@@ -346,17 +351,13 @@ struct ProtectedDependencyViolation final {
     const std::optional<QDateTime> deadline = draft.deadline.has_value()
         ? std::optional<QDateTime>{draft.deadline->toUTC()}
         : std::nullopt;
-    // 新建即归档没有历史工作阶段，因此恢复点固定为 Todo。
-    const std::optional<TaskStatus> statusBeforeArchive =
-        draft.status == TaskStatus::Archived
-        ? std::optional<TaskStatus>{TaskStatus::Todo}
-        : std::nullopt;
+    // 新任务只能从 Todo 开始；后续状态变化必须经过显式状态命令。
     return Task{taskId,
                 draft.title.trimmed(),
                 draft.description,
                 draft.priority,
-                draft.status,
-                statusBeforeArchive,
+                TaskStatus::Todo,
+                std::nullopt,
                 deadline,
                 draft.estimatedMinutes,
                 nowUtc,
@@ -408,10 +409,6 @@ TaskValidationResult TaskService::validateDraft(const TaskDraft &draft) const
         return TaskValidationResult::failure(
             TaskError::InvalidPriority, QStringLiteral("Task priority is invalid."));
     }
-    if (!isValidStatus(draft.status)) {
-        return TaskValidationResult::failure(
-            TaskError::InvalidStatus, QStringLiteral("Task status is invalid."));
-    }
     return TaskValidationResult::success();
 }
 
@@ -435,7 +432,8 @@ TaskListResult TaskService::listEligibleCreationPredecessors() const
         QList<Task> eligibleTasks;
         eligibleTasks.reserve(recommended.size());
         for (const PlannedTask &plannedTask : recommended) {
-            if (plannedTask.task.status() != TaskStatus::Archived) {
+            if (plannedTask.task.status() != TaskStatus::Archived
+                && plannedTask.task.status() != TaskStatus::Cancelled) {
                 eligibleTasks.append(plannedTask.task);
             }
         }
@@ -552,10 +550,11 @@ TaskGraphResult TaskService::taskGraphSnapshot() const
         for (const TaskDependency &dependency : visibleDependencies) {
             const Task *predecessor = findTaskInList(
                 tasks, dependency.predecessorId);
-            snapshot.edges.append({dependency,
-                                   predecessor != nullptr
-                                       && TaskDependencyGraph::satisfiesDependency(
-                                           *predecessor)});
+            snapshot.edges.append(
+                {dependency,
+                 predecessor != nullptr
+                     ? TaskDependencyGraph::dependencyResolution(*predecessor)
+                     : TaskDependencyResolution::Pending});
         }
         return TaskGraphResult::success(std::move(snapshot));
     } catch (const RepositoryException &exception) {
@@ -639,7 +638,8 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
             const Task *predecessor = findTaskInList(tasks, predecessorId);
             if (!currentPredecessors.contains(predecessorId)
                 && predecessor != nullptr
-                && predecessor->status() == TaskStatus::Archived) {
+                && (predecessor->status() == TaskStatus::Archived
+                    || predecessor->status() == TaskStatus::Cancelled)) {
                 ineligibleIds.append(predecessorId);
             }
         }
@@ -647,7 +647,7 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
         if (!ineligibleIds.isEmpty()) {
             return TaskDependencyListResult::failure(
                 TaskError::DependencyPredecessorNotEligible,
-                QStringLiteral("A newly selected predecessor must not be archived."),
+                QStringLiteral("A newly selected predecessor must not be archived or cancelled."),
                 TaskErrorContext{{}, ineligibleIds, {}});
         }
 
@@ -730,19 +730,7 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
     }
 
     try {
-        // 这是单进行中规则的业务预检；写入时发生的竞争由失败后重读兜底。
         const QList<Task> tasks = m_repository.findAll();
-        const QList<TaskId> conflictingIds =
-            request.task.status == TaskStatus::InProgress
-            ? otherInProgressTaskIds(tasks, std::nullopt)
-            : QList<TaskId>{};
-        if (!conflictingIds.isEmpty()) {
-            return TaskResult::failure(
-                TaskError::InProgressConflict,
-                QStringLiteral("Another task is already in progress."),
-                TaskErrorContext{{}, conflictingIds, {}});
-        }
-
         QList<TaskId> normalizedPredecessors = request.predecessorIds;
         normalizeIds(normalizedPredecessors);
         if (normalizedPredecessors.size() != request.predecessorIds.size()) {
@@ -763,13 +751,14 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
         }
 
         QList<TaskId> missingIds;
-        QList<TaskId> archivedIds;
+        QList<TaskId> ineligibleIds;
         for (const TaskId &predecessorId : normalizedPredecessors) {
             const Task *predecessor = findTaskInList(tasks, predecessorId);
             if (predecessor == nullptr) {
                 missingIds.append(predecessorId);
-            } else if (predecessor->status() == TaskStatus::Archived) {
-                archivedIds.append(predecessorId);
+            } else if (predecessor->status() == TaskStatus::Archived
+                       || predecessor->status() == TaskStatus::Cancelled) {
+                ineligibleIds.append(predecessorId);
             }
         }
         normalizeIds(missingIds);
@@ -779,18 +768,12 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
                 QStringLiteral("One or more creation predecessors were not found."),
                 TaskErrorContext{{}, missingIds, {}});
         }
-        normalizeIds(archivedIds);
-        if (!archivedIds.isEmpty()) {
+        normalizeIds(ineligibleIds);
+        if (!ineligibleIds.isEmpty()) {
             return TaskResult::failure(
                 TaskError::DependencyPredecessorNotEligible,
-                QStringLiteral("A creation predecessor must not be archived."),
-                TaskErrorContext{{}, archivedIds, {}});
-        }
-        if (!normalizedPredecessors.isEmpty()
-            && request.task.status != TaskStatus::Todo) {
-            return TaskResult::failure(
-                TaskError::DependencyTargetNotEditable,
-                QStringLiteral("A new task with predecessors must use Todo status."));
+                QStringLiteral("A creation predecessor must not be archived or cancelled."),
+                TaskErrorContext{{}, ineligibleIds, {}});
         }
 
         TaskId taskId;
@@ -827,9 +810,6 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
             m_creationRepository.insertTaskWithPredecessors(
                 task, normalizedPredecessors);
         } catch (const RepositoryException &exception) {
-            if (request.task.status == TaskStatus::InProgress) {
-                return mapInProgressWriteFailure(m_repository, task.id(), exception);
-            }
             return persistenceFailure(exception);
         }
         emit tasksChanged();
@@ -864,44 +844,11 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
         if (!validation.ok()) {
             return TaskResult::failure(validation.error, validation.detail);
         }
-        const QList<TaskId> conflictingIds = draft.status == TaskStatus::InProgress
-            ? otherInProgressTaskIds(tasks, id)
-            : QList<TaskId>{};
-        if (!conflictingIds.isEmpty()) {
-            return TaskResult::failure(
-                TaskError::InProgressConflict,
-                QStringLiteral("Another task is already in progress."),
-                TaskErrorContext{{}, conflictingIds, {}});
-        }
-
-        std::optional<TaskStatus> statusBeforeArchive;
-        if (draft.status == TaskStatus::Archived) {
-            // 活动任务在编辑流程中转为归档时记录当前状态，供后续恢复。
-            statusBeforeArchive = current->status();
-        }
-
-        Task updated = makeTask(*current,
-                                draft,
-                                statusBeforeArchive,
-                                QDateTime::currentDateTimeUtc());
-        QList<Task> updatedTasks = tasks;
-        replaceTaskSnapshot(updatedTasks, updated);
-        const QList<TaskDependency> dependencies =
-            m_dependencyRepository.findAllDependencies();
-        if (const auto dependencyFailure =
-                dependencyStateFailure(updatedTasks, dependencies, id)) {
-            return *dependencyFailure;
-        }
-        try {
-            if (!m_repository.update(updated)) {
-                return TaskResult::failure(TaskError::NotFound,
-                                           QStringLiteral("Task was not found during update."));
-            }
-        } catch (const RepositoryException &exception) {
-            if (draft.status == TaskStatus::InProgress) {
-                return mapInProgressWriteFailure(m_repository, id, exception);
-            }
-            return persistenceFailure(exception);
+        Task updated = makeTaskWithDetails(
+            *current, draft, QDateTime::currentDateTimeUtc());
+        if (!m_repository.update(updated)) {
+            return TaskResult::failure(TaskError::NotFound,
+                                       QStringLiteral("Task was not found during update."));
         }
         emit tasksChanged();
         return TaskResult::success(std::move(updated));
@@ -912,54 +859,39 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
     }
 }
 
+TaskResult TaskService::startTask(const TaskId &id)
+{
+    return applyTransition(id, TaskTransition::Start);
+}
+
+TaskResult TaskService::cancelTask(const TaskId &id)
+{
+    return applyTransition(id, TaskTransition::Cancel);
+}
+
+TaskResult TaskService::completeTask(const TaskId &id)
+{
+    return applyTransition(id, TaskTransition::Complete);
+}
+
+TaskResult TaskService::redoTask(const TaskId &id)
+{
+    return applyTransition(id, TaskTransition::Redo);
+}
+
 TaskResult TaskService::archiveTask(const TaskId &id)
 {
-    try {
-        const QList<Task> tasks = m_repository.findAll();
-        const Task *current = findTaskInList(tasks, id);
-        if (current == nullptr) {
-            return TaskResult::failure(TaskError::NotFound,
-                                       QStringLiteral("Task was not found."));
-        }
-        if (current->status() == TaskStatus::Archived) {
-            // 已归档任务是幂等成功，没有实际写入，因此不发出 tasksChanged。
-            return TaskResult::success(*current);
-        }
-
-        const TaskDraft archivedDraft{current->title(),
-                                      current->description(),
-                                      current->priority(),
-                                      TaskStatus::Archived,
-                                      current->deadline(),
-                                      current->estimatedMinutes()};
-        // 软删除记录当前状态，恢复时才能回到归档前的工作阶段。
-        Task archived = makeTask(*current,
-                                 archivedDraft,
-                                 current->status(),
-                                 QDateTime::currentDateTimeUtc());
-        QList<Task> archivedTasks = tasks;
-        replaceTaskSnapshot(archivedTasks, archived);
-        const QList<TaskDependency> dependencies =
-            m_dependencyRepository.findAllDependencies();
-        if (const auto dependencyFailure =
-                dependencyStateFailure(archivedTasks, dependencies, id)) {
-            return *dependencyFailure;
-        }
-        if (!m_repository.update(archived)) {
-            return TaskResult::failure(TaskError::NotFound,
-                                       QStringLiteral("Task was not found during archive."));
-        }
-        emit tasksChanged();
-        return TaskResult::success(std::move(archived));
-    } catch (const RepositoryException &exception) {
-        return persistenceFailure(exception);
-    } catch (...) {
-        return unexpectedPersistenceFailure();
-    }
+    return applyTransition(id, TaskTransition::Archive);
 }
 
 TaskResult TaskService::restoreTask(const TaskId &id)
 {
+    return applyTransition(id, TaskTransition::Restore);
+}
+
+TaskResult TaskService::applyTransition(const TaskId &id,
+                                        const TaskTransition transition)
+{
     try {
         const QList<Task> tasks = m_repository.findAll();
         const Task *current = findTaskInList(tasks, id);
@@ -967,59 +899,64 @@ TaskResult TaskService::restoreTask(const TaskId &id)
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
         }
-        if (current->status() != TaskStatus::Archived) {
-            return TaskResult::failure(TaskError::InvalidStatus,
-                                       QStringLiteral("Only archived tasks can be restored."));
-        }
 
-        TaskStatus restoredStatus = current->statusBeforeArchive().value_or(TaskStatus::Todo);
-        if (restoredStatus == TaskStatus::Archived || !isValidStatus(restoredStatus)) {
-            // 对缺失或非法的旧数据采用安全的待办状态，避免恢复后仍处于归档。
-            restoredStatus = TaskStatus::Todo;
-        }
-        const QList<TaskId> conflictingIds = restoredStatus == TaskStatus::InProgress
-            ? otherInProgressTaskIds(tasks, id)
-            : QList<TaskId>{};
-        if (!conflictingIds.isEmpty()) {
+        const std::optional<TaskStatus> targetStatus =
+            TaskStateMachine::targetStatus(*current, transition);
+        if (!targetStatus.has_value()) {
             return TaskResult::failure(
-                TaskError::InProgressConflict,
-                QStringLiteral("Another task is already in progress."),
-                TaskErrorContext{{}, conflictingIds, {}});
+                TaskError::InvalidTaskTransition,
+                QStringLiteral("The task state does not allow this transition."),
+                TaskErrorContext{{}, {id}, {}});
         }
 
-        const TaskDraft restoredDraft{current->title(),
-                                      current->description(),
-                                      current->priority(),
-                                      restoredStatus,
-                                      current->deadline(),
-                                      current->estimatedMinutes()};
-        // 恢复完成后清空恢复点，使实体重新满足非归档状态不携带历史状态的不变量。
-        Task restored = makeTask(*current,
-                                 restoredDraft,
-                                 std::nullopt,
-                                 QDateTime::currentDateTimeUtc());
-        QList<Task> restoredTasks = tasks;
-        replaceTaskSnapshot(restoredTasks, restored);
-        const QList<TaskDependency> dependencies =
-            m_dependencyRepository.findAllDependencies();
-        if (const auto dependencyFailure =
-                dependencyStateFailure(restoredTasks, dependencies, id)) {
-            return *dependencyFailure;
+        if (*targetStatus == TaskStatus::InProgress) {
+            const QList<TaskId> conflictingIds = otherInProgressTaskIds(tasks, id);
+            if (!conflictingIds.isEmpty()) {
+                return TaskResult::failure(
+                    TaskError::InProgressConflict,
+                    QStringLiteral("Another task is already in progress."),
+                    TaskErrorContext{{}, conflictingIds, {}});
+            }
         }
+
+        const std::optional<TaskStatus> statusBeforeArchive =
+            transition == TaskTransition::Archive
+            ? std::optional<TaskStatus>{current->status()}
+            : std::nullopt;
+        Task transitioned = makeTaskWithStatus(
+            *current,
+            *targetStatus,
+            statusBeforeArchive,
+            QDateTime::currentDateTimeUtc());
+
+        // Cancel 会让依赖边停止阻塞，只可能修复而不会制造后继冲突；
+        // 因此必须绕过受保护后继检查，避免旧的无关异常阻止用户取消任务。
+        if (transition != TaskTransition::Cancel) {
+            QList<Task> transitionedTasks = tasks;
+            replaceTaskSnapshot(transitionedTasks, transitioned);
+            const QList<TaskDependency> dependencies =
+                m_dependencyRepository.findAllDependencies();
+            if (const auto dependencyFailure = dependencyStateFailure(
+                    transitionedTasks, dependencies, id)) {
+                return *dependencyFailure;
+            }
+        }
+
         try {
-            if (!m_repository.update(restored)) {
+            if (!m_repository.update(transitioned)) {
                 return TaskResult::failure(
                     TaskError::NotFound,
-                    QStringLiteral("Task was not found during restore."));
+                    QStringLiteral("Task was not found during state transition."));
             }
         } catch (const RepositoryException &exception) {
-            if (restoredStatus == TaskStatus::InProgress) {
+            if (*targetStatus == TaskStatus::InProgress) {
                 return mapInProgressWriteFailure(m_repository, id, exception);
             }
             return persistenceFailure(exception);
         }
+
         emit tasksChanged();
-        return TaskResult::success(std::move(restored));
+        return TaskResult::success(std::move(transitioned));
     } catch (const RepositoryException &exception) {
         return persistenceFailure(exception);
     } catch (...) {

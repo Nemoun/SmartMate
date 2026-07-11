@@ -40,6 +40,7 @@ public:
     [[nodiscard]] QList<TaskId> predecessorIds(const TaskId &taskId) const;
     [[nodiscard]] QList<TaskId> successorIds(const TaskId &taskId) const;
     [[nodiscard]] QList<TaskId> unsatisfiedPredecessorIds(const TaskId &taskId) const;
+    [[nodiscard]] QList<TaskId> cancelledPredecessorIds(const TaskId &taskId) const;
     [[nodiscard]] TaskDependencyState dependencyState(const TaskId &taskId) const;
     [[nodiscard]] const QList<TaskDependency> &dependencies() const noexcept;
 
@@ -49,7 +50,11 @@ public:
     [[nodiscard]] QList<TaskId> connectedTaskIds(
         const QList<TaskId> &seedTaskIds) const;
 
-    /// Done 以及“归档前为 Done”的任务均满足 Finish-to-Start 前置。
+    /// 返回前置任务对 Finish-to-Start 边的结构化解析结果。
+    [[nodiscard]] static TaskDependencyResolution dependencyResolution(
+        const Task &task) noexcept;
+
+    /// 仅判断前置是否以 Done 满足关系；判断阻塞必须改用 dependencyResolution。
     [[nodiscard]] static bool satisfiesDependency(const Task &task) noexcept;
 
 private:

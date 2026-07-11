@@ -28,7 +28,7 @@ class TaskEditorViewModel final : public QAbstractListModel {
     Q_PROPERTY(bool editMode READ editMode NOTIFY modeChanged)
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY titleChanged)
     Q_PROPERTY(QString description READ description WRITE setDescription NOTIFY descriptionChanged)
-    Q_PROPERTY(int statusIndex READ statusIndex WRITE setStatusIndex NOTIFY statusIndexChanged)
+    Q_PROPERTY(QString currentStatusText READ currentStatusText NOTIFY currentStatusTextChanged)
     Q_PROPERTY(int priorityIndex READ priorityIndex WRITE setPriorityIndex NOTIFY priorityIndexChanged)
     Q_PROPERTY(bool hasDeadline READ hasDeadline NOTIFY deadlineChanged)
     Q_PROPERTY(QString deadlineDisplayText READ deadlineDisplayText NOTIFY deadlineChanged)
@@ -45,7 +45,6 @@ class TaskEditorViewModel final : public QAbstractListModel {
     Q_PROPERTY(int estimatedMinutePart READ estimatedMinutePart NOTIFY estimatedDurationChanged)
     Q_PROPERTY(int minimumEstimatedMinutes READ minimumEstimatedMinutes CONSTANT)
     Q_PROPERTY(int maximumEstimatedMinutes READ maximumEstimatedMinutes CONSTANT)
-    Q_PROPERTY(QStringList statusOptions READ statusOptions CONSTANT)
     Q_PROPERTY(QStringList priorityOptions READ priorityOptions CONSTANT)
     Q_PROPERTY(bool dirty READ dirty NOTIFY formStateChanged)
     Q_PROPERTY(bool canSave READ canSave NOTIFY formStateChanged)
@@ -90,8 +89,8 @@ public:
     void setTitle(const QString &title);
     [[nodiscard]] QString description() const;
     void setDescription(const QString &description);
-    [[nodiscard]] int statusIndex() const noexcept;
-    void setStatusIndex(int statusIndex);
+    /// 状态是领域状态机的只读投影；编辑器不得直接修改任务状态。
+    [[nodiscard]] QString currentStatusText() const;
     [[nodiscard]] int priorityIndex() const noexcept;
     void setPriorityIndex(int priorityIndex);
     [[nodiscard]] bool hasDeadline() const noexcept;
@@ -109,7 +108,6 @@ public:
     [[nodiscard]] int minimumEstimatedMinutes() const noexcept;
     [[nodiscard]] int maximumEstimatedMinutes() const noexcept;
 
-    [[nodiscard]] QStringList statusOptions() const;
     [[nodiscard]] QStringList priorityOptions() const;
     [[nodiscard]] bool dirty() const noexcept;
     [[nodiscard]] bool canSave() const noexcept;
@@ -150,7 +148,7 @@ signals:
     void modeChanged();
     void titleChanged();
     void descriptionChanged();
-    void statusIndexChanged();
+    void currentStatusTextChanged();
     void priorityIndexChanged();
     void deadlineChanged();
     void estimatedDurationChanged();
@@ -166,7 +164,6 @@ private:
     struct Snapshot {
         QString title;
         QString description;
-        int statusIndex{0};
         int priorityIndex{1};
         std::optional<QDateTime> deadline;
         std::optional<int> estimatedMinutes;
@@ -176,7 +173,10 @@ private:
     };
 
     [[nodiscard]] Snapshot currentSnapshot() const;
-    void replaceDraft(const Snapshot &draft, const QString &taskId, bool editMode);
+    void replaceDraft(const Snapshot &draft,
+                      const QString &taskId,
+                      bool editMode,
+                      model::TaskStatus currentStatus = model::TaskStatus::Todo);
     void replaceCandidates(QList<model::Task> candidates);
     void notifyCandidateSelectionChanged();
     void rememberCurrentDraft();
@@ -195,7 +195,8 @@ private:
     bool m_editMode{false};
     QString m_title;
     QString m_description;
-    int m_statusIndex{0};
+    /// 仅用于展示当前持久化状态；所有改变都必须通过任务列表的显式状态命令。
+    model::TaskStatus m_currentStatus{model::TaskStatus::Todo};
     int m_priorityIndex{1};
     /// 保存原始精度；只有用户重新选择时才归零到分钟。
     std::optional<QDateTime> m_deadline;

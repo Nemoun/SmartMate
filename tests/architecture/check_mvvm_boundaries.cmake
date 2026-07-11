@@ -149,6 +149,10 @@ foreach(qml_file IN LISTS qml_files)
         record_violation("${qml_file}"
             "View appears to contain dependency graph traversal or ordering logic")
     endif()
+    if(qml_lower MATCHES "status(index|options)")
+        record_violation("${qml_file}"
+            "View exposes task status as an editable field instead of explicit commands")
+    endif()
     if(qml_lower MATCHES "(adjacency|breadth[ _-]*first|math\\.(atan2|sqrt|hypot))"
        OR qml_lower MATCHES "(^|[^a-z])(dfs|bfs)([^a-z]|$)")
         record_violation("${qml_file}"

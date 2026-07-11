@@ -172,11 +172,14 @@ Page {
                                 required property real arrowRightX
                                 required property real arrowRightY
                                 required property bool satisfied
+                                required property bool cancelled
                                 required property bool highlighted
 
-                                readonly property color edgeColor: satisfied
-                                                                   ? "#12b76a"
-                                                                   : "#f79009"
+                                readonly property color edgeColor: cancelled
+                                                                   ? "#98a2b3"
+                                                                   : satisfied
+                                                                     ? "#12b76a"
+                                                                     : "#f79009"
 
                                 objectName: "graphEdge_" + predecessorId + "_" + successorId
                                 width: graphCanvas.width

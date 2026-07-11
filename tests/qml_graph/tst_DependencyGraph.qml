@@ -103,6 +103,34 @@ TestCase {
         compare(edge.arrowTipY, edge.endY)
     }
 
+    function test_cancelledEdgeUsesGreyProjectionAndRedoReactivatesIt() {
+        showGraphPage()
+        const edgeRepeater = findChild(subject, "dependencyGraphEdgeRepeater")
+        verify(edgeRepeater !== null)
+        tryCompare(edgeRepeater, "count", 1)
+        let edge = edgeRepeater.itemAt(0)
+        verify(edge !== null)
+        compare(edge.cancelled, false)
+        compare(edge.satisfied, false)
+
+        verify(graphTestAppViewModel.taskList.cancelTask(graphPredecessorId),
+               graphTestAppViewModel.taskList.errorMessage)
+        tryVerify(function() {
+            const current = edgeRepeater.itemAt(0)
+            return current !== null && current.cancelled
+        })
+        edge = edgeRepeater.itemAt(0)
+        compare(edge.edgeColor, "#98a2b3")
+
+        // 重做只改变任务状态，SQLite中的边没有被删除，图投影重新回到待满足。
+        verify(graphTestAppViewModel.taskList.redoTask(graphPredecessorId),
+               graphTestAppViewModel.taskList.errorMessage)
+        tryVerify(function() {
+            const current = edgeRepeater.itemAt(0)
+            return current !== null && !current.cancelled && !current.satisfied
+        })
+    }
+
     function test_zoomIsClampedAndCanResetToOneHundredPercent() {
         const page = showGraphPage()
         const viewport = findChild(subject, "dependencyGraphViewport")

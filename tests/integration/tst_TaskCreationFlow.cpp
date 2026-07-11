@@ -10,8 +10,11 @@
 #include <QTest>
 #include <QUuid>
 
+#include <algorithm>
+
 using smartmate::model::TaskCreationRequest;
 using smartmate::model::TaskDraft;
+using smartmate::model::TaskDependencyResolution;
 using smartmate::model::TaskGraphNode;
 using smartmate::model::TaskId;
 using smartmate::model::TaskPriority;
@@ -29,6 +32,7 @@ private slots:
     void createsAndReadsTaskWhenOptionalDescriptionIsUntouched();
     void derivedSearchAndOrderingDoNotModifyStoredTasks();
     void atomicallyCreatesDependencyAndUnlocksAfterReopen();
+    void cancelledDependencyRemainsStoredAndDerivedAfterReopen();
 };
 
 void TaskCreationFlowTest::createsAndReadsTaskWhenOptionalDescriptionIsUntouched()
@@ -161,16 +165,8 @@ void TaskCreationFlowTest::atomicallyCreatesDependencyAndUnlocksAfterReopen()
         QVERIFY(blockedSuccessor->dependencyState.blocked);
         QCOMPARE(blockedSuccessor->dependencyLevel, 1);
 
-        const auto storedPredecessor = service.findTask(predecessorId);
-        QVERIFY(storedPredecessor.ok());
-        TaskDraft completedDraft;
-        completedDraft.title = storedPredecessor.value->title();
-        completedDraft.description = storedPredecessor.value->description();
-        completedDraft.priority = storedPredecessor.value->priority();
-        completedDraft.status = TaskStatus::Done;
-        completedDraft.deadline = storedPredecessor.value->deadline();
-        completedDraft.estimatedMinutes = storedPredecessor.value->estimatedMinutes();
-        QVERIFY(service.updateTask(predecessorId, completedDraft).ok());
+        QVERIFY(service.startTask(predecessorId).ok());
+        QVERIFY(service.completeTask(predecessorId).ok());
 
         const auto unlockedSnapshot = service.taskGraphSnapshot();
         QVERIFY(unlockedSnapshot.ok());
@@ -179,6 +175,64 @@ void TaskCreationFlowTest::atomicallyCreatesDependencyAndUnlocksAfterReopen()
         QVERIFY(unlockedSuccessor != nullptr);
         QVERIFY(!unlockedSuccessor->dependencyState.blocked);
         QVERIFY(unlockedSuccessor->dependencyState.unsatisfiedPredecessorIds.isEmpty());
+    }
+}
+
+void TaskCreationFlowTest::cancelledDependencyRemainsStoredAndDerivedAfterReopen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("smartmate.db"));
+
+    TaskId predecessorId;
+    TaskId successorId;
+    {
+        SqliteTaskRepository repository{databasePath};
+        TaskService service{repository, repository, repository};
+        TaskDraft predecessorDraft;
+        predecessorDraft.title = QStringLiteral("可取消前置");
+        const auto predecessor = service.createTask(predecessorDraft);
+        QVERIFY(predecessor.ok());
+        predecessorId = predecessor.value->id();
+
+        TaskDraft successorDraft;
+        successorDraft.title = QStringLiteral("取消后解锁的后继");
+        const auto successor = service.createTask(
+            TaskCreationRequest{successorDraft, {predecessorId}});
+        QVERIFY(successor.ok());
+        successorId = successor.value->id();
+        QVERIFY(service.cancelTask(predecessorId).ok());
+    }
+
+    {
+        SqliteTaskRepository repository{databasePath};
+        TaskService service{repository, repository, repository};
+        const auto dependencies = service.listDependencies();
+        QVERIFY(dependencies.ok());
+        QCOMPARE(dependencies.value->size(), 1);
+        QCOMPARE(dependencies.value->constFirst().predecessorId, predecessorId);
+        QCOMPARE(dependencies.value->constFirst().successorId, successorId);
+
+        const auto snapshot = service.taskGraphSnapshot();
+        QVERIFY(snapshot.ok());
+        QCOMPARE(snapshot.value->edges.size(), 1);
+        QCOMPARE(snapshot.value->edges.constFirst().resolution,
+                 TaskDependencyResolution::Cancelled);
+        const auto successorNode = std::find_if(
+            snapshot.value->nodes.cbegin(), snapshot.value->nodes.cend(),
+            [&successorId](const TaskGraphNode &node) {
+                return node.task.id() == successorId;
+            });
+        QVERIFY(successorNode != snapshot.value->nodes.cend());
+        QVERIFY(!successorNode->dependencyState.blocked);
+        QCOMPARE(successorNode->dependencyState.cancelledPredecessorIds,
+                 QList<TaskId>{predecessorId});
+
+        QVERIFY(service.redoTask(predecessorId).ok());
+        const auto reactivated = service.taskGraphSnapshot();
+        QVERIFY(reactivated.ok());
+        QCOMPARE(reactivated.value->edges.constFirst().resolution,
+                 TaskDependencyResolution::Pending);
     }
 }
 

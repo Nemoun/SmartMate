@@ -143,7 +143,7 @@ private slots:
     void listFilterPropertiesNotifyOnceAndRejectInvalidIndexes();
     void listRetainsFiltersAndStableTaskIdAcrossServiceReloads();
     void listSchedulesMinuteRefreshForTimeSensitiveReasons();
-    void listArchivesAndRestoresByStableTaskId();
+    void listProjectsAndExecutesStateActionsByStableTaskId();
     void archivedTasksCannotOpenEditorUntilRestored();
     void listExposesAndClearsChineseErrors();
     void listProjectsBlockingAndUnlockInformation();
@@ -431,7 +431,7 @@ void TaskViewModelsTest::listRetainsFiltersAndStableTaskIdAcrossServiceReloads()
 {
     const Task stored = task(
         QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-        QStringLiteral("needle task"), TaskStatus::Todo, 1700000001000,
+        QStringLiteral("needle task"), TaskStatus::Done, 1700000001000,
         TaskPriority::Urgent);
     const Task other = task(
         QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
@@ -480,9 +480,9 @@ void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
     QVERIFY(timers.constFirst()->isActive());
 }
 
-void TaskViewModelsTest::listArchivesAndRestoresByStableTaskId()
+void TaskViewModelsTest::listProjectsAndExecutesStateActionsByStableTaskId()
 {
-    // 排序或筛选改变行号后，归档与恢复仍必须只依赖稳定 TaskId。
+    // 每次刷新都可能改变行号；全部状态命令必须始终使用稳定 TaskId。
     const Task stored = task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
                              QStringLiteral("archive me"), TaskStatus::Todo,
                              1700000001000);
@@ -491,26 +491,71 @@ void TaskViewModelsTest::listArchivesAndRestoresByStableTaskId()
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
     TaskListViewModel viewModel{service};
+    QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
+    const QString stableId = idAt(viewModel, 0);
 
-    QVERIFY(viewModel.archiveTask(idAt(viewModel, 0)));
+    const auto action = [&viewModel](const TaskListViewModel::Role role) {
+        return viewModel.data(viewModel.index(0), role).toBool();
+    };
+    const auto verifyActions = [&action](const bool canStart,
+                                         const bool canCancel,
+                                         const bool canComplete,
+                                         const bool canRedo,
+                                         const bool canArchive,
+                                         const bool canRestore) {
+        QCOMPARE(action(TaskListViewModel::CanStartRole), canStart);
+        QCOMPARE(action(TaskListViewModel::CanCancelRole), canCancel);
+        QCOMPARE(action(TaskListViewModel::CanCompleteRole), canComplete);
+        QCOMPARE(action(TaskListViewModel::CanRedoRole), canRedo);
+        QCOMPARE(action(TaskListViewModel::CanArchiveRole), canArchive);
+        QCOMPARE(action(TaskListViewModel::CanRestoreRole), canRestore);
+    };
+
+    verifyActions(true, true, false, false, false, false);
+
+    // Todo 不得跳过 InProgress 直接完成；拒绝时不写入也不通知。
+    QVERIFY(!viewModel.completeTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+    QCOMPARE(changedSpy.count(), 0);
+    viewModel.clearError();
+
+    QVERIFY(viewModel.startTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::InProgress);
+    verifyActions(false, true, true, false, false, false);
+
+    QVERIFY(viewModel.completeTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Done);
+    verifyActions(false, false, false, true, true, false);
+
+    QVERIFY(viewModel.redoTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+    QVERIFY(viewModel.cancelTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Cancelled);
+    verifyActions(false, false, false, true, true, false);
+
+    QVERIFY(viewModel.archiveTask(stableId));
     QCOMPARE(viewModel.count(), 0);
     QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Archived);
 
     viewModel.setShowArchived(true);
     QCOMPARE(viewModel.count(), 1);
-    QVERIFY(viewModel.restoreTask(idAt(viewModel, 0)));
+    QCOMPARE(idAt(viewModel, 0), stableId);
+    verifyActions(false, false, false, false, false, true);
+    QVERIFY(viewModel.restoreTask(stableId));
     QCOMPARE(viewModel.count(), 0);
 
     viewModel.setShowArchived(false);
     QCOMPARE(viewModel.count(), 1);
-    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+    QCOMPARE(idAt(viewModel, 0), stableId);
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Cancelled);
+    QCOMPARE(changedSpy.count(), 6);
 }
 
 void TaskViewModelsTest::archivedTasksCannotOpenEditorUntilRestored()
 {
     const Task stored = task(
         QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-        QStringLiteral("restore before editing"), TaskStatus::Todo,
+        QStringLiteral("restore before editing"), TaskStatus::Done,
         1700000001000);
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
@@ -634,26 +679,41 @@ void TaskViewModelsTest::dependencyDraftCancelDoesNotChangeModel()
     const Task unselectedArchived = task(
         QStringLiteral("{55555555-5555-5555-5555-555555555555}"),
         QStringLiteral("不可新增归档"), TaskStatus::Archived, 1700000005000);
+    const Task selectedCancelled = task(
+        QStringLiteral("{66666666-6666-6666-6666-666666666666}"),
+        QStringLiteral("原有取消前置"), TaskStatus::Cancelled, 1700000006000);
+    const Task unselectedCancelled = task(
+        QStringLiteral("{77777777-7777-7777-7777-777777777777}"),
+        QStringLiteral("不可新增取消"), TaskStatus::Cancelled, 1700000007000);
     FakeTaskRepository repository{{target, candidate, completed,
-                                   selectedArchived, unselectedArchived}};
+                                   selectedArchived, unselectedArchived,
+                                   selectedCancelled, unselectedCancelled}};
     FakeTaskDependencyRepository dependencyRepository{{
         TaskDependency{selectedArchived.id(), target.id()},
+        TaskDependency{selectedCancelled.id(), target.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
     TaskDependencyViewModel editor{service};
 
     QVERIFY(editor.beginEdit(target.id().toString(QUuid::WithoutBraces)));
-    QCOMPARE(editor.count(), 3);
-    QCOMPARE(editor.selectedCount(), 1);
+    // 已取消任务不得作为新候选，但已有取消关系必须继续显示并允许移除。
+    QCOMPARE(editor.count(), 4);
+    QCOMPARE(editor.selectedCount(), 2);
     QVERIFY(!editor.dirty());
 
     const QString candidateId = candidate.id().toString(QUuid::WithoutBraces);
     const int candidateRow = dependencyRowForId(editor, candidateId);
     const int archivedRow = dependencyRowForId(
         editor, selectedArchived.id().toString(QUuid::WithoutBraces));
+    const int cancelledRow = dependencyRowForId(
+        editor, selectedCancelled.id().toString(QUuid::WithoutBraces));
     QVERIFY(candidateRow >= 0);
     QVERIFY(archivedRow >= 0);
+    QVERIFY(cancelledRow >= 0);
+    QCOMPARE(dependencyRowForId(
+                 editor, unselectedCancelled.id().toString(QUuid::WithoutBraces)),
+             -1);
     QCOMPARE(editor.data(editor.index(candidateRow),
                          TaskDependencyViewModel::ShortIdRole).toString(),
              QStringLiteral("22222222"));
@@ -664,17 +724,22 @@ void TaskViewModelsTest::dependencyDraftCancelDoesNotChangeModel()
                          TaskDependencyViewModel::SelectedRole).toBool(), true);
     QCOMPARE(editor.data(editor.index(archivedRow),
                          TaskDependencyViewModel::SelectableRole).toBool(), true);
+    QCOMPARE(editor.data(editor.index(cancelledRow),
+                         TaskDependencyViewModel::SelectedRole).toBool(), true);
+    QCOMPARE(editor.data(editor.index(cancelledRow),
+                         TaskDependencyViewModel::SelectableRole).toBool(), true);
 
     QVERIFY(editor.setPredecessorSelected(candidateId, true));
     QVERIFY(editor.dirty());
-    QCOMPARE(editor.selectedCount(), 2);
+    QCOMPARE(editor.selectedCount(), 3);
     editor.cancel();
 
     QVERIFY(!editor.dirty());
-    QCOMPARE(editor.selectedCount(), 1);
+    QCOMPARE(editor.selectedCount(), 2);
     QCOMPARE(dependencyRepository.replaceCount(), 0);
     const QList<TaskDependency> expectedDependencies{
         TaskDependency{selectedArchived.id(), target.id()},
+        TaskDependency{selectedCancelled.id(), target.id()},
     };
     QCOMPARE(dependencyRepository.dependencies(), expectedDependencies);
 }
@@ -767,13 +832,15 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
     TaskEditorViewModel editor{service, timeZone};
 
     editor.beginCreate();
-    QCOMPARE(editor.statusOptions().size(), 5);
+    QCOMPARE(editor.currentStatusText(), QStringLiteral("待办"));
     QCOMPARE(editor.priorityOptions().size(), 4);
+    QCOMPARE(editor.metaObject()->indexOfProperty("statusIndex"), -1);
+    QCOMPARE(editor.metaObject()->indexOfProperty("statusOptions"), -1);
+    QCOMPARE(editor.metaObject()->indexOfMethod("setStatusIndex(int)"), -1);
     QVERIFY(!editor.canSave());
 
     editor.setTitle(QStringLiteral("  MVVM 大作业  "));
     editor.setDescription(QStringLiteral("实现任务编辑草稿"));
-    editor.setStatusIndex(static_cast<int>(TaskStatus::Done));
     editor.setPriorityIndex(static_cast<int>(TaskPriority::Urgent));
     QVERIFY(editor.setDeadlineSelection(2030, 6, 15, 8, 30));
     QVERIFY(editor.setEstimatedDuration(0, 1, 30));
@@ -797,7 +864,7 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
     const Task &created = repository.tasks().constFirst();
     QCOMPARE(created.title(), QStringLiteral("MVVM 大作业"));
     QCOMPARE(created.description(), QStringLiteral("实现任务编辑草稿"));
-    QCOMPARE(created.status(), TaskStatus::Done);
+    QCOMPARE(created.status(), TaskStatus::Todo);
     QCOMPARE(created.priority(), TaskPriority::Urgent);
     QCOMPARE(created.estimatedMinutes(), std::optional<int>{90});
     QCOMPARE(created.deadline()->toTimeZone(timeZone).toString(
@@ -832,10 +899,7 @@ void TaskViewModelsTest::editorCancelLeavesTheStoredTaskUnchanged()
 
 void TaskViewModelsTest::editorRejectsInvalidSelectionsAndMapsServiceErrors()
 {
-    const Task active = task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-                             QStringLiteral("active"), TaskStatus::InProgress,
-                             1700000001000);
-    FakeTaskRepository repository{{active}};
+    FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
@@ -856,14 +920,15 @@ void TaskViewModelsTest::editorRejectsInvalidSelectionsAndMapsServiceErrors()
 
     QVERIFY(editor.setDeadlineSelection(2030, 2, 3, 8, 5));
     QVERIFY(editor.setEstimatedDuration(0, 0, 30));
-    editor.setStatusIndex(static_cast<int>(TaskStatus::InProgress));
     QVERIFY(editor.canSave());
+    creationRepository.setWriteFailure(true);
     QVERIFY(!editor.save());
-    QVERIFY(editor.errorMessage().contains(QStringLiteral("已有任务")));
+    QVERIFY(editor.errorMessage().contains(QStringLiteral("数据")));
+    QVERIFY(editor.dirty());
 
-    editor.setStatusIndex(static_cast<int>(TaskStatus::Todo));
-    QVERIFY(editor.errorMessage().isEmpty());
+    creationRepository.setWriteFailure(false);
     QVERIFY(editor.save());
+    QCOMPARE(repository.tasks().constFirst().status(), TaskStatus::Todo);
 }
 
 void TaskViewModelsTest::editorSupportsDurationBoundariesAndClear()
@@ -997,7 +1062,7 @@ void TaskViewModelsTest::editorRejectsSaveWhenNothingChanged()
 void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
 {
     const Task stored = task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-                             QStringLiteral("before"), TaskStatus::Todo,
+                             QStringLiteral("before"), TaskStatus::Done,
                              1700000001000);
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
@@ -1009,6 +1074,7 @@ void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
     QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
 
     QVERIFY(editor.beginEdit(stored.id().toString(QUuid::WithoutBraces)));
+    QCOMPARE(editor.currentStatusText(), QStringLiteral("已完成"));
     editor.setTitle(QStringLiteral("after"));
     editor.setDescription(QStringLiteral("updated description"));
     editor.setPriorityIndex(static_cast<int>(TaskPriority::High));
@@ -1024,6 +1090,7 @@ void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
     QVERIFY(updated.has_value());
     QCOMPARE(updated->title(), QStringLiteral("after"));
     QCOMPARE(updated->description(), QStringLiteral("updated description"));
+    QCOMPARE(updated->status(), TaskStatus::Done);
     QCOMPARE(updated->priority(), TaskPriority::High);
     QCOMPARE(updated->estimatedMinutes(), std::optional<int>{120});
     QCOMPARE(updated->deadline()->toTimeZone(timeZone).toString(
@@ -1042,7 +1109,10 @@ void TaskViewModelsTest::editorCreationPredecessorPickerUsesIsolatedCheckpoints(
     const Task archived = task(
         QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
         QStringLiteral("已归档候选"), TaskStatus::Archived, 1700000002000);
-    FakeTaskRepository repository{{archived, active}};
+    const Task cancelled = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("已取消候选"), TaskStatus::Cancelled, 1700000003000);
+    FakeTaskRepository repository{{archived, cancelled, active}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
@@ -1075,14 +1145,8 @@ void TaskViewModelsTest::editorCreationPredecessorPickerUsesIsolatedCheckpoints(
     QCOMPARE(editor.predecessorSummaryText(), QStringLiteral("已选择 1 项"));
     editor.setTitle(QStringLiteral("实现任务页面"));
     QVERIFY(editor.canSave());
-
-    // ViewModel提供即时提示，但最终同一规则仍由TaskService权威校验。
-    editor.setStatusIndex(static_cast<int>(TaskStatus::Done));
-    QVERIFY(!editor.canSave());
-    QVERIFY(editor.validationMessage().contains(QStringLiteral("必须为待办")));
     QCOMPARE(editor.selectedPredecessorCount(), 1);
-    editor.setStatusIndex(static_cast<int>(TaskStatus::Todo));
-    QVERIFY(editor.canSave());
+    QCOMPARE(editor.currentStatusText(), QStringLiteral("待办"));
 
     editor.cancel();
     QCOMPARE(editor.predecessorCandidateCount(), 0);
@@ -1190,13 +1254,16 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
     const int endXRole = roleForName(*edges, QByteArrayLiteral("endX"));
     const int arrowTipXRole = roleForName(*edges, QByteArrayLiteral("arrowTipX"));
     const int satisfiedRole = roleForName(*edges, QByteArrayLiteral("satisfied"));
+    const int cancelledRole = roleForName(*edges, QByteArrayLiteral("cancelled"));
     const int highlightedRole = roleForName(*edges, QByteArrayLiteral("highlighted"));
-    QVERIFY(startXRole >= 0 && endXRole >= 0 && arrowTipXRole >= 0);
+    QVERIFY(startXRole >= 0 && endXRole >= 0 && arrowTipXRole >= 0
+            && satisfiedRole >= 0 && cancelledRole >= 0);
     QVERIFY(edges->data(edges->index(0, 0), endXRole).toReal()
             > edges->data(edges->index(0, 0), startXRole).toReal());
     QCOMPARE(edges->data(edges->index(0, 0), arrowTipXRole),
              edges->data(edges->index(0, 0), endXRole));
     QVERIFY(!edges->data(edges->index(0, 0), satisfiedRole).toBool());
+    QVERIFY(!edges->data(edges->index(0, 0), cancelledRole).toBool());
 
     QVERIFY(graph.selectTask(successor.id().toString(QUuid::WithoutBraces)));
     QCOMPARE(graph.selectedTaskTitle(), QStringLiteral("接口实现"));
@@ -1207,16 +1274,28 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
     QVERIFY(graph.canEditSelectedDependencies());
     QVERIFY(graph.selectedBlockingReason().contains(QStringLiteral("需求确认")));
     QVERIFY(edges->data(edges->index(0, 0), highlightedRole).toBool());
+
+    // 取消只改变边的派生解析状态；关系仍存在，并通过 cancelled 角色交给QML绘制灰色。
+    QVERIFY(service.cancelTask(predecessor.id()).ok());
+    QCOMPARE(edges->rowCount(), 1);
+    QVERIFY(!edges->data(edges->index(0, 0), satisfiedRole).toBool());
+    QVERIFY(edges->data(edges->index(0, 0), cancelledRole).toBool());
+    const int refreshedSuccessorRow = graphRowForId(
+        graph, successor.id().toString(QUuid::WithoutBraces));
+    QVERIFY(refreshedSuccessorRow >= 0);
+    QVERIFY(!graph.data(graph.index(refreshedSuccessorRow),
+                        TaskGraphViewModel::BlockedRole).toBool());
+    QVERIFY(graph.selectedBlockingReason().isEmpty());
 }
 
 void TaskViewModelsTest::graphReloadPreservesVisibleSelectionAndClearsHiddenSelection()
 {
     const Task predecessor = task(
         QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-        QStringLiteral("A"), TaskStatus::Todo, 1700000001000);
+        QStringLiteral("A"), TaskStatus::Done, 1700000001000);
     const Task successor = task(
         QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
-        QStringLiteral("B"), TaskStatus::Todo, 1700000002000);
+        QStringLiteral("B"), TaskStatus::Done, 1700000002000);
     const Task isolated = task(
         QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
         QStringLiteral("C"), TaskStatus::Done, 1700000003000);

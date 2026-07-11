@@ -168,6 +168,11 @@ TestCase {
         verify(editButton !== null)
         tryCompare(editButton, "visible", true)
 
+        // Todo 不能直接归档；先严格经过 Todo → InProgress → Done。
+        verify(testAppViewModel.taskList.startTask(alphaId),
+               testAppViewModel.taskList.errorMessage)
+        verify(testAppViewModel.taskList.completeTask(alphaId),
+               testAppViewModel.taskList.errorMessage)
         verify(testAppViewModel.taskList.archiveTask(alphaId),
                testAppViewModel.taskList.errorMessage)
         testAppViewModel.taskList.showArchived = true
@@ -191,6 +196,106 @@ TestCase {
                                "editTaskButton_" + alphaId)
         verify(editButton !== null)
         tryCompare(editButton, "visible", true)
+
+        // 恢复后的正常状态是 Done；重做回 Todo，避免污染后续依赖编辑用例。
+        verify(testAppViewModel.taskList.redoTask(alphaId),
+               testAppViewModel.taskList.errorMessage)
+    }
+
+    function test_editorShowsReadOnlyInitialStatusInsteadOfStatusSelector() {
+        const newTaskButton = findChild(subject, "newTaskButton")
+        verify(newTaskButton !== null)
+        mouseClick(newTaskButton)
+
+        const editorDialog = findChild(subject, "taskEditorDialog")
+        verify(editorDialog !== null)
+        tryCompare(editorDialog, "opened", true)
+        const statusLabel = findChild(editorDialog, "taskCurrentStatusLabel")
+        verify(statusLabel !== null)
+        verify(statusLabel.text.indexOf("初始状态：待办") >= 0)
+        compare(findChild(editorDialog, "taskStatusComboBox"), null)
+
+        testAppViewModel.taskEditor.cancel()
+        editorDialog.close()
+    }
+
+    function test_stateButtonsFollowProjectionAndCancellationRequiresConfirmation() {
+        tryVerify(function() { return taskDelegate(gammaId) !== null })
+        let delegate = taskDelegate(gammaId)
+        let startButton = findChild(delegate, "startTaskButton_" + gammaId)
+        let cancelButton = findChild(delegate, "cancelTaskButton_" + gammaId)
+        let completeButton = findChild(delegate, "completeTaskButton_" + gammaId)
+        let redoButton = findChild(delegate, "redoTaskButton_" + gammaId)
+        let archiveButton = findChild(delegate, "archiveTaskButton_" + gammaId)
+        verify(startButton !== null)
+        verify(cancelButton !== null)
+        verify(completeButton !== null)
+        verify(redoButton !== null)
+        verify(archiveButton !== null)
+        tryCompare(startButton, "visible", true)
+        tryCompare(cancelButton, "visible", true)
+        tryCompare(completeButton, "visible", false)
+        tryCompare(redoButton, "visible", false)
+        tryCompare(archiveButton, "visible", false)
+
+        mouseClick(startButton)
+        tryVerify(function() {
+            return taskDelegate(gammaId) !== null
+                   && taskDelegate(gammaId).statusText === "进行中"
+        })
+        delegate = taskDelegate(gammaId)
+        completeButton = findChild(delegate, "completeTaskButton_" + gammaId)
+        cancelButton = findChild(delegate, "cancelTaskButton_" + gammaId)
+        tryCompare(completeButton, "visible", true)
+        tryCompare(cancelButton, "visible", true)
+
+        mouseClick(completeButton)
+        tryVerify(function() {
+            return taskDelegate(gammaId) !== null
+                   && taskDelegate(gammaId).statusText === "已完成"
+        })
+        delegate = taskDelegate(gammaId)
+        redoButton = findChild(delegate, "redoTaskButton_" + gammaId)
+        archiveButton = findChild(delegate, "archiveTaskButton_" + gammaId)
+        tryCompare(redoButton, "visible", true)
+        tryCompare(archiveButton, "visible", true)
+        mouseClick(redoButton)
+        tryVerify(function() {
+            return taskDelegate(gammaId) !== null
+                   && taskDelegate(gammaId).statusText === "待办"
+        })
+
+        delegate = taskDelegate(gammaId)
+        cancelButton = findChild(delegate, "cancelTaskButton_" + gammaId)
+        mouseClick(cancelButton)
+        const cancelDialog = findChild(subject, "cancelTaskDialog")
+        verify(cancelDialog !== null)
+        tryCompare(cancelDialog, "opened", true)
+        cancelDialog.reject()
+        tryCompare(cancelDialog, "opened", false)
+        compare(taskDelegate(gammaId).statusText, "待办")
+
+        cancelButton = findChild(taskDelegate(gammaId),
+                                 "cancelTaskButton_" + gammaId)
+        mouseClick(cancelButton)
+        tryCompare(cancelDialog, "opened", true)
+        cancelDialog.accept()
+        tryVerify(function() {
+            return taskDelegate(gammaId) !== null
+                   && taskDelegate(gammaId).statusText === "已取消"
+        })
+        delegate = taskDelegate(gammaId)
+        redoButton = findChild(delegate, "redoTaskButton_" + gammaId)
+        archiveButton = findChild(delegate, "archiveTaskButton_" + gammaId)
+        tryCompare(redoButton, "visible", true)
+        tryCompare(archiveButton, "visible", true)
+
+        // 返回 Todo，保证共享内存数据库中的后续用例仍可编辑依赖。
+        mouseClick(redoButton)
+        tryVerify(function() {
+            return taskDelegate(gammaId) !== null
+                   && taskDelegate(gammaId).statusText === "待办"
+        })
     }
 
     function test_dependencyDialogShowsBlockerAndUnlockProjection() {

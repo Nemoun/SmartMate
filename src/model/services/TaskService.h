@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/TaskCreationRequest.h"
+#include "domain/TaskStateMachine.h"
 #include "repositories/ITaskCreationRepository.h"
 #include "repositories/ITaskDependencyRepository.h"
 #include "repositories/ITaskRepository.h"
@@ -23,7 +24,7 @@ public:
     /// 执行无副作用的权威业务校验：不访问 Repository，也不发出状态通知。
     [[nodiscard]] TaskValidationResult validateDraft(const TaskDraft &draft) const;
     [[nodiscard]] TaskListResult listTasks() const;
-    /// 返回新建表单可选的全部活动前置任务，排序稳定且不包含归档任务。
+    /// 返回新建关系可选的前置任务，排序稳定且不包含归档或取消任务。
     [[nodiscard]] TaskListResult listEligibleCreationPredecessors() const;
     /// 读取任务快照并应用 Model 排序策略，不持久化随时间变化的推荐排名。
     [[nodiscard]] TaskPlanResult listRecommendedTasks() const;
@@ -43,9 +44,17 @@ public:
     [[nodiscard]] TaskResult createTask(const TaskCreationRequest &request);
     /// 按稳定 TaskId 更新活动任务；归档任务必须恢复后才能修改。
     [[nodiscard]] TaskResult updateTask(const TaskId &id, const TaskDraft &draft);
-    /// 按稳定 TaskId 执行软归档，不做物理删除。
+    /// 将 Todo 转换为 InProgress；同时检查前置关系和单进行中约束。
+    [[nodiscard]] TaskResult startTask(const TaskId &id);
+    /// 将 Todo/InProgress 转换为 Cancelled；依赖边保留但立即停止阻塞后继。
+    [[nodiscard]] TaskResult cancelTask(const TaskId &id);
+    /// 将 InProgress 转换为 Done；禁止 Todo 绕过开始阶段直接完成。
+    [[nodiscard]] TaskResult completeTask(const TaskId &id);
+    /// 将 Done/Cancelled 转换为 Todo；若重新激活依赖会破坏后继状态则拒绝。
+    [[nodiscard]] TaskResult redoTask(const TaskId &id);
+    /// 仅将 Done/Cancelled 软归档，不做物理删除。
     [[nodiscard]] TaskResult archiveTask(const TaskId &id);
-    /// 恢复归档前状态；若目标状态为进行中，仍执行单进行中约束。
+    /// 恢复正常归档前状态；旧 Todo/InProgress 恢复点统一安全降级为 Todo。
     [[nodiscard]] TaskResult restoreTask(const TaskId &id);
 
 signals:
@@ -55,6 +64,10 @@ signals:
     void dependenciesChanged();
 
 private:
+    /// 复用唯一状态机执行转换，并确保一次成功命令只写入和通知一次。
+    [[nodiscard]] TaskResult applyTransition(const TaskId &id,
+                                             TaskTransition transition);
+
     // 非拥有引用，其生命周期必须长于 TaskService。
     ITaskRepository &m_repository;
     ITaskDependencyRepository &m_dependencyRepository;

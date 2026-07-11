@@ -44,6 +44,7 @@ public:
             throw model::RepositoryException("Duplicate task ID.");
         }
         m_tasks.append(task);
+        ++m_insertCount;
     }
 
     [[nodiscard]] bool update(const model::Task &task) override
@@ -55,6 +56,7 @@ public:
             return false;
         }
         m_tasks[index] = task;
+        ++m_updateCount;
         return true;
     }
 
@@ -76,6 +78,16 @@ public:
     [[nodiscard]] const QList<model::Task> &tasks() const noexcept
     {
         return m_tasks;
+    }
+
+    [[nodiscard]] int insertCount() const noexcept
+    {
+        return m_insertCount;
+    }
+
+    [[nodiscard]] int updateCount() const noexcept
+    {
+        return m_updateCount;
     }
 
     /// 仅供原子创建 Fake 在第二阶段失败时撤销尚未对外成功的测试写入。
@@ -127,6 +139,8 @@ private:
 
     QList<model::Task> m_tasks;
     std::optional<model::Task> m_competingTaskOnNextWrite;
+    int m_insertCount{0};
+    int m_updateCount{0};
     bool m_failReads{false};
     bool m_failWrites{false};
 };

@@ -23,6 +23,7 @@ enum class TaskError {
     InvalidEstimate,
     InvalidPriority,
     InvalidStatus,
+    InvalidTaskTransition,
     DependencyEndpointNotFound,
     DependencySelfReference,
     DependencyDuplicate,

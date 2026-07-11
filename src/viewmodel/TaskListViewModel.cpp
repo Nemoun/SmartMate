@@ -49,7 +49,7 @@ constexpr int priorityFilterOptionCount = 5;
     const QHash<QString, int> &titleCounts)
 {
     if (blockingIds.isEmpty()) {
-        return QStringLiteral("存在尚未完成的前置任务");
+        return QStringLiteral("存在尚未完成或取消的前置任务");
     }
 
     QStringList visibleTitles;
@@ -68,7 +68,7 @@ constexpr int priorityFilterOptionCount = 5;
             visibleTitles.push_back(QStringLiteral("“%1”").arg(title));
         }
     }
-    return QStringLiteral("等待%1完成")
+    return QStringLiteral("等待%1完成或取消")
         .arg(visibleTitles.join(QStringLiteral("、")));
 }
 }
@@ -143,6 +143,18 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
         return task.canEditDetails();
     case CanEditDependenciesRole:
         return task.status() == model::TaskStatus::Todo;
+    case CanStartRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Start);
+    case CanCancelRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Cancel);
+    case CanCompleteRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Complete);
+    case CanRedoRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Redo);
+    case CanArchiveRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Archive);
+    case CanRestoreRole:
+        return model::TaskStateMachine::canApply(task, model::TaskTransition::Restore);
     default:
         return {};
     }
@@ -168,6 +180,12 @@ QHash<int, QByteArray> TaskListViewModel::roleNames() const
         {UnlockCountRole, "unlockCount"},
         {CanEditTaskRole, "canEditTask"},
         {CanEditDependenciesRole, "canEditDependencies"},
+        {CanStartRole, "canStart"},
+        {CanCancelRole, "canCancel"},
+        {CanCompleteRole, "canComplete"},
+        {CanRedoRole, "canRedo"},
+        {CanArchiveRole, "canArchive"},
+        {CanRestoreRole, "canRestore"},
     };
 }
 
@@ -327,44 +345,78 @@ void TaskListViewModel::clearFilters()
     rebuildVisibleTasks();
 }
 
+bool TaskListViewModel::startTask(const QString &taskId)
+{
+    return performTransition(taskId, model::TaskTransition::Start);
+}
+
+bool TaskListViewModel::cancelTask(const QString &taskId)
+{
+    return performTransition(taskId, model::TaskTransition::Cancel);
+}
+
+bool TaskListViewModel::completeTask(const QString &taskId)
+{
+    return performTransition(taskId, model::TaskTransition::Complete);
+}
+
+bool TaskListViewModel::redoTask(const QString &taskId)
+{
+    return performTransition(taskId, model::TaskTransition::Redo);
+}
+
 bool TaskListViewModel::archiveTask(const QString &taskId)
 {
-    // View 只提交稳定 ID；状态转换及其业务约束全部委托给 Model Service。
-    const auto id = parseTaskId(taskId);
-    if (id.isNull()) {
-        setError(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-
-    const auto result = m_taskService.archiveTask(id);
-    if (!result.ok()) {
-        setError(taskErrorMessage(result.error));
-        return false;
-    }
-    setError({});
-    return true;
+    return performTransition(taskId, model::TaskTransition::Archive);
 }
 
 bool TaskListViewModel::restoreTask(const QString &taskId)
 {
-    const auto id = parseTaskId(taskId);
-    if (id.isNull()) {
-        setError(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-
-    const auto result = m_taskService.restoreTask(id);
-    if (!result.ok()) {
-        setError(taskErrorMessage(result.error));
-        return false;
-    }
-    setError({});
-    return true;
+    return performTransition(taskId, model::TaskTransition::Restore);
 }
 
 void TaskListViewModel::clearError()
 {
     setError({});
+}
+
+bool TaskListViewModel::performTransition(const QString &taskId,
+                                          const model::TaskTransition transition)
+{
+    const model::TaskId id = parseTaskId(taskId);
+    if (id.isNull()) {
+        setError(taskErrorMessage(model::TaskError::NotFound));
+        return false;
+    }
+
+    model::TaskResult result;
+    switch (transition) {
+    case model::TaskTransition::Start:
+        result = m_taskService.startTask(id);
+        break;
+    case model::TaskTransition::Cancel:
+        result = m_taskService.cancelTask(id);
+        break;
+    case model::TaskTransition::Complete:
+        result = m_taskService.completeTask(id);
+        break;
+    case model::TaskTransition::Redo:
+        result = m_taskService.redoTask(id);
+        break;
+    case model::TaskTransition::Archive:
+        result = m_taskService.archiveTask(id);
+        break;
+    case model::TaskTransition::Restore:
+        result = m_taskService.restoreTask(id);
+        break;
+    }
+
+    if (!result.ok()) {
+        setError(taskErrorMessage(result.error));
+        return false;
+    }
+    setError({});
+    return true;
 }
 
 QString TaskListViewModel::statusText(const model::TaskStatus status)

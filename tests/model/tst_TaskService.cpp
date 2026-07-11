@@ -58,12 +58,11 @@ namespace {
     return draft;
 }
 
-[[nodiscard]] TaskDraft draftFor(const Task &task, const TaskStatus status)
+[[nodiscard]] TaskDraft draftFor(const Task &task)
 {
     return {task.title(),
             task.description(),
             task.priority(),
-            status,
             task.deadline(),
             task.estimatedMinutes()};
 }
@@ -85,15 +84,15 @@ private slots:
     void validatesDraftWithoutRepositoryAccess();
     void validatesDraftFields();
     void acceptsDeadlineAndEstimateBoundaries();
-    void acceptsEveryStatusAndPriority();
-    void enforcesSingleInProgressTask();
-    void mapsConcurrentInProgressCreateConflict();
-    void mapsConcurrentInProgressUpdateConflict();
-    void mapsConcurrentInProgressRestoreConflict();
+    void createsEveryPriorityAsTodo();
+    void startEnforcesSingleInProgressTask();
+    void mapsConcurrentCreationFailureWithoutInventingStatusConflict();
+    void mapsConcurrentInProgressStartConflict();
+    void restoresLegacyInProgressArchiveAsTodo();
     void updatesTaskAndPreservesIdentity();
     void rejectsEditingArchivedTasks();
-    void archivesAndRestoresOriginalStatus();
-    void rejectsRestoreWhenInProgressConflicts();
+    void archivesAndRestoresTerminalStatuses();
+    void restoresLegacyArchiveWithoutInProgressConflict();
     void reportsInvalidOperationsAndMissingTasks();
     void mapsRepositoryFailures();
     void replacesDependenciesAndReportsStructuredErrors();
@@ -139,7 +138,6 @@ void TaskServiceTest::createsTaskWithEveryField()
     draft.title = QStringLiteral("  完成大作业  ");
     draft.description = QStringLiteral("实现任务模块的完整纵向链路");
     draft.priority = TaskPriority::Urgent;
-    draft.status = TaskStatus::Todo;
     draft.deadline = localDeadline;
     draft.estimatedMinutes = 180;
 
@@ -198,7 +196,8 @@ void TaskServiceTest::rejectsInvalidCreationPredecessorsWithoutWriting()
 {
     const Task active = storedTask(TaskStatus::Todo);
     const Task archived = storedTask(TaskStatus::Archived, TaskStatus::Done);
-    FakeTaskRepository repository{{active, archived}};
+    const Task cancelled = storedTask(TaskStatus::Cancelled);
+    FakeTaskRepository repository{{active, archived, cancelled}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
@@ -218,13 +217,12 @@ void TaskServiceTest::rejectsInvalidCreationPredecessorsWithoutWriting()
     QCOMPARE(service.createTask(request).error,
              TaskError::DependencyPredecessorNotEligible);
 
-    request.predecessorIds = {active.id()};
-    request.task.status = TaskStatus::Done;
+    request.predecessorIds = {cancelled.id()};
     QCOMPARE(service.createTask(request).error,
-             TaskError::DependencyTargetNotEditable);
+             TaskError::DependencyPredecessorNotEligible);
 
     QCOMPARE(creationRepository.insertCount(), 0);
-    QCOMPARE(repository.tasks().size(), 2);
+    QCOMPARE(repository.tasks().size(), 3);
     QVERIFY(dependencyRepository.dependencies().isEmpty());
     QCOMPARE(taskSpy.count(), 0);
     QCOMPARE(dependencySpy.count(), 0);
@@ -267,11 +265,15 @@ void TaskServiceTest::listsEligibleCreationPredecessors()
     const auto result = service.listEligibleCreationPredecessors();
 
     QVERIFY(result.ok());
-    QCOMPARE(result.value->size(), 4);
+    QCOMPARE(result.value->size(), 3);
     QCOMPARE(result.value->constFirst().id(), inProgress.id());
     QVERIFY(std::none_of(result.value->cbegin(), result.value->cend(),
                          [&archived](const Task &task) {
         return task.id() == archived.id();
+    }));
+    QVERIFY(std::none_of(result.value->cbegin(), result.value->cend(),
+                         [&cancelled](const Task &task) {
+        return task.id() == cancelled.id();
     }));
 }
 
@@ -370,10 +372,6 @@ void TaskServiceTest::validatesDraftFields()
     draft.priority = static_cast<TaskPriority>(999);
     expectError(draft, TaskError::InvalidPriority);
 
-    draft = validDraft();
-    draft.status = static_cast<TaskStatus>(999);
-    expectError(draft, TaskError::InvalidStatus);
-
     QCOMPARE(changedSpy.count(), 0);
     QVERIFY(repository.tasks().isEmpty());
 }
@@ -402,46 +400,33 @@ void TaskServiceTest::acceptsDeadlineAndEstimateBoundaries()
     QCOMPARE(service.validateDraft(draft).error, TaskError::InvalidEstimate);
 }
 
-void TaskServiceTest::acceptsEveryStatusAndPriority()
+void TaskServiceTest::createsEveryPriorityAsTodo()
 {
-    const QList<TaskStatus> statuses{TaskStatus::Todo,
-                                     TaskStatus::InProgress,
-                                     TaskStatus::Done,
-                                     TaskStatus::Cancelled,
-                                     TaskStatus::Archived};
     const QList<TaskPriority> priorities{TaskPriority::Low,
                                          TaskPriority::Normal,
                                          TaskPriority::High,
                                          TaskPriority::Urgent};
 
-    for (const TaskStatus status : statuses) {
-        for (const TaskPriority priority : priorities) {
-            FakeTaskRepository repository;
-            FakeTaskDependencyRepository dependencyRepository;
-            FakeTaskCreationRepository creationRepository{repository,
-                                                           dependencyRepository};
-            TaskService service{repository, dependencyRepository,
-                                creationRepository};
-            TaskDraft draft = validDraft();
-            draft.status = status;
-            draft.priority = priority;
+    for (const TaskPriority priority : priorities) {
+        FakeTaskRepository repository;
+        FakeTaskDependencyRepository dependencyRepository;
+        FakeTaskCreationRepository creationRepository{repository,
+                                                       dependencyRepository};
+        TaskService service{repository, dependencyRepository,
+                            creationRepository};
+        TaskDraft draft = validDraft();
+        draft.priority = priority;
 
-            const auto result = service.createTask(draft);
+        const auto result = service.createTask(draft);
 
-            QVERIFY(result.ok());
-            QCOMPARE(result.value->status(), status);
-            QCOMPARE(result.value->priority(), priority);
-            if (status == TaskStatus::Archived) {
-                QCOMPARE(result.value->statusBeforeArchive(),
-                         std::optional<TaskStatus>{TaskStatus::Todo});
-            } else {
-                QVERIFY(!result.value->statusBeforeArchive().has_value());
-            }
-        }
+        QVERIFY(result.ok());
+        QCOMPARE(result.value->status(), TaskStatus::Todo);
+        QCOMPARE(result.value->priority(), priority);
+        QVERIFY(!result.value->statusBeforeArchive().has_value());
     }
 }
 
-void TaskServiceTest::enforcesSingleInProgressTask()
+void TaskServiceTest::startEnforcesSingleInProgressTask()
 {
     const Task active = storedTask(TaskStatus::InProgress);
     const Task todo = storedTask(TaskStatus::Todo);
@@ -451,22 +436,15 @@ void TaskServiceTest::enforcesSingleInProgressTask()
     TaskService service{repository, dependencyRepository, creationRepository};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
 
-    TaskDraft createDraft = validDraft();
-    createDraft.status = TaskStatus::InProgress;
-    const auto createResult = service.createTask(createDraft);
-    QCOMPARE(createResult.error, TaskError::InProgressConflict);
-
-    TaskDraft updateDraft = validDraft();
-    updateDraft.status = TaskStatus::InProgress;
-    const auto updateResult = service.updateTask(todo.id(), updateDraft);
-    QCOMPARE(updateResult.error, TaskError::InProgressConflict);
+    const auto startResult = service.startTask(todo.id());
+    QCOMPARE(startResult.error, TaskError::InProgressConflict);
 
     QCOMPARE(changedSpy.count(), 0);
     QCOMPARE(repository.tasks().size(), 2);
     QCOMPARE(repository.findById(todo.id())->status(), TaskStatus::Todo);
 }
 
-void TaskServiceTest::mapsConcurrentInProgressCreateConflict()
+void TaskServiceTest::mapsConcurrentCreationFailureWithoutInventingStatusConflict()
 {
     // 模拟业务预检通过后，另一执行方抢先写入进行中任务。
     FakeTaskRepository repository;
@@ -476,17 +454,16 @@ void TaskServiceTest::mapsConcurrentInProgressCreateConflict()
     TaskService service{repository, dependencyRepository, creationRepository};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
     TaskDraft draft = validDraft();
-    draft.status = TaskStatus::InProgress;
 
     const auto result = service.createTask(draft);
 
-    QCOMPARE(result.error, TaskError::InProgressConflict);
+    QCOMPARE(result.error, TaskError::PersistenceFailure);
     QCOMPARE(changedSpy.count(), 0);
     QCOMPARE(repository.tasks().size(), 1);
     QCOMPARE(repository.tasks().constFirst().status(), TaskStatus::InProgress);
 }
 
-void TaskServiceTest::mapsConcurrentInProgressUpdateConflict()
+void TaskServiceTest::mapsConcurrentInProgressStartConflict()
 {
     const Task target = storedTask(TaskStatus::Todo);
     FakeTaskRepository repository{{target}};
@@ -495,10 +472,7 @@ void TaskServiceTest::mapsConcurrentInProgressUpdateConflict()
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
-    TaskDraft draft = validDraft();
-    draft.status = TaskStatus::InProgress;
-
-    const auto result = service.updateTask(target.id(), draft);
+    const auto result = service.startTask(target.id());
 
     QCOMPARE(result.error, TaskError::InProgressConflict);
     QCOMPARE(changedSpy.count(), 0);
@@ -506,11 +480,11 @@ void TaskServiceTest::mapsConcurrentInProgressUpdateConflict()
     QCOMPARE(repository.tasks().size(), 2);
 }
 
-void TaskServiceTest::mapsConcurrentInProgressRestoreConflict()
+void TaskServiceTest::restoresLegacyInProgressArchiveAsTodo()
 {
     const Task archived = storedTask(TaskStatus::Archived, TaskStatus::InProgress);
-    FakeTaskRepository repository{{archived}};
-    repository.setCompetingTaskOnNextWrite(storedTask(TaskStatus::InProgress));
+    const Task active = storedTask(TaskStatus::InProgress);
+    FakeTaskRepository repository{{archived, active}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
@@ -518,9 +492,10 @@ void TaskServiceTest::mapsConcurrentInProgressRestoreConflict()
 
     const auto result = service.restoreTask(archived.id());
 
-    QCOMPARE(result.error, TaskError::InProgressConflict);
-    QCOMPARE(changedSpy.count(), 0);
-    QCOMPARE(repository.findById(archived.id())->status(), TaskStatus::Archived);
+    QVERIFY(result.ok());
+    QCOMPARE(result.value->status(), TaskStatus::Todo);
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(repository.findById(archived.id())->status(), TaskStatus::Todo);
     QCOMPARE(repository.tasks().size(), 2);
 }
 
@@ -537,7 +512,6 @@ void TaskServiceTest::updatesTaskAndPreservesIdentity()
     draft.title = QStringLiteral("  Updated title ");
     draft.description = QStringLiteral("Updated description");
     draft.priority = TaskPriority::High;
-    draft.status = TaskStatus::Done;
     draft.deadline = QDateTime::fromString(QStringLiteral("2028-01-02T12:00:00+02:00"),
                                            Qt::ISODate);
     draft.estimatedMinutes = 75;
@@ -553,7 +527,7 @@ void TaskServiceTest::updatesTaskAndPreservesIdentity()
     QCOMPARE(updated.title(), QStringLiteral("Updated title"));
     QCOMPARE(updated.description(), draft.description);
     QCOMPARE(updated.priority(), TaskPriority::High);
-    QCOMPARE(updated.status(), TaskStatus::Done);
+    QCOMPARE(updated.status(), TaskStatus::Todo);
     QCOMPARE(updated.deadline(), std::optional<QDateTime>{draft.deadline->toUTC()});
     QCOMPARE(updated.estimatedMinutes(), std::optional<int>{75});
     QCOMPARE(repository.findById(original.id()), result.value);
@@ -591,7 +565,7 @@ void TaskServiceTest::rejectsEditingArchivedTasks()
     QCOMPARE(findResult.context.conflictingTaskIds,
              QList<TaskId>{archived.id()});
 
-    TaskDraft draft = draftFor(archived, TaskStatus::Todo);
+    TaskDraft draft = draftFor(archived);
     draft.title = QStringLiteral("Illegal archived edit");
     repository.setWriteFailure(true);
     const auto updateResult = service.updateTask(archived.id(), draft);
@@ -601,29 +575,31 @@ void TaskServiceTest::rejectsEditingArchivedTasks()
     QCOMPARE(changedSpy.count(), 0);
 }
 
-void TaskServiceTest::archivesAndRestoresOriginalStatus()
+void TaskServiceTest::archivesAndRestoresTerminalStatuses()
 {
-    const Task original = storedTask(TaskStatus::InProgress);
-    FakeTaskRepository repository{{original}};
-    FakeTaskDependencyRepository dependencyRepository;
-    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
-    QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
+    for (const TaskStatus terminal : {TaskStatus::Done, TaskStatus::Cancelled}) {
+        const Task original = storedTask(terminal);
+        FakeTaskRepository repository{{original}};
+        FakeTaskDependencyRepository dependencyRepository;
+        FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+        TaskService service{repository, dependencyRepository, creationRepository};
+        QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
 
-    const auto archiveResult = service.archiveTask(original.id());
-    QVERIFY(archiveResult.ok());
-    QCOMPARE(archiveResult.value->status(), TaskStatus::Archived);
-    QCOMPARE(archiveResult.value->statusBeforeArchive(),
-             std::optional<TaskStatus>{TaskStatus::InProgress});
+        const auto archiveResult = service.archiveTask(original.id());
+        QVERIFY(archiveResult.ok());
+        QCOMPARE(archiveResult.value->status(), TaskStatus::Archived);
+        QCOMPARE(archiveResult.value->statusBeforeArchive(),
+                 std::optional<TaskStatus>{terminal});
 
-    const auto restoreResult = service.restoreTask(original.id());
-    QVERIFY(restoreResult.ok());
-    QCOMPARE(restoreResult.value->status(), TaskStatus::InProgress);
-    QVERIFY(!restoreResult.value->statusBeforeArchive().has_value());
-    QCOMPARE(changedSpy.count(), 2);
+        const auto restoreResult = service.restoreTask(original.id());
+        QVERIFY(restoreResult.ok());
+        QCOMPARE(restoreResult.value->status(), terminal);
+        QVERIFY(!restoreResult.value->statusBeforeArchive().has_value());
+        QCOMPARE(changedSpy.count(), 2);
+    }
 }
 
-void TaskServiceTest::rejectsRestoreWhenInProgressConflicts()
+void TaskServiceTest::restoresLegacyArchiveWithoutInProgressConflict()
 {
     const Task archived = storedTask(TaskStatus::Archived, TaskStatus::InProgress);
     const Task active = storedTask(TaskStatus::InProgress);
@@ -635,11 +611,11 @@ void TaskServiceTest::rejectsRestoreWhenInProgressConflicts()
 
     const auto result = service.restoreTask(archived.id());
 
-    QCOMPARE(result.error, TaskError::InProgressConflict);
-    QCOMPARE(changedSpy.count(), 0);
-    QCOMPARE(repository.findById(archived.id())->status(), TaskStatus::Archived);
-    QCOMPARE(repository.findById(archived.id())->statusBeforeArchive(),
-             std::optional<TaskStatus>{TaskStatus::InProgress});
+    QVERIFY(result.ok());
+    QCOMPARE(result.value->status(), TaskStatus::Todo);
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(repository.findById(archived.id())->status(), TaskStatus::Todo);
+    QVERIFY(!repository.findById(archived.id())->statusBeforeArchive().has_value());
 }
 
 void TaskServiceTest::reportsInvalidOperationsAndMissingTasks()
@@ -656,7 +632,8 @@ void TaskServiceTest::reportsInvalidOperationsAndMissingTasks()
     QCOMPARE(service.updateTask(missingId, validDraft()).error, TaskError::NotFound);
     QCOMPARE(service.archiveTask(missingId).error, TaskError::NotFound);
     QCOMPARE(service.restoreTask(missingId).error, TaskError::NotFound);
-    QCOMPARE(service.restoreTask(todo.id()).error, TaskError::InvalidStatus);
+    QCOMPARE(service.restoreTask(todo.id()).error,
+             TaskError::InvalidTaskTransition);
     QCOMPARE(changedSpy.count(), 0);
 }
 
@@ -692,7 +669,10 @@ void TaskServiceTest::replacesDependenciesAndReportsStructuredErrors()
                                      QStringLiteral("Archived"));
     const Task completed = storedTask(TaskStatus::Done, std::nullopt,
                                       QStringLiteral("Completed"));
-    FakeTaskRepository repository{{predecessor, target, archived, completed}};
+    const Task cancelled = storedTask(TaskStatus::Cancelled, std::nullopt,
+                                      QStringLiteral("Cancelled"));
+    FakeTaskRepository repository{
+        {predecessor, target, archived, completed, cancelled}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
@@ -739,6 +719,12 @@ void TaskServiceTest::replacesDependenciesAndReportsStructuredErrors()
              TaskError::DependencyPredecessorNotEligible);
     QCOMPARE(archivedPredecessor.context.conflictingTaskIds,
              QList<smartmate::model::TaskId>({archived.id()}));
+    const auto cancelledPredecessor = service.replaceTaskPredecessors(
+        target.id(), {cancelled.id()});
+    QCOMPARE(cancelledPredecessor.error,
+             TaskError::DependencyPredecessorNotEligible);
+    QCOMPARE(cancelledPredecessor.context.conflictingTaskIds,
+             QList<TaskId>{cancelled.id()});
 
     // 现有 A→B 上再把 B 设为 A 的前置会形成 B→A→B 的闭合环。
     const auto cycle = service.replaceTaskPredecessors(
@@ -756,16 +742,16 @@ void TaskServiceTest::replacesDependenciesAndReportsStructuredErrors()
     QCOMPARE(dependencyRepository.replaceCount(), 2);
     QCOMPARE(changedSpy.count(), 2);
 
-    // 已存在的归档前置可以继续保留或移除，但不能作为新前置加入。
+    // 已存在的归档或取消前置可以继续保留或移除，但不能作为新前置加入。
     FakeTaskDependencyRepository legacyDependencies{
-        {{archived.id(), target.id()}}};
+        {{archived.id(), target.id()}, {cancelled.id(), target.id()}}};
     FakeTaskCreationRepository legacyCreation{repository, legacyDependencies};
     TaskService legacyService{repository, legacyDependencies, legacyCreation};
     QSignalSpy legacyChangedSpy{&legacyService, &TaskService::dependenciesChanged};
     const auto retainArchived = legacyService.replaceTaskPredecessors(
-        target.id(), {archived.id(), predecessor.id()});
+        target.id(), {archived.id(), cancelled.id(), predecessor.id()});
     QVERIFY(retainArchived.ok());
-    QCOMPARE(retainArchived.value->size(), 2);
+    QCOMPARE(retainArchived.value->size(), 3);
     const auto removeArchived = legacyService.replaceTaskPredecessors(
         target.id(), {predecessor.id()});
     QVERIFY(removeArchived.ok());
@@ -786,17 +772,15 @@ void TaskServiceTest::enforcesDependencyStatusConsistency()
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
     TaskService service{repository, dependencyRepository, creationRepository};
 
-    const auto startBlocked = service.updateTask(
-        target.id(), draftFor(target, TaskStatus::InProgress));
+    const auto startBlocked = service.startTask(target.id());
     QCOMPARE(startBlocked.error, TaskError::TaskBlocked);
     QCOMPARE(startBlocked.context.blockingTaskIds,
              QList<smartmate::model::TaskId>({predecessor.id()}));
     QCOMPARE(startBlocked.context.conflictingTaskIds,
              QList<smartmate::model::TaskId>({target.id()}));
 
-    const auto completeBlocked = service.updateTask(
-        target.id(), draftFor(target, TaskStatus::Done));
-    QCOMPARE(completeBlocked.error, TaskError::TaskBlocked);
+    QCOMPARE(service.completeTask(target.id()).error,
+             TaskError::InvalidTaskTransition);
 
     const Task completedPredecessor = storedTask(
         TaskStatus::Done, std::nullopt, QStringLiteral("Completed predecessor"));
@@ -810,9 +794,7 @@ void TaskServiceTest::enforcesDependencyStatusConsistency()
     TaskService activeService{activeRepository, activeDependencies,
                               activeCreation};
 
-    const auto invalidateActive = activeService.updateTask(
-        completedPredecessor.id(),
-        draftFor(completedPredecessor, TaskStatus::Todo));
+    const auto invalidateActive = activeService.redoTask(completedPredecessor.id());
     QCOMPARE(invalidateActive.error, TaskError::DependencyStateConflict);
     QCOMPARE(invalidateActive.context.blockingTaskIds,
              QList<smartmate::model::TaskId>({completedPredecessor.id()}));
@@ -833,9 +815,7 @@ void TaskServiceTest::enforcesDependencyStatusConsistency()
     TaskService archivedSuccessorService{
         archivedSuccessorRepository, archivedSuccessorDependencies,
         archivedSuccessorCreation};
-    QCOMPARE(archivedSuccessorService.updateTask(
-                 completedPredecessor.id(),
-                 draftFor(completedPredecessor, TaskStatus::Cancelled)).error,
+    QCOMPARE(archivedSuccessorService.redoTask(completedPredecessor.id()).error,
              TaskError::DependencyStateConflict);
 
     // Archived-before-Done 前置仍满足关系，因此目标可以开始。
@@ -848,8 +828,7 @@ void TaskServiceTest::enforcesDependencyStatusConsistency()
         {{archivedCompletedPredecessor.id(), readyTarget.id()}}};
     FakeTaskCreationRepository readyCreation{readyRepository, readyDependencies};
     TaskService readyService{readyRepository, readyDependencies, readyCreation};
-    QVERIFY(readyService.updateTask(
-        readyTarget.id(), draftFor(readyTarget, TaskStatus::InProgress)).ok());
+    QVERIFY(readyService.startTask(readyTarget.id()).ok());
 
     const Task archivedActiveTarget = storedTask(
         TaskStatus::Archived, TaskStatus::InProgress,
@@ -862,9 +841,10 @@ void TaskServiceTest::enforcesDependencyStatusConsistency()
     TaskService restoreService{restoreRepository, restoreDependencies,
                                restoreCreation};
     const auto restoreBlocked = restoreService.restoreTask(archivedActiveTarget.id());
-    QCOMPARE(restoreBlocked.error, TaskError::TaskBlocked);
+    QVERIFY(restoreBlocked.ok());
+    QCOMPARE(restoreBlocked.value->status(), TaskStatus::Todo);
     QCOMPARE(restoreRepository.findById(archivedActiveTarget.id())->status(),
-             TaskStatus::Archived);
+             TaskStatus::Todo);
 }
 
 void TaskServiceTest::mapsDependencyRepositoryFailures()
@@ -952,8 +932,10 @@ void TaskServiceTest::buildsGraphSnapshotWithArchivedClosure()
         });
     QVERIFY(satisfiedEdge != result.value->edges.cend());
     QVERIFY(unsatisfiedEdge != result.value->edges.cend());
-    QVERIFY(satisfiedEdge->satisfied);
-    QVERIFY(!unsatisfiedEdge->satisfied);
+    QCOMPARE(satisfiedEdge->resolution,
+             smartmate::model::TaskDependencyResolution::Satisfied);
+    QCOMPARE(unsatisfiedEdge->resolution,
+             smartmate::model::TaskDependencyResolution::Pending);
 }
 
 QTEST_APPLESS_MAIN(TaskServiceTest)

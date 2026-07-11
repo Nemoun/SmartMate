@@ -192,7 +192,24 @@ QList<TaskId> TaskDependencyGraph::unsatisfiedPredecessorIds(const TaskId &taskI
     QList<TaskId> result;
     for (const TaskId &predecessorId : predecessorIds(taskId)) {
         const Task *predecessor = findTask(predecessorId);
-        if (predecessor == nullptr || !satisfiesDependency(*predecessor)) {
+        if (predecessor == nullptr
+            || dependencyResolution(*predecessor)
+                == TaskDependencyResolution::Pending) {
+            result.append(predecessorId);
+        }
+    }
+    return result;
+}
+
+QList<TaskId> TaskDependencyGraph::cancelledPredecessorIds(
+    const TaskId &taskId) const
+{
+    QList<TaskId> result;
+    for (const TaskId &predecessorId : predecessorIds(taskId)) {
+        const Task *predecessor = findTask(predecessorId);
+        if (predecessor != nullptr
+            && dependencyResolution(*predecessor)
+                == TaskDependencyResolution::Cancelled) {
             result.append(predecessorId);
         }
     }
@@ -204,6 +221,7 @@ TaskDependencyState TaskDependencyGraph::dependencyState(const TaskId &taskId) c
     TaskDependencyState state;
     state.predecessorIds = predecessorIds(taskId);
     state.unsatisfiedPredecessorIds = unsatisfiedPredecessorIds(taskId);
+    state.cancelledPredecessorIds = cancelledPredecessorIds(taskId);
 
     const Task *task = findTask(taskId);
     const bool active = task != nullptr
@@ -211,7 +229,7 @@ TaskDependencyState TaskDependencyGraph::dependencyState(const TaskId &taskId) c
             || task->status() == TaskStatus::InProgress);
     state.blocked = active && !state.unsatisfiedPredecessorIds.isEmpty();
 
-    // 只有当前唯一未满足前置恰好是本任务时，完成本任务才会直接解锁后继。
+    // 只有当前唯一阻塞前置恰好是本任务时，完成或取消本任务才会直接解锁后继。
     for (const TaskId &successorId : successorIds(taskId)) {
         const Task *successor = findTask(successorId);
         if (successor == nullptr || successor->status() != TaskStatus::Todo) {
@@ -325,13 +343,31 @@ QList<TaskId> TaskDependencyGraph::connectedTaskIds(
     return connectedIds;
 }
 
-bool TaskDependencyGraph::satisfiesDependency(const Task &task) noexcept
+TaskDependencyResolution TaskDependencyGraph::dependencyResolution(
+    const Task &task) noexcept
 {
     if (task.status() == TaskStatus::Done) {
-        return true;
+        return TaskDependencyResolution::Satisfied;
     }
-    return task.status() == TaskStatus::Archived
-        && task.statusBeforeArchive() == std::optional<TaskStatus>{TaskStatus::Done};
+    if (task.status() == TaskStatus::Cancelled) {
+        return TaskDependencyResolution::Cancelled;
+    }
+    if (task.status() == TaskStatus::Archived) {
+        if (task.statusBeforeArchive()
+            == std::optional<TaskStatus>{TaskStatus::Done}) {
+            return TaskDependencyResolution::Satisfied;
+        }
+        if (task.statusBeforeArchive()
+            == std::optional<TaskStatus>{TaskStatus::Cancelled}) {
+            return TaskDependencyResolution::Cancelled;
+        }
+    }
+    return TaskDependencyResolution::Pending;
+}
+
+bool TaskDependencyGraph::satisfiesDependency(const Task &task) noexcept
+{
+    return dependencyResolution(task) == TaskDependencyResolution::Satisfied;
 }
 
 const Task *TaskDependencyGraph::findTask(const TaskId &taskId) const

@@ -16,6 +16,51 @@ target_link_libraries(tst_task_service
 
 add_test(NAME model.task_service COMMAND tst_task_service)
 
+qt_add_executable(tst_task_state_machine
+    model/tst_TaskStateMachine.cpp
+)
+
+target_link_libraries(tst_task_state_machine
+    PRIVATE
+        smartmate_model
+        Qt6::Test
+)
+
+add_test(NAME model.task_state_machine COMMAND tst_task_state_machine)
+
+qt_add_executable(tst_task_dependency_cancellation
+    model/tst_TaskDependencyCancellation.cpp
+)
+
+target_link_libraries(tst_task_dependency_cancellation
+    PRIVATE
+        smartmate_model
+        Qt6::Test
+)
+
+add_test(NAME model.task_dependency_cancellation
+         COMMAND tst_task_dependency_cancellation)
+
+qt_add_executable(tst_task_state_transitions
+    model/tst_TaskStateTransitions.cpp
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+)
+
+target_include_directories(tst_task_state_transitions
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(tst_task_state_transitions
+    PRIVATE
+        smartmate_model
+        Qt6::Test
+)
+
+add_test(NAME model.task_state_transitions COMMAND tst_task_state_transitions)
+
 qt_add_executable(tst_task_ordering
     model/tst_TaskOrderingPolicy.cpp
     fakes/FakeTaskRepository.h
@@ -172,6 +217,9 @@ set(runtime_path_modifications
 
 set_tests_properties(
     model.task_service
+    model.task_state_machine
+    model.task_dependency_cancellation
+    model.task_state_transitions
     model.task_ordering
     persistence.sqlite_task_repository
     viewmodel.task_viewmodels
