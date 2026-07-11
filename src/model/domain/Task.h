@@ -42,6 +42,8 @@ public:
     [[nodiscard]] const QString &description() const noexcept;
     [[nodiscard]] TaskPriority priority() const noexcept;
     [[nodiscard]] TaskStatus status() const noexcept;
+    /// 归档任务必须先恢复才能修改字段；其他状态仍可进入任务编辑流程。
+    [[nodiscard]] bool canEditDetails() const noexcept;
     /// 返回归档前状态；非归档任务应为空。
     [[nodiscard]] const std::optional<TaskStatus> &statusBeforeArchive() const noexcept;
     [[nodiscard]] const std::optional<QDateTime> &deadline() const noexcept;

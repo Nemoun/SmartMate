@@ -91,6 +91,7 @@ private slots:
     void mapsConcurrentInProgressUpdateConflict();
     void mapsConcurrentInProgressRestoreConflict();
     void updatesTaskAndPreservesIdentity();
+    void rejectsEditingArchivedTasks();
     void archivesAndRestoresOriginalStatus();
     void rejectsRestoreWhenInProgressConflicts();
     void reportsInvalidOperationsAndMissingTasks();
@@ -556,6 +557,48 @@ void TaskServiceTest::updatesTaskAndPreservesIdentity()
     QCOMPARE(updated.deadline(), std::optional<QDateTime>{draft.deadline->toUTC()});
     QCOMPARE(updated.estimatedMinutes(), std::optional<int>{75});
     QCOMPARE(repository.findById(original.id()), result.value);
+}
+
+void TaskServiceTest::rejectsEditingArchivedTasks()
+{
+    // 编辑资格是领域事实：已完成和已取消仍可修改，只有归档状态必须先恢复。
+    const QList<TaskStatus> statuses{TaskStatus::Todo,
+                                     TaskStatus::InProgress,
+                                     TaskStatus::Done,
+                                     TaskStatus::Cancelled,
+                                     TaskStatus::Archived};
+    for (const TaskStatus status : statuses) {
+        const Task candidate = storedTask(
+            status,
+            status == TaskStatus::Archived
+                ? std::optional<TaskStatus>{TaskStatus::Todo}
+                : std::nullopt);
+        QCOMPARE(candidate.canEditDetails(), status != TaskStatus::Archived);
+    }
+
+    const Task archived = storedTask(TaskStatus::Archived,
+                                     TaskStatus::Done,
+                                     QStringLiteral("Archived task"));
+    FakeTaskRepository repository{{archived}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
+
+    const auto findResult = service.findEditableTask(archived.id());
+    QCOMPARE(findResult.error, TaskError::ArchivedTaskNotEditable);
+    QVERIFY(!findResult.value.has_value());
+    QCOMPARE(findResult.context.conflictingTaskIds,
+             QList<TaskId>{archived.id()});
+
+    TaskDraft draft = draftFor(archived, TaskStatus::Todo);
+    draft.title = QStringLiteral("Illegal archived edit");
+    repository.setWriteFailure(true);
+    const auto updateResult = service.updateTask(archived.id(), draft);
+
+    QCOMPARE(updateResult.error, TaskError::ArchivedTaskNotEditable);
+    QCOMPARE(repository.tasks(), QList<Task>{archived});
+    QCOMPARE(changedSpy.count(), 0);
 }
 
 void TaskServiceTest::archivesAndRestoresOriginalStatus()

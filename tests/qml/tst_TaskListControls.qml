@@ -161,6 +161,38 @@ TestCase {
         verify(emptyState.text.indexOf("没有符合") >= 0)
     }
 
+    function test_archivedTaskHidesEditEntryUntilRestored() {
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        let editButton = findChild(taskDelegate(alphaId),
+                                   "editTaskButton_" + alphaId)
+        verify(editButton !== null)
+        tryCompare(editButton, "visible", true)
+
+        verify(testAppViewModel.taskList.archiveTask(alphaId),
+               testAppViewModel.taskList.errorMessage)
+        testAppViewModel.taskList.showArchived = true
+        tryCompare(testAppViewModel.taskList, "count", 1)
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        editButton = findChild(taskDelegate(alphaId),
+                               "editTaskButton_" + alphaId)
+        const restoreButton = findChild(taskDelegate(alphaId),
+                                        "restoreTaskButton_" + alphaId)
+        verify(editButton !== null)
+        verify(restoreButton !== null)
+        tryCompare(editButton, "visible", false)
+        tryCompare(restoreButton, "visible", true)
+
+        verify(testAppViewModel.taskList.restoreTask(alphaId),
+               testAppViewModel.taskList.errorMessage)
+        testAppViewModel.taskList.showArchived = false
+        tryCompare(testAppViewModel.taskList, "count", 3)
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        editButton = findChild(taskDelegate(alphaId),
+                               "editTaskButton_" + alphaId)
+        verify(editButton !== null)
+        tryCompare(editButton, "visible", true)
+    }
+
     function test_dependencyDialogShowsBlockerAndUnlockProjection() {
         const listView = findChild(subject, "taskListView")
         verify(listView !== null)

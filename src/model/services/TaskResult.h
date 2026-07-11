@@ -31,6 +31,7 @@ enum class TaskError {
     DependencyPredecessorNotEligible,
     TaskBlocked,
     DependencyStateConflict,
+    ArchivedTaskNotEditable,
     NotFound,
     InProgressConflict,
     PersistenceFailure,

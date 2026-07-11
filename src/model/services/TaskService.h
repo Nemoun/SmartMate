@@ -35,11 +35,13 @@ public:
         const TaskId &taskId,
         const QList<TaskId> &predecessorIds);
     [[nodiscard]] TaskResult findTask(const TaskId &id) const;
+    /// 加载可编辑任务；归档任务返回 ArchivedTaskNotEditable，调用方不得建立编辑草稿。
+    [[nodiscard]] TaskResult findEditableTask(const TaskId &id) const;
     /// 校验草稿、生成稳定 TaskId，并持久化新的领域快照。
     [[nodiscard]] TaskResult createTask(const TaskDraft &draft);
     /// 原子新建任务与全部前置关系；任意校验或写入失败均不发送状态通知。
     [[nodiscard]] TaskResult createTask(const TaskCreationRequest &request);
-    /// 按稳定 TaskId 更新任务，同时保留创建时间和归档恢复点不变量。
+    /// 按稳定 TaskId 更新活动任务；归档任务必须恢复后才能修改。
     [[nodiscard]] TaskResult updateTask(const TaskId &id, const TaskDraft &draft);
     /// 按稳定 TaskId 执行软归档，不做物理删除。
     [[nodiscard]] TaskResult archiveTask(const TaskId &id);

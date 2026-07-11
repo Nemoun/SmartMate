@@ -353,7 +353,8 @@ bool TaskEditorViewModel::beginEdit(const QString &taskId)
         return false;
     }
 
-    const auto result = m_taskService.findTask(id);
+    // 编辑资格由Model返回结构化结果；ViewModel只映射错误并决定是否建立草稿。
+    const auto result = m_taskService.findEditableTask(id);
     if (!result.ok()) {
         setErrorMessage(taskErrorMessage(result.error));
         return false;

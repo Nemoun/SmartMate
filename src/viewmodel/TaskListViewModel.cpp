@@ -139,6 +139,8 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
         return m_dependencyProjections.value(task.id()).predecessorCount;
     case UnlockCountRole:
         return m_dependencyProjections.value(task.id()).unlockCount;
+    case CanEditTaskRole:
+        return task.canEditDetails();
     case CanEditDependenciesRole:
         return task.status() == model::TaskStatus::Todo;
     default:
@@ -164,6 +166,7 @@ QHash<int, QByteArray> TaskListViewModel::roleNames() const
         {BlockingReasonTextRole, "blockingReasonText"},
         {PredecessorCountRole, "predecessorCount"},
         {UnlockCountRole, "unlockCount"},
+        {CanEditTaskRole, "canEditTask"},
         {CanEditDependenciesRole, "canEditDependencies"},
     };
 }

@@ -705,6 +705,18 @@ TaskResult TaskService::findTask(const TaskId &id) const
     }
 }
 
+TaskResult TaskService::findEditableTask(const TaskId &id) const
+{
+    TaskResult result = findTask(id);
+    if (!result.ok() || result.value->canEditDetails()) {
+        return result;
+    }
+    return TaskResult::failure(
+        TaskError::ArchivedTaskNotEditable,
+        QStringLiteral("An archived task must be restored before editing."),
+        TaskErrorContext{{}, {id}, {}});
+}
+
 TaskResult TaskService::createTask(const TaskDraft &draft)
 {
     return createTask(TaskCreationRequest{draft, {}});
@@ -834,17 +846,23 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
 
 TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
 {
-    const TaskValidationResult validation = validateDraft(draft);
-    if (!validation.ok()) {
-        return TaskResult::failure(validation.error, validation.detail);
-    }
-
     try {
         const QList<Task> tasks = m_repository.findAll();
         const Task *current = findTaskInList(tasks, id);
         if (current == nullptr) {
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
+        }
+        // 编辑资格必须在Model最终判定，避免View隐藏按钮后仍可绕过界面更新归档任务。
+        if (!current->canEditDetails()) {
+            return TaskResult::failure(
+                TaskError::ArchivedTaskNotEditable,
+                QStringLiteral("An archived task must be restored before editing."),
+                TaskErrorContext{{}, {id}, {}});
+        }
+        const TaskValidationResult validation = validateDraft(draft);
+        if (!validation.ok()) {
+            return TaskResult::failure(validation.error, validation.detail);
         }
         const QList<TaskId> conflictingIds = draft.status == TaskStatus::InProgress
             ? otherInProgressTaskIds(tasks, id)
@@ -858,10 +876,8 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
 
         std::optional<TaskStatus> statusBeforeArchive;
         if (draft.status == TaskStatus::Archived) {
-            // 首次归档记录当前状态；重复保存归档任务时保留原恢复点。
-            statusBeforeArchive = current->status() == TaskStatus::Archived
-                ? current->statusBeforeArchive().value_or(TaskStatus::Todo)
-                : current->status();
+            // 活动任务在编辑流程中转为归档时记录当前状态，供后续恢复。
+            statusBeforeArchive = current->status();
         }
 
         Task updated = makeTask(*current,

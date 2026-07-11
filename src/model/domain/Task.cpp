@@ -57,6 +57,11 @@ TaskStatus Task::status() const noexcept
     return m_status;
 }
 
+bool Task::canEditDetails() const noexcept
+{
+    return m_status != TaskStatus::Archived;
+}
+
 const std::optional<TaskStatus> &Task::statusBeforeArchive() const noexcept
 {
     return m_statusBeforeArchive;

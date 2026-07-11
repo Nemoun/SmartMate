@@ -144,6 +144,7 @@ private slots:
     void listRetainsFiltersAndStableTaskIdAcrossServiceReloads();
     void listSchedulesMinuteRefreshForTimeSensitiveReasons();
     void listArchivesAndRestoresByStableTaskId();
+    void archivedTasksCannotOpenEditorUntilRestored();
     void listExposesAndClearsChineseErrors();
     void listProjectsBlockingAndUnlockInformation();
     // 依赖多选草稿、稳定ID与结构化错误映射。
@@ -503,6 +504,44 @@ void TaskViewModelsTest::listArchivesAndRestoresByStableTaskId()
     viewModel.setShowArchived(false);
     QCOMPARE(viewModel.count(), 1);
     QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+}
+
+void TaskViewModelsTest::archivedTasksCannotOpenEditorUntilRestored()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("restore before editing"), TaskStatus::Todo,
+        1700000001000);
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel list{service};
+    TaskEditorViewModel editor{service};
+    const QString stableId = stored.id().toString(QUuid::WithoutBraces);
+
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             true);
+    QVERIFY(list.archiveTask(stableId));
+    list.setShowArchived(true);
+    QCOMPARE(list.count(), 1);
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             false);
+
+    // 即使绕过QML直接调用命令，ViewModel也不能为归档实体建立编辑草稿。
+    QVERIFY(!editor.beginEdit(stableId));
+    QVERIFY(editor.errorMessage().contains(QStringLiteral("归档")));
+    QVERIFY(!editor.editMode());
+    QVERIFY(editor.taskId().isEmpty());
+
+    QVERIFY(list.restoreTask(stableId));
+    list.setShowArchived(false);
+    QCOMPARE(list.count(), 1);
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             true);
+    QVERIFY(editor.beginEdit(stableId));
+    QVERIFY(editor.editMode());
+    QCOMPARE(editor.taskId(), stableId);
 }
 
 void TaskViewModelsTest::listExposesAndClearsChineseErrors()

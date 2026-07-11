@@ -144,6 +144,7 @@ Page {
                     required property string blockingReasonText
                     required property int predecessorCount
                     required property int unlockCount
+                    required property bool canEditTask
                     required property bool canEditDependencies
                     required property int estimatedMinutes
 
@@ -247,10 +248,16 @@ Page {
                         }
 
                         Button {
+                            objectName: "editTaskButton_" + taskDelegate.taskId
                             text: qsTr("编辑")
+                            visible: taskDelegate.canEditTask
                             onClicked: {
-                                if (root.appViewModel.taskEditor.beginEdit(taskDelegate.taskId))
+                                if (root.appViewModel.taskEditor.beginEdit(taskDelegate.taskId)) {
                                     editorDialog.open()
+                                } else {
+                                    errorDialog.message = root.appViewModel.taskEditor.errorMessage
+                                    errorDialog.open()
+                                }
                             }
                         }
 
@@ -274,6 +281,7 @@ Page {
                         }
 
                         Button {
+                            objectName: "restoreTaskButton_" + taskDelegate.taskId
                             text: qsTr("恢复")
                             visible: root.appViewModel.taskList.showArchived
                             onClicked: root.appViewModel.taskList.restoreTask(taskDelegate.taskId)

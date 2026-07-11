@@ -47,6 +47,7 @@ public:
         BlockingReasonTextRole,
         PredecessorCountRole,
         UnlockCountRole,
+        CanEditTaskRole,
         CanEditDependenciesRole,
     };
     Q_ENUM(Role)
