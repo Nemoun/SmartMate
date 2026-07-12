@@ -168,6 +168,30 @@ foreach(qml_file IN LISTS qml_files)
     endif()
 endforeach()
 
+# 语义资格不能靠禁止 TaskStatus 的脆弱正则判断；这里只锁定数据入口，
+# 具体候选和命令资格由 Model/ViewModel 契约测试验证。
+set(dependency_viewmodel "${ROOT_DIR}/src/viewmodel/TaskDependencyViewModel.cpp")
+if(EXISTS "${dependency_viewmodel}")
+    file(READ "${dependency_viewmodel}" dependency_viewmodel_contents)
+    if(NOT dependency_viewmodel_contents MATCHES "taskDependencyEditContext")
+        record_violation("${dependency_viewmodel}"
+            "Dependency editor must consume the Model edit-context contract")
+    endif()
+    if(dependency_viewmodel_contents MATCHES "m_taskService\\.(listTasks|listDependencies)")
+        record_violation("${dependency_viewmodel}"
+            "Dependency editor may not reconstruct its business context from raw lists")
+    endif()
+endif()
+
+set(graph_viewmodel "${ROOT_DIR}/src/viewmodel/TaskGraphViewModel.cpp")
+if(EXISTS "${graph_viewmodel}")
+    file(READ "${graph_viewmodel}" graph_viewmodel_contents)
+    if(NOT graph_viewmodel_contents MATCHES "availability\\.canEditDependencies")
+        record_violation("${graph_viewmodel}"
+            "Graph dependency-edit eligibility must project Model availability")
+    endif()
+endif()
+
 # 项目明确采用 MVVM，因此额外禁止重新引入 Controller 层或类型。
 file(GLOB_RECURSE production_entries LIST_DIRECTORIES TRUE
     "${ROOT_DIR}/src/*")

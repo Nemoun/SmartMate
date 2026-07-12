@@ -23,7 +23,10 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
           std::make_unique<model::persistence::SqliteTaskRepository>(std::move(databasePath)))
     , m_taskService(
           std::make_unique<model::TaskService>(
-              *m_taskRepository, *m_taskRepository, *m_taskRepository))
+              *m_taskRepository,
+              *m_taskRepository,
+              *m_taskRepository,
+              *m_taskRepository))
     , m_appearanceRepository(
           std::make_unique<model::persistence::QSettingsAppearanceRepository>())
     , m_appearanceService(

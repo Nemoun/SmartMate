@@ -9,7 +9,8 @@
 
 namespace smartmate::model {
 
-/// 任务持久化端口；删除采用归档语义，因此接口不提供物理 remove。
+/// 常规任务持久化端口；活动任务的删除采用归档语义，因此这里不提供物理 remove。
+/// 归档实体的永久删除由独立 ITaskDeletionRepository 承担跨表事务。
 /// 读写故障必须抛出 RepositoryException，Service 会将其映射为结构化错误。
 class ITaskRepository {
 public:

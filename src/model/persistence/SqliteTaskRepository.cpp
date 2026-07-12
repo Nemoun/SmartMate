@@ -8,6 +8,7 @@
 #include <QTimeZone>
 #include <QVariant>
 
+#include <limits>
 #include <utility>
 
 namespace smartmate::model::persistence {
@@ -604,6 +605,73 @@ void SqliteTaskRepository::insertTaskWithPredecessors(
         }
     } catch (...) {
         // commit失败也尝试回滚；SQLite会在连接继续使用前恢复到一致状态。
+        database.rollback();
+        throw;
+    }
+}
+
+TaskDeletionWriteResult
+SqliteTaskRepository::deleteArchivedTaskWithDependencies(const TaskId &taskId)
+{
+    auto database = QSqlDatabase::database(m_connectionName, false);
+    if (!database.transaction()) {
+        throwDatabaseError(
+            QStringLiteral("Cannot start permanent task deletion transaction"),
+            database.lastError());
+    }
+
+    try {
+        // RESTRICT外键仍是默认防线；只有这个显式命令端口可以先清理入边和出边。
+        QSqlQuery dependencyQuery(database);
+        dependencyQuery.prepare(QStringLiteral(
+            "DELETE FROM task_dependencies "
+            "WHERE predecessor_id = :task_id OR successor_id = :task_id"));
+        dependencyQuery.bindValue(
+            QStringLiteral(":task_id"),
+            taskId.toString(QUuid::WithoutBraces));
+        if (!dependencyQuery.exec()) {
+            throwDatabaseError(
+                QStringLiteral("Cannot delete task dependencies"),
+                dependencyQuery.lastError());
+        }
+        const qint64 removedDependencyCount = dependencyQuery.numRowsAffected();
+        dependencyQuery.finish();
+        if (removedDependencyCount < 0
+            || removedDependencyCount > std::numeric_limits<int>::max()) {
+            throwPersistenceError(
+                QStringLiteral("SQLite returned an invalid removed dependency count"));
+        }
+
+        QSqlQuery taskQuery(database);
+        taskQuery.prepare(QStringLiteral(
+            "DELETE FROM tasks WHERE id = :task_id AND status = 'archived'"));
+        taskQuery.bindValue(
+            QStringLiteral(":task_id"),
+            taskId.toString(QUuid::WithoutBraces));
+        if (!taskQuery.exec()) {
+            throwDatabaseError(QStringLiteral("Cannot permanently delete task"),
+                               taskQuery.lastError());
+        }
+        const qint64 deletedTaskCount = taskQuery.numRowsAffected();
+        taskQuery.finish();
+
+        if (deletedTaskCount != 1) {
+            // 目标缺失或在Service预检后不再归档时，必须恢复刚删除的全部依赖边。
+            if (!database.rollback()) {
+                throwDatabaseError(
+                    QStringLiteral("Cannot roll back rejected permanent task deletion"),
+                    database.lastError());
+            }
+            return {};
+        }
+
+        if (!database.commit()) {
+            throwDatabaseError(
+                QStringLiteral("Cannot commit permanent task deletion transaction"),
+                database.lastError());
+        }
+        return {true, static_cast<int>(removedDependencyCount)};
+    } catch (...) {
         database.rollback();
         throw;
     }

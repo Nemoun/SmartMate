@@ -8,6 +8,17 @@ set_source_files_properties(qml/TaskPage.qml
         QT_RESOURCE_ALIAS TaskPage.qml
 )
 
+set_source_files_properties(qml/TaskCard.qml
+    PROPERTIES QT_RESOURCE_ALIAS TaskCard.qml)
+set_source_files_properties(qml/TaskFilterBar.qml
+    PROPERTIES QT_RESOURCE_ALIAS TaskFilterBar.qml)
+set_source_files_properties(qml/TaskFocusCard.qml
+    PROPERTIES QT_RESOURCE_ALIAS TaskFocusCard.qml)
+set_source_files_properties(qml/DependencyGraphEdge.qml
+    PROPERTIES QT_RESOURCE_ALIAS DependencyGraphEdge.qml)
+set_source_files_properties(qml/DependencyGraphNode.qml
+    PROPERTIES QT_RESOURCE_ALIAS DependencyGraphNode.qml)
+
 set_source_files_properties(qml/TaskEditorDialog.qml
     PROPERTIES
         QT_RESOURCE_ALIAS TaskEditorDialog.qml
@@ -52,6 +63,11 @@ qt_add_qml_module(smartmate_ui
     QML_FILES
         qml/Main.qml
         qml/TaskPage.qml
+        qml/TaskCard.qml
+        qml/TaskFilterBar.qml
+        qml/TaskFocusCard.qml
+        qml/DependencyGraphEdge.qml
+        qml/DependencyGraphNode.qml
         qml/TaskEditorDialog.qml
         qml/DateTimePickerDialog.qml
         qml/DurationPickerDialog.qml

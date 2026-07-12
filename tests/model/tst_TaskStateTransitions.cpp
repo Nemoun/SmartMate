@@ -1,5 +1,6 @@
 #include "fakes/FakeTaskCreationRepository.h"
 #include "fakes/FakeTaskDependencyRepository.h"
+#include "fakes/FakeTaskDeletionRepository.h"
 #include "fakes/FakeTaskRepository.h"
 
 #include "domain/Task.h"
@@ -24,6 +25,7 @@ using smartmate::model::TaskService;
 using smartmate::model::TaskStatus;
 using smartmate::tests::FakeTaskCreationRepository;
 using smartmate::tests::FakeTaskDependencyRepository;
+using smartmate::tests::FakeTaskDeletionRepository;
 using smartmate::tests::FakeTaskRepository;
 
 namespace {
@@ -62,7 +64,9 @@ struct ServiceFixture final {
         : repository(std::move(tasks))
         , dependencyRepository(std::move(dependencies))
         , creationRepository(repository, dependencyRepository)
-        , service(repository, dependencyRepository, creationRepository)
+        , deletionRepository(repository, dependencyRepository)
+        , service(repository, dependencyRepository, creationRepository,
+                  deletionRepository)
         , taskChanged(&service, &TaskService::tasksChanged)
         , dependencyChanged(&service, &TaskService::dependenciesChanged)
     {
@@ -71,6 +75,7 @@ struct ServiceFixture final {
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository;
+    FakeTaskDeletionRepository deletionRepository;
     TaskService service;
     QSignalSpy taskChanged;
     QSignalSpy dependencyChanged;
@@ -102,13 +107,13 @@ void TaskStateTransitionsTest::creationAlwaysStartsTodoAndDetailEditPreservesSta
     QCOMPARE(creationFixture.repository.insertCount(), 1);
     QCOMPARE(creationFixture.taskChanged.count(), 1);
 
-    const Task inProgress = storedTask(TaskStatus::InProgress);
-    ServiceFixture editFixture{{inProgress}};
+    const Task todo = storedTask(TaskStatus::Todo);
+    ServiceFixture editFixture{{todo}};
     TaskDraft edited = validDraft();
     edited.title = QStringLiteral("仅修改详情");
-    const auto result = editFixture.service.updateTask(inProgress.id(), edited);
+    const auto result = editFixture.service.updateTask(todo.id(), edited);
     QVERIFY(result.ok());
-    QCOMPARE(result.value->status(), TaskStatus::InProgress);
+    QCOMPARE(result.value->status(), TaskStatus::Todo);
     QCOMPARE(editFixture.repository.updateCount(), 1);
     QCOMPARE(editFixture.taskChanged.count(), 1);
 }

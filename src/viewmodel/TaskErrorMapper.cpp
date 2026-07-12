@@ -41,8 +41,10 @@ QString taskErrorMessage(const model::TaskError error)
         return QStringLiteral("任务仍被尚未完成或取消的前置任务阻塞，不能开始或完成。");
     case DependencyStateConflict:
         return QStringLiteral("状态修改会使正在进行或已完成的后继任务失去有效前置条件。");
-    case ArchivedTaskNotEditable:
-        return QStringLiteral("归档任务不能编辑，请先恢复任务。");
+    case TaskDetailsNotEditable:
+        return QStringLiteral("只有待办任务可以编辑，请先通过合法状态操作将任务恢复为待办。");
+    case TaskDeletionNotAllowed:
+        return QStringLiteral("只有归档任务可以永久删除。");
     case NotFound:
         return QStringLiteral("任务不存在或已无法访问。");
     case InProgressConflict:

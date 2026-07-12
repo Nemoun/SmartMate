@@ -1,6 +1,7 @@
 #include "planner/TaskOrderingPolicy.h"
 
 #include "dependencies/TaskDependencyGraph.h"
+#include "planner/TaskDeadlinePolicy.h"
 
 #include <QHash>
 
@@ -46,18 +47,12 @@ namespace {
     return task.id().toString(QUuid::WithoutBraces);
 }
 
-[[nodiscard]] bool isOverdue(const Task &task, const QDateTime &nowUtc)
-{
-    // 截止时间恰好等于当前时刻仍不算逾期。
-    return task.deadline().has_value() && *task.deadline() < nowUtc;
-}
-
 [[nodiscard]] bool todoComesBefore(const Task &left,
                                    const Task &right,
                                    const QDateTime &nowUtc)
 {
-    const bool leftOverdue = isOverdue(left, nowUtc);
-    const bool rightOverdue = isOverdue(right, nowUtc);
+    const bool leftOverdue = TaskDeadlinePolicy::isOverdue(left, nowUtc);
+    const bool rightOverdue = TaskDeadlinePolicy::isOverdue(right, nowUtc);
     if (leftOverdue != rightOverdue) {
         return leftOverdue;
     }
@@ -117,7 +112,7 @@ namespace {
     case TaskStatus::InProgress:
         return TaskOrderReason::InProgress;
     case TaskStatus::Todo:
-        if (isOverdue(task, nowUtc)) {
+        if (TaskDeadlinePolicy::isOverdue(task, nowUtc)) {
             return TaskOrderReason::Overdue;
         }
         if (task.priority() == TaskPriority::Urgent) {
@@ -243,6 +238,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
     for (const Task *task : orderedTasks) {
         plan.append(PlannedTask{*task,
                                 reasonFor(*task, nowUtc),
+                                TaskDeadlinePolicy::isOverdue(*task, nowUtc),
                                 graph.dependencyState(task->id()),
                                 {}});
     }

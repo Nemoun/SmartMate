@@ -33,12 +33,13 @@ private slots:
     void derivedSearchAndOrderingDoNotModifyStoredTasks();
     void atomicallyCreatesDependencyAndUnlocksAfterReopen();
     void cancelledDependencyRemainsStoredAndDerivedAfterReopen();
+    void permanentlyDeletesArchivedTaskAndRefreshesDependencyState();
 };
 
 void TaskCreationFlowTest::createsAndReadsTaskWhenOptionalDescriptionIsUntouched()
 {
     SqliteTaskRepository repository{QStringLiteral(":memory:")};
-    TaskService service{repository, repository, repository};
+    TaskService service{repository, repository, repository, repository};
     AppViewModel appViewModel{service};
     auto *editor = appViewModel.taskEditor();
     auto *taskList = appViewModel.taskList();
@@ -71,7 +72,7 @@ void TaskCreationFlowTest::createsAndReadsTaskWhenOptionalDescriptionIsUntouched
 void TaskCreationFlowTest::derivedSearchAndOrderingDoNotModifyStoredTasks()
 {
     SqliteTaskRepository repository{QStringLiteral(":memory:")};
-    TaskService service{repository, repository, repository};
+    TaskService service{repository, repository, repository, repository};
 
     TaskDraft urgentDraft;
     urgentDraft.title = QStringLiteral("准备课程答辩");
@@ -110,7 +111,7 @@ void TaskCreationFlowTest::atomicallyCreatesDependencyAndUnlocksAfterReopen()
     TaskId successorId;
     {
         SqliteTaskRepository repository{databasePath};
-        TaskService service{repository, repository, repository};
+        TaskService service{repository, repository, repository, repository};
         QSignalSpy tasksChangedSpy{&service, &TaskService::tasksChanged};
         QSignalSpy dependenciesChangedSpy{&service,
                                           &TaskService::dependenciesChanged};
@@ -140,7 +141,7 @@ void TaskCreationFlowTest::atomicallyCreatesDependencyAndUnlocksAfterReopen()
 
     {
         SqliteTaskRepository repository{databasePath};
-        TaskService service{repository, repository, repository};
+        TaskService service{repository, repository, repository, repository};
 
         const auto dependencies = service.listDependencies();
         QVERIFY(dependencies.ok());
@@ -188,7 +189,7 @@ void TaskCreationFlowTest::cancelledDependencyRemainsStoredAndDerivedAfterReopen
     TaskId successorId;
     {
         SqliteTaskRepository repository{databasePath};
-        TaskService service{repository, repository, repository};
+        TaskService service{repository, repository, repository, repository};
         TaskDraft predecessorDraft;
         predecessorDraft.title = QStringLiteral("可取消前置");
         const auto predecessor = service.createTask(predecessorDraft);
@@ -206,7 +207,7 @@ void TaskCreationFlowTest::cancelledDependencyRemainsStoredAndDerivedAfterReopen
 
     {
         SqliteTaskRepository repository{databasePath};
-        TaskService service{repository, repository, repository};
+        TaskService service{repository, repository, repository, repository};
         const auto dependencies = service.listDependencies();
         QVERIFY(dependencies.ok());
         QCOMPARE(dependencies.value->size(), 1);
@@ -233,6 +234,63 @@ void TaskCreationFlowTest::cancelledDependencyRemainsStoredAndDerivedAfterReopen
         QVERIFY(reactivated.ok());
         QCOMPARE(reactivated.value->edges.constFirst().resolution,
                  TaskDependencyResolution::Pending);
+    }
+}
+
+void TaskCreationFlowTest::permanentlyDeletesArchivedTaskAndRefreshesDependencyState()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("smartmate.db"));
+    TaskId predecessorId;
+    TaskId successorId;
+
+    {
+        SqliteTaskRepository repository{databasePath};
+        TaskService service{repository, repository, repository, repository};
+        TaskDraft predecessorDraft;
+        predecessorDraft.title = QStringLiteral("将被永久删除的前置");
+        const auto predecessor = service.createTask(predecessorDraft);
+        QVERIFY(predecessor.ok());
+        predecessorId = predecessor.value->id();
+
+        TaskDraft successorDraft;
+        successorDraft.title = QStringLiteral("删除依赖后仍保留的任务");
+        const auto successor = service.createTask(
+            TaskCreationRequest{successorDraft, {predecessorId}});
+        QVERIFY(successor.ok());
+        successorId = successor.value->id();
+
+        QVERIFY(service.cancelTask(predecessorId).ok());
+        QVERIFY(service.archiveTask(predecessorId).ok());
+        QSignalSpy taskSpy{&service, &TaskService::tasksChanged};
+        QSignalSpy dependencySpy{&service, &TaskService::dependenciesChanged};
+
+        const auto deleted = service.deleteArchivedTask(predecessorId);
+        QVERIFY2(deleted.ok(), qPrintable(deleted.detail));
+        QCOMPARE(taskSpy.count(), 1);
+        QCOMPARE(dependencySpy.count(), 1);
+        QVERIFY(!repository.findById(predecessorId).has_value());
+        QVERIFY(repository.findById(successorId).has_value());
+        QVERIFY(repository.findAllDependencies().isEmpty());
+
+        const auto snapshot = service.taskGraphSnapshot();
+        QVERIFY(snapshot.ok());
+        QCOMPARE(snapshot.value->nodes.size(), 1);
+        QCOMPARE(snapshot.value->nodes.constFirst().task.id(), successorId);
+        QVERIFY(!snapshot.value->nodes.constFirst().dependencyState.blocked);
+    }
+
+    {
+        SqliteTaskRepository repository{databasePath};
+        TaskService service{repository, repository, repository, repository};
+        QVERIFY(!repository.findById(predecessorId).has_value());
+        QVERIFY(repository.findById(successorId).has_value());
+        QVERIFY(repository.findAllDependencies().isEmpty());
+        const auto plan = service.listRecommendedTasks();
+        QVERIFY(plan.ok());
+        QCOMPARE(plan.value->size(), 1);
+        QCOMPARE(plan.value->constFirst().task.id(), successorId);
     }
 }
 
