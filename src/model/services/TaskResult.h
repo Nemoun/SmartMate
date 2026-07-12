@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "domain/TaskDependencyEditContext.h"
 #include "domain/TaskDependency.h"
 #include "domain/TaskGraph.h"
 #include "planner/TaskOrderingPolicy.h"
@@ -113,5 +114,6 @@ using TaskListResult = ServiceResult<QList<Task>>;
 using TaskPlanResult = ServiceResult<QList<PlannedTask>>;
 using TaskDependencyListResult = ServiceResult<QList<TaskDependency>>;
 using TaskGraphResult = ServiceResult<TaskGraphSnapshot>;
+using TaskDependencyEditContextResult = ServiceResult<TaskDependencyEditContext>;
 
 } // namespace smartmate::model

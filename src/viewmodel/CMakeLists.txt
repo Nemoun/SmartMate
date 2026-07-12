@@ -13,8 +13,14 @@ qt_add_qml_module(smartmate_viewmodel
         TaskDependencyViewModel.cpp
         TaskErrorMapper.h
         TaskErrorMapper.cpp
+        TaskPresentationFormatter.h
+        TaskPresentationFormatter.cpp
         TaskGraphViewModel.h
         TaskGraphViewModel.cpp
+        TaskGraphProjectionModels.h
+        TaskGraphProjectionModels.cpp
+        TaskGraphLayout.h
+        TaskGraphLayout.cpp
         TaskListViewModel.h
         TaskListViewModel.cpp
 )

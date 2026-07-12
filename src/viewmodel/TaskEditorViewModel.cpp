@@ -1,6 +1,7 @@
 #include "TaskEditorViewModel.h"
 
 #include "TaskErrorMapper.h"
+#include "TaskPresentationFormatter.h"
 #include "domain/TaskConstraints.h"
 #include "domain/TaskCreationRequest.h"
 #include "services/TaskService.h"
@@ -400,8 +401,7 @@ bool TaskEditorViewModel::setEstimatedDuration(const int days,
     }
 
     const int totalMinutes = days * 24 * 60 + hours * 60 + minutes;
-    if (totalMinutes < model::TaskConstraints::minimumEstimatedMinutes
-        || totalMinutes > model::TaskConstraints::maximumEstimatedMinutes) {
+    if (!m_taskService.validateEstimatedMinutes(totalMinutes).ok()) {
         setErrorMessage(taskErrorMessage(model::TaskError::InvalidEstimate));
         return false;
     }
@@ -711,34 +711,12 @@ int TaskEditorViewModel::candidateRow(const model::TaskId &taskId) const
 
 QString TaskEditorViewModel::statusText(const model::TaskStatus status)
 {
-    switch (status) {
-    case model::TaskStatus::Todo:
-        return QStringLiteral("待办");
-    case model::TaskStatus::InProgress:
-        return QStringLiteral("进行中");
-    case model::TaskStatus::Done:
-        return QStringLiteral("已完成");
-    case model::TaskStatus::Cancelled:
-        return QStringLiteral("已取消");
-    case model::TaskStatus::Archived:
-        return QStringLiteral("已归档");
-    }
-    return QStringLiteral("未知");
+    return taskStatusText(status);
 }
 
 QString TaskEditorViewModel::priorityText(const model::TaskPriority priority)
 {
-    switch (priority) {
-    case model::TaskPriority::Low:
-        return QStringLiteral("低");
-    case model::TaskPriority::Normal:
-        return QStringLiteral("普通");
-    case model::TaskPriority::High:
-        return QStringLiteral("高");
-    case model::TaskPriority::Urgent:
-        return QStringLiteral("紧急");
-    }
-    return QStringLiteral("未知");
+    return taskPriorityText(priority);
 }
 
 } // namespace smartmate::viewmodel

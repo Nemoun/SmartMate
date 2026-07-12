@@ -86,10 +86,7 @@ private:
     [[nodiscard]] QString dependencyErrorMessage(
         model::TaskError error,
         const model::TaskErrorContext &context) const;
-    void replaceDraft(const model::Task &task,
-                      QList<model::Task> candidates,
-                      QSet<model::TaskId> selectedPredecessors,
-                      QHash<model::TaskId, QString> taskTitles);
+    void replaceDraft(model::TaskDependencyEditContext context);
     void notifySelectionChanged();
     void setErrorMessage(const QString &message);
 
@@ -103,6 +100,8 @@ private:
     QHash<model::TaskId, QString> m_taskTitles;
     QSet<model::TaskId> m_selectedPredecessors;
     QSet<model::TaskId> m_originalPredecessors;
+    /// 候选资格完全来自 Model 上下文，ViewModel 不根据任务状态重新推导。
+    QSet<model::TaskId> m_selectablePredecessors;
     QString m_errorMessage;
 };
 

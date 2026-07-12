@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "domain/TaskCommandAvailability.h"
 #include "domain/TaskDependency.h"
 
 #include <QList>
@@ -11,6 +12,7 @@ namespace smartmate::model {
 struct TaskGraphNode final {
     Task task;
     TaskDependencyState dependencyState;
+    TaskCommandAvailability availability;
     int dependencyLevel{0};
     /// 上下游闭包属于领域图语义，供不同 View 复用且不包含任何布局信息。
     QList<TaskId> predecessorClosureIds;

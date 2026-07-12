@@ -1,6 +1,7 @@
 #include "TaskListViewModel.h"
 
 #include "TaskErrorMapper.h"
+#include "TaskPresentationFormatter.h"
 #include "planner/TaskOrderingPolicy.h"
 #include "services/TaskService.h"
 
@@ -617,34 +618,12 @@ bool TaskListViewModel::performTransition(const QString &taskId,
 
 QString TaskListViewModel::statusText(const model::TaskStatus status)
 {
-    switch (status) {
-    case model::TaskStatus::Todo:
-        return QStringLiteral("待办");
-    case model::TaskStatus::InProgress:
-        return QStringLiteral("进行中");
-    case model::TaskStatus::Done:
-        return QStringLiteral("已完成");
-    case model::TaskStatus::Cancelled:
-        return QStringLiteral("已取消");
-    case model::TaskStatus::Archived:
-        return QStringLiteral("已归档");
-    }
-    return {};
+    return taskStatusText(status);
 }
 
 QString TaskListViewModel::priorityText(const model::TaskPriority priority)
 {
-    switch (priority) {
-    case model::TaskPriority::Low:
-        return QStringLiteral("低");
-    case model::TaskPriority::Normal:
-        return QStringLiteral("普通");
-    case model::TaskPriority::High:
-        return QStringLiteral("高");
-    case model::TaskPriority::Urgent:
-        return QStringLiteral("紧急");
-    }
-    return {};
+    return taskPriorityText(priority);
 }
 
 model::TaskId TaskListViewModel::parseTaskId(const QString &taskId)

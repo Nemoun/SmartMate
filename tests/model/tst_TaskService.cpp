@@ -99,6 +99,9 @@ private slots:
     void enforcesDependencyStatusConsistency();
     void mapsDependencyRepositoryFailures();
     void buildsGraphSnapshotWithArchivedClosure();
+    void buildsDependencyEditContextInModel();
+    void rejectsDependencyEditContextForNonTodoTarget();
+    void keepsPlanAndGraphCommandAvailabilityConsistent();
 };
 
 void TaskServiceTest::listsAndFindsTasks()
@@ -943,6 +946,94 @@ void TaskServiceTest::buildsGraphSnapshotWithArchivedClosure()
              smartmate::model::TaskDependencyResolution::Satisfied);
     QCOMPARE(unsatisfiedEdge->resolution,
              smartmate::model::TaskDependencyResolution::Pending);
+}
+
+void TaskServiceTest::buildsDependencyEditContextInModel()
+{
+    const Task target = storedTask(TaskStatus::Todo, std::nullopt,
+                                   QStringLiteral("Target"));
+    const Task active = storedTask(TaskStatus::InProgress, std::nullopt,
+                                   QStringLiteral("Active"));
+    const Task existingCancelled = storedTask(
+        TaskStatus::Cancelled, std::nullopt, QStringLiteral("Existing cancelled"));
+    const Task existingArchived = storedTask(
+        TaskStatus::Archived, TaskStatus::Done, QStringLiteral("Existing archived"));
+    const Task hiddenCancelled = storedTask(
+        TaskStatus::Cancelled, std::nullopt, QStringLiteral("Hidden cancelled"));
+    FakeTaskRepository repository{{hiddenCancelled, existingArchived, target,
+                                   active, existingCancelled}};
+    FakeTaskDependencyRepository dependencyRepository{
+        {{existingCancelled.id(), target.id()},
+         {existingArchived.id(), target.id()}}};
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    const TaskService service{repository, dependencyRepository, creationRepository};
+
+    const auto result = service.taskDependencyEditContext(target.id());
+
+    QVERIFY(result.ok());
+    QCOMPARE(result.value->targetTask, target);
+    QCOMPARE(result.value->taskTitles.size(), 5);
+    QCOMPARE(result.value->candidates.size(), 3);
+    const auto candidateFor = [&result](const TaskId &id) {
+        return std::find_if(
+            result.value->candidates.cbegin(), result.value->candidates.cend(),
+            [&id](const smartmate::model::TaskDependencyCandidate &candidate) {
+                return candidate.task.id() == id;
+            });
+    };
+    const auto activeCandidate = candidateFor(active.id());
+    const auto cancelledCandidate = candidateFor(existingCancelled.id());
+    const auto archivedCandidate = candidateFor(existingArchived.id());
+    QVERIFY(activeCandidate != result.value->candidates.cend());
+    QVERIFY(cancelledCandidate != result.value->candidates.cend());
+    QVERIFY(archivedCandidate != result.value->candidates.cend());
+    QVERIFY(!activeCandidate->selected);
+    QVERIFY(activeCandidate->selectable);
+    QVERIFY(cancelledCandidate->selected);
+    QVERIFY(cancelledCandidate->selectable);
+    QVERIFY(archivedCandidate->selected);
+    QVERIFY(archivedCandidate->selectable);
+    QVERIFY(candidateFor(hiddenCancelled.id()) == result.value->candidates.cend());
+    QVERIFY(candidateFor(target.id()) == result.value->candidates.cend());
+}
+
+void TaskServiceTest::rejectsDependencyEditContextForNonTodoTarget()
+{
+    const Task target = storedTask(TaskStatus::Done);
+    FakeTaskRepository repository{{target}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    const TaskService service{repository, dependencyRepository, creationRepository};
+
+    const auto result = service.taskDependencyEditContext(target.id());
+
+    QCOMPARE(result.error, TaskError::DependencyTargetNotEditable);
+    QCOMPARE(result.context.conflictingTaskIds, QList<TaskId>{target.id()});
+}
+
+void TaskServiceTest::keepsPlanAndGraphCommandAvailabilityConsistent()
+{
+    const Task predecessor = storedTask(TaskStatus::Done);
+    const Task target = storedTask(TaskStatus::Todo);
+    FakeTaskRepository repository{{target, predecessor}};
+    FakeTaskDependencyRepository dependencyRepository{
+        {{predecessor.id(), target.id()}}};
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    const TaskService service{repository, dependencyRepository, creationRepository};
+
+    const auto plan = service.listRecommendedTasks();
+    const auto graph = service.taskGraphSnapshot();
+
+    QVERIFY(plan.ok());
+    QVERIFY(graph.ok());
+    for (const auto &node : graph.value->nodes) {
+        const auto planned = std::find_if(
+            plan.value->cbegin(), plan.value->cend(), [&node](const auto &item) {
+                return item.task.id() == node.task.id();
+            });
+        QVERIFY(planned != plan.value->cend());
+        QCOMPARE(node.availability, planned->availability);
+    }
 }
 
 QTEST_APPLESS_MAIN(TaskServiceTest)

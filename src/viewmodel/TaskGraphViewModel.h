@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/TaskGraph.h"
+#include "TaskGraphLayout.h"
 
 #include <QAbstractListModel>
 #include <QHash>
@@ -138,12 +139,7 @@ signals:
     void errorMessageChanged();
 
 private:
-    struct NodeProjection final {
-        model::TaskGraphNode node;
-        QString blockingReasonText;
-        qreal x{0.0};
-        qreal y{0.0};
-    };
+    using NodeProjection = TaskGraphNodeProjection;
 
     [[nodiscard]] int rowForTask(const model::TaskId &taskId) const;
     [[nodiscard]] const NodeProjection *selectedNode() const;

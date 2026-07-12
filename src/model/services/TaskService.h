@@ -23,12 +23,17 @@ public:
 
     /// 执行无副作用的权威业务校验：不访问 Repository，也不发出状态通知。
     [[nodiscard]] TaskValidationResult validateDraft(const TaskDraft &draft) const;
+    /// 单独校验类型化选择器产生的总分钟数，规则与完整草稿校验一致。
+    [[nodiscard]] TaskValidationResult validateEstimatedMinutes(int minutes) const;
     [[nodiscard]] TaskListResult listTasks() const;
     /// 返回新建关系可选的前置任务，排序稳定且不包含归档或取消任务。
     [[nodiscard]] TaskListResult listEligibleCreationPredecessors() const;
     /// 读取任务快照并应用 Model 排序策略，不持久化随时间变化的推荐排名。
     [[nodiscard]] TaskPlanResult listRecommendedTasks() const;
     [[nodiscard]] TaskDependencyListResult listDependencies() const;
+    /// 读取依赖编辑器的完整业务上下文；候选范围与选择资格全部由 Model 判定。
+    [[nodiscard]] TaskDependencyEditContextResult taskDependencyEditContext(
+        const TaskId &taskId) const;
     /// 生成依赖图领域快照；只保留活动节点及与其处于同一依赖组件的归档节点。
     [[nodiscard]] TaskGraphResult taskGraphSnapshot() const;
     /// 原子替换活动 Todo 任务的全部前置；空列表清空关系，失败不会部分写入。

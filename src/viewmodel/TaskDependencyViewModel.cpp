@@ -1,6 +1,7 @@
 #include "TaskDependencyViewModel.h"
 
 #include "TaskErrorMapper.h"
+#include "TaskPresentationFormatter.h"
 #include "services/TaskService.h"
 
 #include <QUuid>
@@ -45,10 +46,7 @@ QVariant TaskDependencyViewModel::data(const QModelIndex &index, const int role)
     case ArchivedRole:
         return task.status() == model::TaskStatus::Archived;
     case SelectableRole:
-        // 原有归档或取消关系可以在草稿中撤销和恢复，但不能新增为前置。
-        return (task.status() != model::TaskStatus::Archived
-                && task.status() != model::TaskStatus::Cancelled)
-            || m_originalPredecessors.contains(task.id());
+        return m_selectablePredecessors.contains(task.id());
     default:
         return {};
     }
@@ -111,54 +109,13 @@ bool TaskDependencyViewModel::beginEdit(const QString &taskId)
         return false;
     }
 
-    const auto tasksResult = m_taskService.listTasks();
-    if (!tasksResult.ok()) {
-        setErrorMessage(taskErrorMessage(tasksResult.error));
+    auto contextResult = m_taskService.taskDependencyEditContext(id);
+    if (!contextResult.ok()) {
+        setErrorMessage(dependencyErrorMessage(contextResult.error,
+                                               contextResult.context));
         return false;
     }
-    const auto dependenciesResult = m_taskService.listDependencies();
-    if (!dependenciesResult.ok()) {
-        setErrorMessage(taskErrorMessage(dependenciesResult.error));
-        return false;
-    }
-
-    const auto taskIterator = std::find_if(
-        tasksResult.value->cbegin(), tasksResult.value->cend(),
-        [&id](const model::Task &task) { return task.id() == id; });
-    if (taskIterator == tasksResult.value->cend()) {
-        setErrorMessage(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-    if (taskIterator->status() != model::TaskStatus::Todo) {
-        setErrorMessage(QStringLiteral("只有待办任务可以编辑前置依赖。"));
-        return false;
-    }
-
-    QSet<model::TaskId> selectedPredecessors;
-    for (const model::TaskDependency &dependency : *dependenciesResult.value) {
-        if (dependency.successorId == id) {
-            selectedPredecessors.insert(dependency.predecessorId);
-        }
-    }
-
-    QHash<model::TaskId, QString> taskTitles;
-    taskTitles.reserve(tasksResult.value->size());
-    QList<model::Task> candidates;
-    candidates.reserve(tasksResult.value->size());
-    for (const model::Task &task : *tasksResult.value) {
-        taskTitles.insert(task.id(), task.title());
-        if (task.id() == id) {
-            continue;
-        }
-        if ((task.status() != model::TaskStatus::Archived
-             && task.status() != model::TaskStatus::Cancelled)
-            || selectedPredecessors.contains(task.id())) {
-            candidates.push_back(task);
-        }
-    }
-
-    replaceDraft(*taskIterator, std::move(candidates), std::move(selectedPredecessors),
-                 std::move(taskTitles));
+    replaceDraft(std::move(*contextResult.value));
     return true;
 }
 
@@ -172,11 +129,7 @@ bool TaskDependencyViewModel::setPredecessorSelected(const QString &predecessorT
         return false;
     }
 
-    const model::Task &candidate = m_candidates.at(row);
-    if (selected
-        && (candidate.status() == model::TaskStatus::Archived
-            || candidate.status() == model::TaskStatus::Cancelled)
-        && !m_originalPredecessors.contains(id)) {
+    if (selected && !m_selectablePredecessors.contains(id)) {
         setErrorMessage(QStringLiteral("不能新增已归档或已取消任务作为前置任务。"));
         return false;
     }
@@ -246,34 +199,12 @@ void TaskDependencyViewModel::clearError()
 
 QString TaskDependencyViewModel::statusText(const model::TaskStatus status)
 {
-    switch (status) {
-    case model::TaskStatus::Todo:
-        return QStringLiteral("待办");
-    case model::TaskStatus::InProgress:
-        return QStringLiteral("进行中");
-    case model::TaskStatus::Done:
-        return QStringLiteral("已完成");
-    case model::TaskStatus::Cancelled:
-        return QStringLiteral("已取消");
-    case model::TaskStatus::Archived:
-        return QStringLiteral("已归档");
-    }
-    return {};
+    return taskStatusText(status);
 }
 
 QString TaskDependencyViewModel::priorityText(const model::TaskPriority priority)
 {
-    switch (priority) {
-    case model::TaskPriority::Low:
-        return QStringLiteral("低");
-    case model::TaskPriority::Normal:
-        return QStringLiteral("普通");
-    case model::TaskPriority::High:
-        return QStringLiteral("高");
-    case model::TaskPriority::Urgent:
-        return QStringLiteral("紧急");
-    }
-    return {};
+    return taskPriorityText(priority);
 }
 
 int TaskDependencyViewModel::candidateRow(const model::TaskId &taskId) const
@@ -333,17 +264,25 @@ QString TaskDependencyViewModel::dependencyErrorMessage(
 }
 
 void TaskDependencyViewModel::replaceDraft(
-    const model::Task &task,
-    QList<model::Task> candidates,
-    QSet<model::TaskId> selectedPredecessors,
-    QHash<model::TaskId, QString> taskTitles)
+    model::TaskDependencyEditContext context)
 {
     beginResetModel();
-    m_taskId = task.id();
-    m_taskTitle = task.title();
-    m_candidates = std::move(candidates);
-    m_taskTitles = std::move(taskTitles);
-    m_selectedPredecessors = std::move(selectedPredecessors);
+    m_taskId = context.targetTask.id();
+    m_taskTitle = context.targetTask.title();
+    m_candidates.clear();
+    m_selectedPredecessors.clear();
+    m_selectablePredecessors.clear();
+    m_candidates.reserve(context.candidates.size());
+    for (const model::TaskDependencyCandidate &candidate : context.candidates) {
+        m_candidates.append(candidate.task);
+        if (candidate.selected) {
+            m_selectedPredecessors.insert(candidate.task.id());
+        }
+        if (candidate.selectable) {
+            m_selectablePredecessors.insert(candidate.task.id());
+        }
+    }
+    m_taskTitles = std::move(context.taskTitles);
     m_originalPredecessors = m_selectedPredecessors;
     endResetModel();
 

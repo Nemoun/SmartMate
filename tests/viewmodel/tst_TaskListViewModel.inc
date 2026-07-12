@@ -1,0 +1,547 @@
+// 列表 ViewModel 的投影、筛选、焦点与命令测试。
+
+void TaskViewModelsTest::listProjectsActiveAndArchivedTasksInPlanOrder()
+{
+    // Repository 返回顺序不是 UI 契约；ViewModel 必须保留Model给出的计划顺序。
+    const Task older = task(QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+                            QStringLiteral("older"), TaskStatus::Todo, 1700000001000);
+    const Task secondAtSameTime =
+        task(QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+             QStringLiteral("same time second"), TaskStatus::Done, 1700000003000,
+             TaskPriority::High);
+    const Task firstAtSameTime =
+        task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+             QStringLiteral("same time first"), TaskStatus::InProgress, 1700000003000,
+             TaskPriority::Urgent);
+    const Task archived = task(QStringLiteral("{44444444-4444-4444-4444-444444444444}"),
+                               QStringLiteral("archived"), TaskStatus::Archived,
+                               1700000004000);
+    FakeTaskRepository repository{{older, secondAtSameTime, archived, firstAtSameTime}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    QCOMPARE(viewModel.count(), 3);
+    QCOMPARE(idAt(viewModel, 0), QStringLiteral("11111111-1111-1111-1111-111111111111"));
+    QCOMPARE(idAt(viewModel, 1), QStringLiteral("33333333-3333-3333-3333-333333333333"));
+    QCOMPARE(idAt(viewModel, 2), QStringLiteral("22222222-2222-2222-2222-222222222222"));
+    QCOMPARE(viewModel.data(viewModel.index(0), TaskListViewModel::PriorityTextRole).toString(),
+             QStringLiteral("紧急"));
+    QCOMPARE(viewModel.data(viewModel.index(0),
+                            TaskListViewModel::OrderReasonTextRole).toString(),
+             QStringLiteral("正在进行"));
+
+    QSignalSpy countSpy{&viewModel, &TaskListViewModel::countChanged};
+    viewModel.setShowArchived(true);
+
+    QCOMPARE(countSpy.count(), 1);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), QStringLiteral("44444444-4444-4444-4444-444444444444"));
+    QCOMPARE(viewModel.data(viewModel.index(0),
+                            TaskListViewModel::OrderReasonTextRole).toString(),
+             QStringLiteral("已归档"));
+}
+
+
+void TaskViewModelsTest::listMapsEveryRecommendedOrderReason()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const Task inProgress = task(
+        QStringLiteral("{10000000-0000-0000-0000-000000000001}"),
+        QStringLiteral("in progress"), TaskStatus::InProgress, 1700000001000,
+        TaskPriority::Urgent);
+    const Task overdue = task(
+        QStringLiteral("{20000000-0000-0000-0000-000000000002}"),
+        QStringLiteral("overdue"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent, QStringLiteral("description"), now.addDays(-1));
+    const Task urgent = task(
+        QStringLiteral("{30000000-0000-0000-0000-000000000003}"),
+        QStringLiteral("urgent"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    const Task high = task(
+        QStringLiteral("{40000000-0000-0000-0000-000000000004}"),
+        QStringLiteral("high"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::High);
+    const Task upcoming = task(
+        QStringLiteral("{50000000-0000-0000-0000-000000000005}"),
+        QStringLiteral("upcoming"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Normal, QStringLiteral("description"), now.addDays(1));
+    const Task todo = task(
+        QStringLiteral("{60000000-0000-0000-0000-000000000006}"),
+        QStringLiteral("todo"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Normal);
+    const Task completed = task(
+        QStringLiteral("{70000000-0000-0000-0000-000000000007}"),
+        QStringLiteral("completed"), TaskStatus::Done, 1700000001000);
+    const Task cancelled = task(
+        QStringLiteral("{80000000-0000-0000-0000-000000000008}"),
+        QStringLiteral("cancelled"), TaskStatus::Cancelled, 1700000001000);
+    const Task archived = task(
+        QStringLiteral("{90000000-0000-0000-0000-000000000009}"),
+        QStringLiteral("archived"), TaskStatus::Archived, 1700000001000);
+    FakeTaskRepository repository{{archived, todo, upcoming, cancelled, high,
+                                   overdue, completed, urgent, inProgress}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    QCOMPARE(reasonForId(viewModel, inProgress.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("正在进行"));
+    QCOMPARE(reasonForId(viewModel, overdue.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("已逾期"));
+    QCOMPARE(reasonForId(viewModel, urgent.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("紧急优先"));
+    QCOMPARE(reasonForId(viewModel, high.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("高优先"));
+    QCOMPARE(reasonForId(viewModel, upcoming.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("截止较近"));
+    QCOMPARE(reasonForId(viewModel, todo.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("待办"));
+    QCOMPARE(reasonForId(viewModel, completed.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("已完成"));
+    QCOMPARE(reasonForId(viewModel, cancelled.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("已取消"));
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(reasonForId(viewModel, archived.id().toString(QUuid::WithoutBraces)),
+             QStringLiteral("已归档"));
+}
+
+
+void TaskViewModelsTest::listSearchesTrimmedKeywordsInTitleAndDescription()
+{
+    const Task titleMatch = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("Write MVVM Report"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Low, QStringLiteral("other"));
+    const Task descriptionMatch = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("整理资料"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Normal, QStringLiteral("REPORT 中包含中文说明"));
+    const Task noMatch = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("unrelated"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::High, QStringLiteral("nothing here"));
+    const Task archivedMatch = task(
+        QStringLiteral("{44444444-4444-4444-4444-444444444444}"),
+        QStringLiteral("archived report"), TaskStatus::Archived, 1700000001000,
+        TaskPriority::Urgent);
+    FakeTaskRepository repository{{noMatch, archivedMatch, descriptionMatch, titleMatch}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    viewModel.setSearchText(QStringLiteral("  report  "));
+    QCOMPARE(viewModel.searchText(), QStringLiteral("  report  "));
+    QVERIFY(viewModel.hasActiveFilters());
+    QCOMPARE(viewModel.count(), 2);
+    const QSet<QString> matchingIds{idAt(viewModel, 0), idAt(viewModel, 1)};
+    const QSet<QString> expectedIds{
+        titleMatch.id().toString(QUuid::WithoutBraces),
+        descriptionMatch.id().toString(QUuid::WithoutBraces)};
+    QCOMPARE(matchingIds, expectedIds);
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0),
+             archivedMatch.id().toString(QUuid::WithoutBraces));
+
+    viewModel.setSearchText(QStringLiteral("   "));
+    QCOMPARE(viewModel.count(), 1);
+    QVERIFY(!viewModel.hasActiveFilters());
+}
+
+
+void TaskViewModelsTest::listCombinesPrioritySearchAndArchiveFilters()
+{
+    const Task lowReport = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("report low"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Low);
+    const Task urgentReport = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("report urgent"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    const Task urgentOther = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("other urgent"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    const Task archivedUrgentReport = task(
+        QStringLiteral("{44444444-4444-4444-4444-444444444444}"),
+        QStringLiteral("archived report"), TaskStatus::Archived, 1700000001000,
+        TaskPriority::Urgent);
+    FakeTaskRepository repository{{urgentOther, archivedUrgentReport,
+                                   lowReport, urgentReport}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    QCOMPARE(viewModel.priorityFilterOptions(),
+             QStringList({QStringLiteral("全部优先级"), QStringLiteral("低"),
+                          QStringLiteral("普通"), QStringLiteral("高"),
+                          QStringLiteral("紧急")}));
+    viewModel.setSearchText(QStringLiteral("report"));
+    viewModel.setPriorityFilterIndex(4);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), urgentReport.id().toString(QUuid::WithoutBraces));
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0),
+             archivedUrgentReport.id().toString(QUuid::WithoutBraces));
+
+    viewModel.clearFilters();
+    QVERIFY(viewModel.showArchived());
+    QCOMPARE(viewModel.searchText(), QString{});
+    QCOMPARE(viewModel.priorityFilterIndex(), 0);
+    QVERIFY(!viewModel.hasActiveFilters());
+    QCOMPARE(viewModel.count(), 1);
+}
+
+
+void TaskViewModelsTest::listFilterPropertiesNotifyOnceAndRejectInvalidIndexes()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("report"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+    QSignalSpy searchSpy{&viewModel, &TaskListViewModel::searchTextChanged};
+    QSignalSpy prioritySpy{&viewModel,
+                           &TaskListViewModel::priorityFilterIndexChanged};
+    QSignalSpy activeSpy{&viewModel, &TaskListViewModel::hasActiveFiltersChanged};
+    QSignalSpy resetSpy{&viewModel, &QAbstractItemModel::modelReset};
+    QSignalSpy countSpy{&viewModel, &TaskListViewModel::countChanged};
+
+    viewModel.setSearchText(QStringLiteral("report"));
+    viewModel.setSearchText(QStringLiteral("report"));
+    viewModel.setPriorityFilterIndex(4);
+    viewModel.setPriorityFilterIndex(4);
+    viewModel.setPriorityFilterIndex(-1);
+    viewModel.setPriorityFilterIndex(5);
+
+    QCOMPARE(viewModel.priorityFilterIndex(), 4);
+    QCOMPARE(searchSpy.count(), 1);
+    QCOMPARE(prioritySpy.count(), 1);
+    QCOMPARE(activeSpy.count(), 1);
+    QCOMPARE(resetSpy.count(), 2);
+    QCOMPARE(countSpy.count(), 2);
+
+    // 分钟刷新读取到相同计划时不得无意义重置列表。
+    viewModel.reload();
+    QCOMPARE(resetSpy.count(), 2);
+    QCOMPARE(countSpy.count(), 2);
+
+    viewModel.clearFilters();
+    viewModel.clearFilters();
+    QCOMPARE(searchSpy.count(), 2);
+    QCOMPARE(prioritySpy.count(), 2);
+    QCOMPARE(activeSpy.count(), 2);
+    QCOMPARE(resetSpy.count(), 3);
+    QCOMPARE(countSpy.count(), 3);
+}
+
+
+void TaskViewModelsTest::listRetainsFiltersAndStableTaskIdAcrossServiceReloads()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("needle task"), TaskStatus::Done, 1700000001000,
+        TaskPriority::Urgent);
+    const Task other = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("other"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    FakeTaskRepository repository{{other, stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    viewModel.setSearchText(QStringLiteral("needle"));
+    viewModel.setPriorityFilterIndex(4);
+    QCOMPARE(viewModel.count(), 1);
+    const QString stableId = idAt(viewModel, 0);
+
+    QVERIFY(viewModel.archiveTask(stableId));
+    QCOMPARE(viewModel.searchText(), QStringLiteral("needle"));
+    QCOMPARE(viewModel.priorityFilterIndex(), 4);
+    QCOMPARE(viewModel.count(), 0);
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), stableId);
+    QCOMPARE(reasonForId(viewModel, stableId), QStringLiteral("已归档"));
+    QVERIFY(viewModel.restoreTask(stableId));
+    QCOMPARE(viewModel.count(), 0);
+
+    viewModel.setShowArchived(false);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), stableId);
+}
+
+
+void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
+{
+    FakeTaskRepository repository;
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    const auto timers = viewModel.findChildren<QTimer *>(
+        QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(timers.size(), 1);
+    QCOMPARE(timers.constFirst()->interval(), 60'000);
+    QVERIFY(timers.constFirst()->isActive());
+}
+
+
+void TaskViewModelsTest::listProjectsAndExecutesStateActionsByStableTaskId()
+{
+    // 每次刷新都可能改变行号；全部状态命令必须始终使用稳定 TaskId。
+    const Task stored = task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+                             QStringLiteral("archive me"), TaskStatus::Todo,
+                             1700000001000);
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+    QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
+    const QString stableId = idAt(viewModel, 0);
+
+    const auto action = [&viewModel](const TaskListViewModel::Role role) {
+        return viewModel.data(viewModel.index(0), role).toBool();
+    };
+    const auto verifyActions = [&action](const bool canStart,
+                                         const bool canCancel,
+                                         const bool canComplete,
+                                         const bool canRedo,
+                                         const bool canArchive,
+                                         const bool canRestore) {
+        QCOMPARE(action(TaskListViewModel::CanStartRole), canStart);
+        QCOMPARE(action(TaskListViewModel::CanCancelRole), canCancel);
+        QCOMPARE(action(TaskListViewModel::CanCompleteRole), canComplete);
+        QCOMPARE(action(TaskListViewModel::CanRedoRole), canRedo);
+        QCOMPARE(action(TaskListViewModel::CanArchiveRole), canArchive);
+        QCOMPARE(action(TaskListViewModel::CanRestoreRole), canRestore);
+    };
+
+    verifyActions(true, true, false, false, false, false);
+
+    // Todo 不得跳过 InProgress 直接完成；拒绝时不写入也不通知。
+    QVERIFY(!viewModel.completeTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+    QCOMPARE(changedSpy.count(), 0);
+    viewModel.clearError();
+
+    QVERIFY(viewModel.startTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::InProgress);
+    verifyActions(false, true, true, false, false, false);
+
+    QVERIFY(viewModel.completeTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Done);
+    verifyActions(false, false, false, true, true, false);
+
+    QVERIFY(viewModel.redoTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Todo);
+    QVERIFY(viewModel.cancelTask(stableId));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Cancelled);
+    verifyActions(false, false, false, true, true, false);
+
+    QVERIFY(viewModel.archiveTask(stableId));
+    QCOMPARE(viewModel.count(), 0);
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Archived);
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), stableId);
+    verifyActions(false, false, false, false, false, true);
+    QVERIFY(viewModel.restoreTask(stableId));
+    QCOMPARE(viewModel.count(), 0);
+
+    viewModel.setShowArchived(false);
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(idAt(viewModel, 0), stableId);
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::Cancelled);
+    QCOMPARE(changedSpy.count(), 6);
+}
+
+
+void TaskViewModelsTest::archivedTasksCannotOpenEditorUntilRestored()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("restore before editing"), TaskStatus::Done,
+        1700000001000);
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel list{service};
+    TaskEditorViewModel editor{service};
+    const QString stableId = stored.id().toString(QUuid::WithoutBraces);
+
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             true);
+    QVERIFY(list.archiveTask(stableId));
+    list.setShowArchived(true);
+    QCOMPARE(list.count(), 1);
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             false);
+
+    // 即使绕过QML直接调用命令，ViewModel也不能为归档实体建立编辑草稿。
+    QVERIFY(!editor.beginEdit(stableId));
+    QVERIFY(editor.errorMessage().contains(QStringLiteral("归档")));
+    QVERIFY(!editor.editMode());
+    QVERIFY(editor.taskId().isEmpty());
+
+    QVERIFY(list.restoreTask(stableId));
+    list.setShowArchived(false);
+    QCOMPARE(list.count(), 1);
+    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
+             true);
+    QVERIFY(editor.beginEdit(stableId));
+    QVERIFY(editor.editMode());
+    QCOMPARE(editor.taskId(), stableId);
+}
+
+
+void TaskViewModelsTest::listExposesAndClearsChineseErrors()
+{
+    FakeTaskRepository repository;
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+    QSignalSpy errorSpy{&viewModel, &TaskListViewModel::errorOccurred};
+
+    repository.setReadFailure(true);
+    viewModel.reload();
+
+    QCOMPARE(errorSpy.count(), 1);
+    QVERIFY(!viewModel.errorMessage().isEmpty());
+    QVERIFY(viewModel.errorMessage().contains(QStringLiteral("数据")));
+
+    viewModel.clearError();
+    QVERIFY(viewModel.errorMessage().isEmpty());
+}
+
+
+void TaskViewModelsTest::listProjectsBlockingAndUnlockInformation()
+{
+    const Task predecessor = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("需求分析"), TaskStatus::Todo, 1700000001000);
+    const Task successor = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("编码"), TaskStatus::Todo, 1700000002000);
+    const Task completed = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("已完成"), TaskStatus::Done, 1700000003000);
+    FakeTaskRepository repository{{successor, completed, predecessor}};
+    FakeTaskDependencyRepository dependencyRepository{{
+        TaskDependency{predecessor.id(), successor.id()},
+    }};
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    const int predecessorRow = rowForId(
+        viewModel, predecessor.id().toString(QUuid::WithoutBraces));
+    const int successorRow = rowForId(
+        viewModel, successor.id().toString(QUuid::WithoutBraces));
+    const int completedRow = rowForId(
+        viewModel, completed.id().toString(QUuid::WithoutBraces));
+    QVERIFY(predecessorRow >= 0);
+    QVERIFY(successorRow >= 0);
+    QVERIFY(completedRow >= 0);
+
+    QCOMPARE(viewModel.data(viewModel.index(successorRow),
+                            TaskListViewModel::BlockedRole).toBool(), true);
+    QVERIFY(viewModel.data(viewModel.index(successorRow),
+                           TaskListViewModel::BlockingReasonTextRole).toString()
+                .contains(QStringLiteral("需求分析")));
+    QCOMPARE(viewModel.data(viewModel.index(successorRow),
+                            TaskListViewModel::PredecessorCountRole).toInt(), 1);
+    QCOMPARE(viewModel.data(viewModel.index(predecessorRow),
+                            TaskListViewModel::UnlockCountRole).toInt(), 1);
+    QCOMPARE(viewModel.data(viewModel.index(successorRow),
+                            TaskListViewModel::CanEditDependenciesRole).toBool(), true);
+    QCOMPARE(viewModel.data(viewModel.index(completedRow),
+                            TaskListViewModel::CanEditDependenciesRole).toBool(), false);
+
+    QVERIFY(service.replaceTaskPredecessors(successor.id(), {}).ok());
+    const int refreshedRow = rowForId(
+        viewModel, successor.id().toString(QUuid::WithoutBraces));
+    QCOMPARE(viewModel.data(viewModel.index(refreshedRow),
+                            TaskListViewModel::BlockedRole).toBool(), false);
+    QCOMPARE(viewModel.data(viewModel.index(refreshedRow),
+                            TaskListViewModel::PredecessorCountRole).toInt(), 0);
+}
+
+
+void TaskViewModelsTest::listFocusProjectionIgnoresFiltersAndTracksInProgress()
+{
+    const Task urgent = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("现在最值得做"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Urgent);
+    const Task normal = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("普通任务"), TaskStatus::Todo, 1700000002000);
+    FakeTaskRepository repository{{normal, urgent}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    QCOMPARE(viewModel.focusState(), TaskListViewModel::FocusState::Suggested);
+    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+    QVERIFY(viewModel.focusCanStart());
+
+    viewModel.setSearchText(QStringLiteral("普通"));
+    QCOMPARE(viewModel.count(), 1);
+    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+
+    QVERIFY(viewModel.startTask(urgent.id().toString(QUuid::WithoutBraces)));
+    QCOMPARE(viewModel.focusState(), TaskListViewModel::FocusState::InProgress);
+    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+    QVERIFY(viewModel.focusCanComplete());
+    const int normalRow = rowForId(viewModel, normal.id().toString(QUuid::WithoutBraces));
+    QVERIFY(normalRow >= 0);
+    QVERIFY(!viewModel.data(viewModel.index(normalRow),
+                            TaskListViewModel::CanStartRole).toBool());
+}
+
+
+void TaskViewModelsTest::listSelectsStableTaskDetails()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("详情任务"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::High, QStringLiteral("详情描述"));
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskListViewModel viewModel{service};
+
+    QVERIFY(viewModel.selectTask(stored.id().toString(QUuid::WithoutBraces)));
+    QCOMPARE(viewModel.selectedTitle(), QStringLiteral("详情任务"));
+    QCOMPARE(viewModel.selectedDescription(), QStringLiteral("详情描述"));
+    QCOMPARE(viewModel.selectedPriorityText(), QStringLiteral("高"));
+    QVERIFY(!viewModel.selectedCreatedAtText().isEmpty());
+    QVERIFY(viewModel.selectedCanEditTask());
+    viewModel.clearSelection();
+    QVERIFY(viewModel.selectedTaskId().isEmpty());
+}

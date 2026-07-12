@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "domain/TaskCommandAvailability.h"
 #include "domain/TaskDependency.h"
 
 #include <QDateTime>
@@ -19,21 +20,6 @@ enum class TaskOrderReason {
     Completed,
     Cancelled,
     Archived,
-};
-
-/// 当前完整快照下的命令资格；ViewModel 只投影这些结果，不复制领域规则。
-struct TaskCommandAvailability final {
-    bool canEditTask{false};
-    bool canEditDependencies{false};
-    bool canStart{false};
-    bool canCancel{false};
-    bool canComplete{false};
-    bool canRedo{false};
-    bool canArchive{false};
-    bool canRestore{false};
-
-    friend bool operator==(const TaskCommandAvailability &,
-                           const TaskCommandAvailability &) = default;
 };
 
 /// 推荐顺序中的领域快照及其理由，不保存列表行号或持久化排名。
