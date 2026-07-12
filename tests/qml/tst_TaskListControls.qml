@@ -306,30 +306,43 @@ TestCase {
         testAppViewModel.appearanceSettings.resetDefaults()
     }
 
-    function test_archivedTaskHidesEditEntryUntilRestored() {
+    function test_onlyTodoTaskShowsEditEntry() {
         tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
         let editButton = findChild(taskDelegate(alphaId),
                                    "editTaskButton_" + alphaId)
         verify(editButton !== null)
-        tryCompare(editButton, "enabled", true)
+        tryCompare(editButton, "visible", true)
 
-        // Todo 不能直接归档；先严格经过 Todo → InProgress → Done。
         verify(testAppViewModel.taskList.startTask(alphaId),
                testAppViewModel.taskList.errorMessage)
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
+        editButton = findChild(taskDelegate(alphaId),
+                               "editTaskButton_" + alphaId)
+        tryCompare(editButton, "visible", false)
+
         verify(testAppViewModel.taskList.completeTask(alphaId),
                testAppViewModel.taskList.errorMessage)
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
+        editButton = findChild(taskDelegate(alphaId),
+                               "editTaskButton_" + alphaId)
+        tryCompare(editButton, "visible", false)
+
         verify(testAppViewModel.taskList.archiveTask(alphaId),
                testAppViewModel.taskList.errorMessage)
         testAppViewModel.taskList.showArchived = true
         tryCompare(testAppViewModel.taskList, "count", 1)
         tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
         editButton = findChild(taskDelegate(alphaId),
                                "editTaskButton_" + alphaId)
         const restoreButton = findChild(taskDelegate(alphaId),
                                         "primaryTaskAction_" + alphaId)
         verify(editButton !== null)
         verify(restoreButton !== null)
-        tryCompare(editButton, "enabled", false)
+        tryCompare(editButton, "visible", false)
         tryCompare(restoreButton, "visible", true)
         compare(restoreButton.text, "恢复")
 
@@ -338,14 +351,105 @@ TestCase {
         testAppViewModel.taskList.showArchived = false
         tryCompare(testAppViewModel.taskList, "count", 3)
         tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
         editButton = findChild(taskDelegate(alphaId),
                                "editTaskButton_" + alphaId)
         verify(editButton !== null)
-        tryCompare(editButton, "enabled", true)
+        // 恢复到Done后仍不可编辑，必须重做回Todo。
+        tryCompare(editButton, "visible", false)
 
-        // 恢复后的正常状态是 Done；重做回 Todo，避免污染后续依赖编辑用例。
         verify(testAppViewModel.taskList.redoTask(alphaId),
                testAppViewModel.taskList.errorMessage)
+        tryVerify(function() { return taskDelegate(alphaId) !== null })
+        findChild(taskDelegate(alphaId), "taskMenuButton_" + alphaId).clicked()
+        editButton = findChild(taskDelegate(alphaId),
+                               "editTaskButton_" + alphaId)
+        tryCompare(editButton, "visible", true)
+    }
+
+    function test_overdueReminderCoexistsWithBlockingReason() {
+        const editor = testAppViewModel.taskEditor
+        verify(editor.beginCreate(), editor.errorMessage)
+        editor.title = "逾期且阻塞的临时任务"
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        verify(editor.setDeadlineSelection(yesterday.getFullYear(),
+                                           yesterday.getMonth() + 1,
+                                           yesterday.getDate(), 0, 0),
+               editor.errorMessage)
+        verify(editor.save(), editor.errorMessage)
+        const overdueId = editor.taskId
+        tryCompare(testAppViewModel.taskList, "focusTaskId", overdueId)
+        const focusBadge = findChild(subject, "focusOverdueBadge")
+        const focusReminder = findChild(subject, "focusOverdueReminder")
+        verify(focusBadge !== null)
+        verify(focusReminder !== null)
+        tryCompare(focusBadge, "visible", true)
+        tryCompare(focusReminder, "visible", true)
+        saveSinglePredecessor(overdueId, alphaId)
+
+        tryVerify(function() { return taskDelegate(overdueId) !== null })
+        const delegate = taskDelegate(overdueId)
+        compare(delegate.overdue, true)
+        compare(delegate.blocked, true)
+        const badge = findChild(delegate, "overdueBadge_" + overdueId)
+        const reminder = findChild(delegate, "overdueReminder_" + overdueId)
+        const blocking = findChild(delegate, "blockingReasonLabel_" + overdueId)
+        verify(badge !== null)
+        verify(reminder !== null)
+        verify(blocking !== null)
+        tryCompare(badge, "visible", true)
+        tryCompare(reminder, "visible", true)
+        tryCompare(blocking, "visible", true)
+        verify(reminder.text.indexOf("超过截止时间") >= 0)
+
+        // 临时任务经取消、归档、永久删除，恢复共享数据库的三项基线。
+        verify(testAppViewModel.taskList.cancelTask(overdueId),
+               testAppViewModel.taskList.errorMessage)
+        verify(testAppViewModel.taskList.archiveTask(overdueId),
+               testAppViewModel.taskList.errorMessage)
+        verify(testAppViewModel.taskList.deleteArchivedTask(overdueId),
+               testAppViewModel.taskList.errorMessage)
+        tryCompare(testAppViewModel.taskList, "count", 3)
+    }
+
+    function test_archivedPermanentDeletionRequiresConfirmation() {
+        const temporaryId = createTask("待永久删除的临时任务", "", 1)
+        verify(testAppViewModel.taskList.cancelTask(temporaryId),
+               testAppViewModel.taskList.errorMessage)
+        verify(testAppViewModel.taskList.archiveTask(temporaryId),
+               testAppViewModel.taskList.errorMessage)
+        testAppViewModel.taskList.showArchived = true
+        tryCompare(testAppViewModel.taskList, "count", 1)
+        tryVerify(function() { return taskDelegate(temporaryId) !== null })
+
+        const delegate = taskDelegate(temporaryId)
+        findChild(delegate, "taskMenuButton_" + temporaryId).clicked()
+        const deleteButton = findChild(
+                    delegate, "deleteTaskPermanentlyButton_" + temporaryId)
+        verify(deleteButton !== null)
+        tryCompare(deleteButton, "visible", true)
+        deleteButton.triggered()
+
+        const dialog = findChild(subject, "deleteArchivedTaskDialog")
+        const warning = findChild(subject, "deleteArchivedTaskWarning")
+        verify(dialog !== null)
+        verify(warning !== null)
+        tryCompare(dialog, "opened", true)
+        verify(warning.text.indexOf("不可撤销") >= 0)
+        verify(warning.text.indexOf("前置和后继依赖") >= 0)
+        dialog.reject()
+        tryCompare(dialog, "opened", false)
+        compare(testAppViewModel.taskList.count, 1)
+
+        findChild(taskDelegate(temporaryId),
+                  "taskMenuButton_" + temporaryId).clicked()
+        deleteButton.triggered()
+        tryCompare(dialog, "opened", true)
+        dialog.accept()
+        tryCompare(testAppViewModel.taskList, "count", 0)
+        testAppViewModel.taskList.showArchived = false
+        tryCompare(testAppViewModel.taskList, "count", 3)
     }
 
     function test_editorShowsReadOnlyInitialStatusInsteadOfStatusSelector() {

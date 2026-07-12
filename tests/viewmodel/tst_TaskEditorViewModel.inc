@@ -5,7 +5,8 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     const QTimeZone timeZone = QTimeZone::fromSecondsAheadOfUtc(8 * 60 * 60);
     TaskEditorViewModel editor{service, timeZone};
 
@@ -62,7 +63,8 @@ void TaskViewModelsTest::editorCancelLeavesTheStoredTaskUnchanged()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
 
     QVERIFY(editor.beginEdit(stored.id().toString(QUuid::WithoutBraces)));
@@ -82,7 +84,8 @@ void TaskViewModelsTest::editorRejectsInvalidSelectionsAndMapsServiceErrors()
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
 
     editor.beginCreate();
@@ -117,7 +120,8 @@ void TaskViewModelsTest::editorSupportsDurationBoundariesAndClear()
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
 
     editor.beginCreate();
@@ -161,7 +165,8 @@ void TaskViewModelsTest::editorConvertsInjectedTimeZoneAndRejectsDstTransitions(
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service, newYork};
     editor.beginCreate();
     editor.setTitle(QStringLiteral("DST-safe deadline"));
@@ -202,7 +207,8 @@ void TaskViewModelsTest::editorPreservesUnchangedDeadlinePrecision()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service, QTimeZone{QTimeZone::UTC}};
 
     QVERIFY(editor.beginEdit(stored.id().toString(QUuid::WithoutBraces)));
@@ -227,7 +233,8 @@ void TaskViewModelsTest::editorRejectsSaveWhenNothingChanged()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
     QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
@@ -247,19 +254,20 @@ void TaskViewModelsTest::editorRejectsSaveWhenNothingChanged()
 void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
 {
     const Task stored = task(QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-                             QStringLiteral("before"), TaskStatus::Done,
+                             QStringLiteral("before"), TaskStatus::Todo,
                              1700000001000);
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     const QTimeZone timeZone = QTimeZone::fromSecondsAheadOfUtc(8 * 60 * 60);
     TaskEditorViewModel editor{service, timeZone};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
     QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
 
     QVERIFY(editor.beginEdit(stored.id().toString(QUuid::WithoutBraces)));
-    QCOMPARE(editor.currentStatusText(), QStringLiteral("已完成"));
+    QCOMPARE(editor.currentStatusText(), QStringLiteral("待办"));
     editor.setTitle(QStringLiteral("after"));
     editor.setDescription(QStringLiteral("updated description"));
     editor.setPriorityIndex(static_cast<int>(TaskPriority::High));
@@ -275,7 +283,7 @@ void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
     QVERIFY(updated.has_value());
     QCOMPARE(updated->title(), QStringLiteral("after"));
     QCOMPARE(updated->description(), QStringLiteral("updated description"));
-    QCOMPARE(updated->status(), TaskStatus::Done);
+    QCOMPARE(updated->status(), TaskStatus::Todo);
     QCOMPARE(updated->priority(), TaskPriority::High);
     QCOMPARE(updated->estimatedMinutes(), std::optional<int>{120});
     QCOMPARE(updated->deadline()->toTimeZone(timeZone).toString(
@@ -284,6 +292,42 @@ void TaskViewModelsTest::editorSuccessfullyUpdatesAStoredTask()
     QVERIFY(!editor.dirty());
     QVERIFY(!editor.canSave());
     QVERIFY(editor.errorMessage().isEmpty());
+}
+
+
+void TaskViewModelsTest::editorRejectsStaleDraftAfterTaskLeavesTodo()
+{
+    const Task stored = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("保存前改变状态"), TaskStatus::Todo, 1700000001000);
+    FakeTaskRepository repository{{stored}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
+    TaskEditorViewModel editor{service};
+    QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
+    QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
+    const QString stableId = stored.id().toString(QUuid::WithoutBraces);
+
+    QVERIFY(editor.beginEdit(stableId));
+    editor.setTitle(QStringLiteral("仍保留在草稿中的标题"));
+    QVERIFY(editor.dirty());
+    QVERIFY(service.startTask(stored.id()).ok());
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(repository.updateCount(), 1);
+
+    // Service在写入前重新读取实体，防止旧Todo草稿覆盖已经开始的任务。
+    QVERIFY(!editor.save());
+    QCOMPARE(changedSpy.count(), 1);
+    QCOMPARE(savedSpy.count(), 0);
+    QCOMPARE(repository.updateCount(), 1);
+    QVERIFY(editor.dirty());
+    QCOMPARE(editor.title(), QStringLiteral("仍保留在草稿中的标题"));
+    QVERIFY(editor.errorMessage().contains(QStringLiteral("只有待办")));
+    QCOMPARE(repository.findById(stored.id())->title(),
+             QStringLiteral("保存前改变状态"));
+    QCOMPARE(repository.findById(stored.id())->status(), TaskStatus::InProgress);
 }
 
 
@@ -301,7 +345,8 @@ void TaskViewModelsTest::editorCreationPredecessorPickerUsesIsolatedCheckpoints(
     FakeTaskRepository repository{{archived, cancelled, active}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
 
     QVERIFY(editor.beginCreate());
@@ -350,7 +395,8 @@ void TaskViewModelsTest::editorAtomicCreationFailurePreservesTheWholeDraft()
     FakeTaskRepository repository{{predecessor}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskEditorViewModel editor{service};
     QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
 
@@ -376,5 +422,3 @@ void TaskViewModelsTest::editorAtomicCreationFailurePreservesTheWholeDraft()
     QCOMPARE(dependencyRepository.dependencies().size(), 1);
     QCOMPARE(savedSpy.count(), 1);
 }
-
-

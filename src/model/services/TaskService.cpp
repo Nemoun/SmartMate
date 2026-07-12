@@ -19,11 +19,13 @@ namespace smartmate::model {
 TaskService::TaskService(ITaskRepository &repository,
                          ITaskDependencyRepository &dependencyRepository,
                          ITaskCreationRepository &creationRepository,
+                         ITaskDeletionRepository &deletionRepository,
                          QObject *parent)
     : QObject(parent)
     , m_repository(repository)
     , m_dependencyRepository(dependencyRepository)
     , m_creationRepository(creationRepository)
+    , m_deletionRepository(deletionRepository)
 {
 }
 
@@ -409,8 +411,8 @@ TaskResult TaskService::findEditableTask(const TaskId &id) const
         return result;
     }
     return TaskResult::failure(
-        TaskError::ArchivedTaskNotEditable,
-        QStringLiteral("An archived task must be restored before editing."),
+        TaskError::TaskDetailsNotEditable,
+        QStringLiteral("Only a Todo task can edit details."),
         TaskErrorContext{{}, {id}, {}});
 }
 
@@ -530,11 +532,11 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found."));
         }
-        // 编辑资格必须在Model最终判定，避免View隐藏按钮后仍可绕过界面更新归档任务。
+        // 编辑资格必须在Model最终判定，避免View隐藏按钮后仍可绕过界面更新非待办任务。
         if (!current->canEditDetails()) {
             return TaskResult::failure(
-                TaskError::ArchivedTaskNotEditable,
-                QStringLiteral("An archived task must be restored before editing."),
+                TaskError::TaskDetailsNotEditable,
+                QStringLiteral("Only a Todo task can edit details."),
                 TaskErrorContext{{}, {id}, {}});
         }
         const TaskValidationResult validation = validateDraft(draft);
@@ -584,6 +586,54 @@ TaskResult TaskService::archiveTask(const TaskId &id)
 TaskResult TaskService::restoreTask(const TaskId &id)
 {
     return applyTransition(id, TaskTransition::Restore);
+}
+
+TaskResult TaskService::deleteArchivedTask(const TaskId &id)
+{
+    try {
+        const std::optional<Task> current = m_repository.findById(id);
+        if (!current.has_value()) {
+            return TaskResult::failure(TaskError::NotFound,
+                                       QStringLiteral("Task was not found."));
+        }
+        if (!current->canDeletePermanently()) {
+            return TaskResult::failure(
+                TaskError::TaskDeletionNotAllowed,
+                QStringLiteral("Only an archived task can be permanently deleted."),
+                TaskErrorContext{{}, {id}, {}});
+        }
+
+        const TaskDeletionWriteResult writeResult =
+            m_deletionRepository.deleteArchivedTaskWithDependencies(id);
+        if (!writeResult.taskDeleted) {
+            // 端口的条件删除会在状态竞争或目标消失时完整回滚；重读后返回稳定业务错误。
+            const std::optional<Task> latest = m_repository.findById(id);
+            if (!latest.has_value()) {
+                return TaskResult::failure(
+                    TaskError::NotFound,
+                    QStringLiteral("Task was not found during permanent deletion."));
+            }
+            if (!latest->canDeletePermanently()) {
+                return TaskResult::failure(
+                    TaskError::TaskDeletionNotAllowed,
+                    QStringLiteral("Task is no longer archived and cannot be permanently deleted."),
+                    TaskErrorContext{{}, {id}, {}});
+            }
+            return TaskResult::failure(
+                TaskError::PersistenceFailure,
+                QStringLiteral("Deletion repository did not delete the archived task."));
+        }
+
+        emit tasksChanged();
+        if (writeResult.removedDependencyCount > 0) {
+            emit dependenciesChanged();
+        }
+        return TaskResult::success(*current);
+    } catch (const RepositoryException &exception) {
+        return persistenceFailure(exception);
+    } catch (...) {
+        return unexpectedPersistenceFailure();
+    }
 }
 
 TaskResult TaskService::applyTransition(const TaskId &id,

@@ -17,7 +17,8 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
         {predecessor.id(), successor.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskGraphViewModel graph{service};
 
     QCOMPARE(graph.rowCount(), 3);
@@ -140,7 +141,8 @@ void TaskViewModelsTest::graphMinimizesSimpleLayerCrossing()
     FakeTaskDependencyRepository dependencies{{
         {rootA.id(), childY.id()}, {rootB.id(), childX.id()}}};
     FakeTaskCreationRepository creation{repository, dependencies};
-    TaskService service{repository, dependencies, creation};
+    TaskService service{repository, dependencies, creation,
+                        deletionRepository};
     TaskGraphViewModel graph{service};
 
     const auto xFor = [&graph](const Task &value) {
@@ -164,7 +166,8 @@ void TaskViewModelsTest::graphRoutesLongEdgesDeterministically()
     FakeTaskDependencyRepository dependencies{{
         {first.id(), second.id()}, {second.id(), third.id()}, {first.id(), third.id()}}};
     FakeTaskCreationRepository creation{repository, dependencies};
-    TaskService service{repository, dependencies, creation};
+    TaskService service{repository, dependencies, creation,
+                        deletionRepository};
     TaskGraphViewModel firstProjection{service};
     TaskGraphViewModel secondProjection{service};
 
@@ -210,7 +213,8 @@ void TaskViewModelsTest::graphReloadPreservesVisibleSelectionAndClearsHiddenSele
         {predecessor.id(), successor.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskGraphViewModel graph{service};
 
     const QString successorId = successor.id().toString(QUuid::WithoutBraces);
@@ -228,5 +232,3 @@ void TaskViewModelsTest::graphReloadPreservesVisibleSelectionAndClearsHiddenSele
     QCOMPARE(graph.data(graph.index(0), TaskGraphViewModel::TitleRole).toString(),
              QStringLiteral("C"));
 }
-
-

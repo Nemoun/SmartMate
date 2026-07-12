@@ -37,6 +37,7 @@ class TaskListViewModel final : public QAbstractListModel {
     Q_PROPERTY(QString focusDeadlineText READ focusDeadlineText NOTIFY focusTaskChanged)
     Q_PROPERTY(int focusEstimatedMinutes READ focusEstimatedMinutes NOTIFY focusTaskChanged)
     Q_PROPERTY(QString focusReasonText READ focusReasonText NOTIFY focusTaskChanged)
+    Q_PROPERTY(bool focusOverdue READ focusOverdue NOTIFY focusTaskChanged)
     Q_PROPERTY(bool focusCanStart READ focusCanStart NOTIFY focusTaskChanged)
     Q_PROPERTY(bool focusCanComplete READ focusCanComplete NOTIFY focusTaskChanged)
     Q_PROPERTY(QString selectedTaskId READ selectedTaskId NOTIFY selectionChanged)
@@ -80,6 +81,7 @@ public:
         DeadlineTextRole,
         EstimatedMinutesRole,
         ArchivedRole,
+        OverdueRole,
         OrderReasonTextRole,
         BlockedRole,
         BlockingReasonTextRole,
@@ -93,6 +95,7 @@ public:
         CanRedoRole,
         CanArchiveRole,
         CanRestoreRole,
+        CanDeletePermanentlyRole,
     };
     Q_ENUM(Role)
 
@@ -118,6 +121,7 @@ public:
     [[nodiscard]] QString focusDeadlineText() const;
     [[nodiscard]] int focusEstimatedMinutes() const noexcept;
     [[nodiscard]] QString focusReasonText() const;
+    [[nodiscard]] bool focusOverdue() const noexcept;
     [[nodiscard]] bool focusCanStart() const noexcept;
     [[nodiscard]] bool focusCanComplete() const noexcept;
     [[nodiscard]] QString selectedTaskId() const;
@@ -155,6 +159,8 @@ public:
     Q_INVOKABLE bool archiveTask(const QString &taskId);
     /// 按稳定TaskId请求恢复，并保留Service给出的业务约束。
     Q_INVOKABLE bool restoreTask(const QString &taskId);
+    /// 永久删除已归档任务；关联依赖由 Model 的原子删除端口统一清理。
+    Q_INVOKABLE bool deleteArchivedTask(const QString &taskId);
     Q_INVOKABLE void clearError();
     Q_INVOKABLE bool selectTask(const QString &taskId);
     Q_INVOKABLE void clearSelection();
@@ -202,6 +208,8 @@ private:
     QList<model::Task> m_allTasks;
     QList<model::Task> m_visibleTasks;
     QHash<model::TaskId, QString> m_orderReasonTexts;
+    // 逾期随当前时间变化，是 Model 计算后交给 ViewModel 的会话级投影。
+    QHash<model::TaskId, bool> m_overdueStates;
     QHash<model::TaskId, DependencyProjection> m_dependencyProjections;
     QHash<model::TaskId, model::TaskCommandAvailability> m_availabilities;
     model::TaskId m_focusTaskId;

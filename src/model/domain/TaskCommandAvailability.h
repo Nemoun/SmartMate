@@ -12,6 +12,8 @@ struct TaskCommandAvailability final {
     bool canRedo{false};
     bool canArchive{false};
     bool canRestore{false};
+    /// 永久删除仅允许归档任务，由领域实体统一判定。
+    bool canDeletePermanently{false};
 
     friend bool operator==(const TaskCommandAvailability &,
                            const TaskCommandAvailability &) = default;

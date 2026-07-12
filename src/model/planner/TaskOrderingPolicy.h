@@ -26,6 +26,8 @@ enum class TaskOrderReason {
 struct PlannedTask final {
     Task task;
     TaskOrderReason reason;
+    /// 当前时刻下的逾期派生标记，与主导排序理由相互独立。
+    bool overdue{false};
     TaskDependencyState dependencyState;
     TaskCommandAvailability availability;
 

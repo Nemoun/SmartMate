@@ -17,7 +17,8 @@ Rectangle {
     signal createRequested()
 
     objectName: "focusTaskSlot"
-    implicitHeight: focus.theme.px(148)
+    implicitHeight: Math.max(focus.theme.px(148), focusContent.implicitHeight
+                             + focus.theme.px(36))
     radius: 14
     color: focusDrop.containsDrag ? focus.theme.primarySoft
           : focus.taskList.focusState === TaskListViewModel.InProgress
@@ -44,6 +45,7 @@ Rectangle {
     }
 
     RowLayout {
+        id: focusContent
         anchors.fill: parent
         anchors.margins: focus.theme.px(18)
         spacing: focus.theme.px(18)
@@ -67,12 +69,32 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 5
-            Label {
-                text: focus.taskList.focusState === TaskListViewModel.InProgress
-                      ? qsTr("现在做 · 正在进行") : qsTr("现在做")
-                color: focus.theme.primary
-                font.pixelSize: focus.theme.px(13)
-                font.bold: true
+            RowLayout {
+                Label {
+                    text: focus.taskList.focusState === TaskListViewModel.InProgress
+                          ? qsTr("现在做 · 正在进行") : qsTr("现在做")
+                    color: focus.theme.primary
+                    font.pixelSize: focus.theme.px(13)
+                    font.bold: true
+                }
+                Rectangle {
+                    objectName: "focusOverdueBadge"
+                    visible: focus.taskList.focusOverdue
+                    implicitWidth: focusOverdueLabel.implicitWidth + 16
+                    implicitHeight: focusOverdueLabel.implicitHeight + 6
+                    radius: height / 2
+                    color: "#fef3f2"
+                    border.color: focus.theme.danger
+                    Label {
+                        id: focusOverdueLabel
+                        anchors.centerIn: parent
+                        text: qsTr("已逾期")
+                        color: focus.theme.danger
+                        font.pixelSize: focus.theme.px(11)
+                        font.bold: true
+                    }
+                }
+                Item { Layout.fillWidth: true }
             }
             Label {
                 Layout.fillWidth: true
@@ -110,8 +132,19 @@ Rectangle {
                         values.push(qsTr("截止 %1").arg(focus.taskList.focusDeadlineText))
                     return values.join("  ·  ")
                 }
-                color: focus.theme.textMuted
+                color: focus.taskList.focusOverdue
+                       ? focus.theme.danger : focus.theme.textMuted
                 font.pixelSize: focus.theme.px(12)
+                elide: Text.ElideRight
+            }
+            Label {
+                objectName: "focusOverdueReminder"
+                Layout.fillWidth: true
+                visible: focus.taskList.focusOverdue
+                text: qsTr("已超过截止时间，请尽快处理")
+                color: focus.theme.danger
+                font.pixelSize: focus.theme.px(12)
+                font.bold: true
                 elide: Text.ElideRight
             }
         }

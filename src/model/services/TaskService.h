@@ -3,6 +3,7 @@
 #include "domain/TaskCreationRequest.h"
 #include "domain/TaskStateMachine.h"
 #include "repositories/ITaskCreationRepository.h"
+#include "repositories/ITaskDeletionRepository.h"
 #include "repositories/ITaskDependencyRepository.h"
 #include "repositories/ITaskRepository.h"
 #include "services/TaskResult.h"
@@ -19,6 +20,7 @@ public:
     TaskService(ITaskRepository &repository,
                 ITaskDependencyRepository &dependencyRepository,
                 ITaskCreationRepository &creationRepository,
+                ITaskDeletionRepository &deletionRepository,
                 QObject *parent = nullptr);
 
     /// 执行无副作用的权威业务校验：不访问 Repository，也不发出状态通知。
@@ -41,13 +43,13 @@ public:
         const TaskId &taskId,
         const QList<TaskId> &predecessorIds);
     [[nodiscard]] TaskResult findTask(const TaskId &id) const;
-    /// 加载可编辑任务；归档任务返回 ArchivedTaskNotEditable，调用方不得建立编辑草稿。
+    /// 加载可编辑任务；非 Todo 返回 TaskDetailsNotEditable，调用方不得建立编辑草稿。
     [[nodiscard]] TaskResult findEditableTask(const TaskId &id) const;
     /// 校验草稿、生成稳定 TaskId，并持久化新的领域快照。
     [[nodiscard]] TaskResult createTask(const TaskDraft &draft);
     /// 原子新建任务与全部前置关系；任意校验或写入失败均不发送状态通知。
     [[nodiscard]] TaskResult createTask(const TaskCreationRequest &request);
-    /// 按稳定 TaskId 更新活动任务；归档任务必须恢复后才能修改。
+    /// 按稳定 TaskId 更新 Todo 任务；其他状态只能通过显式状态命令改变。
     [[nodiscard]] TaskResult updateTask(const TaskId &id, const TaskDraft &draft);
     /// 将 Todo 转换为 InProgress；同时检查前置关系和单进行中约束。
     [[nodiscard]] TaskResult startTask(const TaskId &id);
@@ -61,6 +63,8 @@ public:
     [[nodiscard]] TaskResult archiveTask(const TaskId &id);
     /// 恢复正常归档前状态；旧 Todo/InProgress 恢复点统一安全降级为 Todo。
     [[nodiscard]] TaskResult restoreTask(const TaskId &id);
+    /// 永久删除归档任务及全部关联依赖；该操作不可撤销。
+    [[nodiscard]] TaskResult deleteArchivedTask(const TaskId &id);
 
 signals:
     /// 仅在一次实际写入成功后发出；失败或无写入的幂等操作不会通知。
@@ -78,6 +82,8 @@ private:
     ITaskDependencyRepository &m_dependencyRepository;
     /// 独立命令端口保证跨 tasks 与 task_dependencies 的写入具有事务边界。
     ITaskCreationRepository &m_creationRepository;
+    /// 永久删除端口保证任务与全部入边、出边在同一事务内移除。
+    ITaskDeletionRepository &m_deletionRepository;
 };
 
 } // namespace smartmate::model

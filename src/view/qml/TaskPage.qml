@@ -121,6 +121,11 @@ Page {
                         archiveDialog.pendingTitle = title
                         archiveDialog.open()
                     }
+                    onDeletePermanentlyRequested: (taskId, title) => {
+                        deleteDialog.pendingTaskId = taskId
+                        deleteDialog.pendingTitle = title
+                        deleteDialog.open()
+                    }
                     onDragActiveRequested: active => root.dragActive = active
                 }
                 ScrollBar.vertical: ScrollBar { }
@@ -241,6 +246,26 @@ Page {
         standardButtons: Dialog.Ok | Dialog.Cancel
         Label { width: 360; wrapMode: Text.Wrap; text: qsTr("确定要归档“%1”吗？之后可在归档视图中恢复。").arg(archiveDialog.pendingTitle) }
         onAccepted: root.appViewModel.taskList.archiveTask(pendingTaskId)
+    }
+    Dialog {
+        id: deleteDialog
+        objectName: "deleteArchivedTaskDialog"
+        property string pendingTaskId
+        property string pendingTitle
+        anchors.centerIn: Overlay.overlay
+        width: 450
+        title: qsTr("确认永久删除")
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label {
+            objectName: "deleteArchivedTaskWarning"
+            width: 400
+            wrapMode: Text.Wrap
+            text: qsTr("确定要永久删除“%1”吗？此操作不可撤销，任务关联的全部前置和后继依赖也会永久删除。")
+                  .arg(deleteDialog.pendingTitle)
+        }
+        onAccepted:
+            root.appViewModel.taskList.deleteArchivedTask(pendingTaskId)
     }
     Dialog {
         id: errorDialog

@@ -16,11 +16,14 @@ add_library(smartmate_model STATIC
     dependencies/TaskDependencyGraph.cpp
     planner/TaskOrderingPolicy.h
     planner/TaskOrderingPolicy.cpp
+    planner/TaskDeadlinePolicy.h
+    planner/TaskDeadlinePolicy.cpp
     planner/TaskCommandPolicy.h
     planner/TaskCommandPolicy.cpp
     repositories/RepositoryException.h
     repositories/IAppearanceSettingsRepository.h
     repositories/ITaskCreationRepository.h
+    repositories/ITaskDeletionRepository.h
     repositories/ITaskDependencyRepository.h
     repositories/ITaskRepository.h
     services/TaskService.h

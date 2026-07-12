@@ -5,6 +5,7 @@
 #include "TaskListViewModel.h"
 #include "fakes/FakeTaskDependencyRepository.h"
 #include "fakes/FakeTaskCreationRepository.h"
+#include "fakes/FakeTaskDeletionRepository.h"
 #include "fakes/FakeTaskRepository.h"
 
 #include "domain/Task.h"
@@ -29,6 +30,7 @@ using smartmate::model::TaskService;
 using smartmate::model::TaskStatus;
 using smartmate::tests::FakeTaskRepository;
 using smartmate::tests::FakeTaskCreationRepository;
+using smartmate::tests::FakeTaskDeletionRepository;
 using smartmate::tests::FakeTaskDependencyRepository;
 using smartmate::viewmodel::AppViewModel;
 using smartmate::viewmodel::TaskDependencyViewModel;
@@ -37,6 +39,9 @@ using smartmate::viewmodel::TaskGraphViewModel;
 using smartmate::viewmodel::TaskListViewModel;
 
 namespace {
+
+// 各ViewModel测试只借用删除端口；端口生命周期覆盖全部局部Service。
+FakeTaskDeletionRepository deletionRepository;
 
 [[nodiscard]] QDateTime utcTime(const qint64 milliseconds)
 {
@@ -143,8 +148,10 @@ private slots:
     void listFilterPropertiesNotifyOnceAndRejectInvalidIndexes();
     void listRetainsFiltersAndStableTaskIdAcrossServiceReloads();
     void listSchedulesMinuteRefreshForTimeSensitiveReasons();
+    void listProjectsOverdueStateIndependentlyFromOrderReason();
     void listProjectsAndExecutesStateActionsByStableTaskId();
-    void archivedTasksCannotOpenEditorUntilRestored();
+    void onlyTodoTasksCanOpenEditor();
+    void listProjectsAndForwardsPermanentDeletionByStableTaskId();
     void listExposesAndClearsChineseErrors();
     void listProjectsBlockingAndUnlockInformation();
     void listFocusProjectionIgnoresFiltersAndTracksInProgress();
@@ -162,6 +169,7 @@ private slots:
     void editorPreservesUnchangedDeadlinePrecision();
     void editorRejectsSaveWhenNothingChanged();
     void editorSuccessfullyUpdatesAStoredTask();
+    void editorRejectsStaleDraftAfterTaskLeavesTodo();
     void editorCreationPredecessorPickerUsesIsolatedCheckpoints();
     void editorAtomicCreationFailurePreservesTheWholeDraft();
     // 图像素布局与箭头几何属于ViewModel，拓扑语义仍取自Model快照。
@@ -176,7 +184,8 @@ void TaskViewModelsTest::appViewModelOwnsBindableChildren()
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     AppViewModel app{service};
 
     QCOMPARE(app.applicationName(), QStringLiteral("SmartMate"));

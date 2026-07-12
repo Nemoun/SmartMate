@@ -8,6 +8,8 @@
 
 namespace smartmate::tests {
 
+class FakeTaskDeletionRepository;
+
 /// Model 测试使用的依赖端口，可独立注入读写故障并观察原子替换次数。
 class FakeTaskDependencyRepository final
     : public model::ITaskDependencyRepository {
@@ -69,6 +71,8 @@ public:
     }
 
 private:
+    friend class FakeTaskDeletionRepository;
+
     QList<model::TaskDependency> m_dependencies;
     int m_replaceCount{0};
     bool m_failReads{false};

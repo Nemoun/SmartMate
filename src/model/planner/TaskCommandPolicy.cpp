@@ -97,6 +97,7 @@ QHash<TaskId, TaskCommandAvailability> taskCommandAvailabilities(
             task, TaskTransition::Archive);
         availability.canRestore = transitionPreservesDependencies(
             tasks, dependencies, task, TaskTransition::Restore);
+        availability.canDeletePermanently = task.canDeletePermanently();
         result.insert(task.id(), availability);
     }
     return result;

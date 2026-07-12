@@ -1,8 +1,11 @@
 #include "fakes/FakeTaskRepository.h"
 #include "fakes/FakeTaskDependencyRepository.h"
 #include "fakes/FakeTaskCreationRepository.h"
+#include "fakes/FakeTaskDeletionRepository.h"
 
 #include "dependencies/TaskDependencyGraph.h"
+#include "planner/TaskCommandPolicy.h"
+#include "planner/TaskDeadlinePolicy.h"
 #include "planner/TaskOrderingPolicy.h"
 #include "services/TaskService.h"
 
@@ -17,6 +20,7 @@ using smartmate::model::PlannedTask;
 using smartmate::model::Task;
 using smartmate::model::TaskDependency;
 using smartmate::model::TaskDependencyGraph;
+using smartmate::model::TaskDeadlinePolicy;
 using smartmate::model::TaskError;
 using smartmate::model::TaskId;
 using smartmate::model::TaskOrderReason;
@@ -24,8 +28,10 @@ using smartmate::model::TaskPriority;
 using smartmate::model::TaskService;
 using smartmate::model::TaskStatus;
 using smartmate::model::orderTasks;
+using smartmate::model::taskCommandAvailabilities;
 using smartmate::tests::FakeTaskDependencyRepository;
 using smartmate::tests::FakeTaskCreationRepository;
+using smartmate::tests::FakeTaskDeletionRepository;
 using smartmate::tests::FakeTaskRepository;
 
 namespace {
@@ -80,6 +86,8 @@ class TaskOrderingPolicyTest final : public QObject {
 
 private slots:
     void ordersStatusAndTodoRulesAndAssignsReasons();
+    void deadlinePolicyMarksOnlyActiveUnfinishedTasksOverdue();
+    void taskEditAndDeletionEligibilityMatchesStatus();
     void ordersAllPrioritiesIndependentlyOfInputOrder();
     void usesCreationAndStableIdAsTodoTieBreakers();
     void interleavesTerminalStatesAndKeepsArchivesLast();
@@ -127,6 +135,75 @@ void TaskOrderingPolicyTest::ordersStatusAndTodoRulesAndAssignsReasons()
     QCOMPARE(plan.at(6).reason, TaskOrderReason::Cancelled);
     QCOMPARE(plan.at(7).reason, TaskOrderReason::Completed);
     QCOMPARE(plan.at(8).reason, TaskOrderReason::Archived);
+}
+
+void TaskOrderingPolicyTest::deadlinePolicyMarksOnlyActiveUnfinishedTasksOverdue()
+{
+    const QDateTime now = timestamp(10'000);
+    const Task todoOverdue = makeTask(
+        1, TaskStatus::Todo, TaskPriority::Normal, now.addSecs(-1));
+    const Task inProgressOverdue = makeTask(
+        2, TaskStatus::InProgress, TaskPriority::Normal, now.addSecs(-1));
+
+    QVERIFY(TaskDeadlinePolicy::isOverdue(todoOverdue, now));
+    QVERIFY(TaskDeadlinePolicy::isOverdue(inProgressOverdue, now));
+    QVERIFY(!TaskDeadlinePolicy::isOverdue(
+        makeTask(3, TaskStatus::Todo, TaskPriority::Normal, now), now));
+    QVERIFY(!TaskDeadlinePolicy::isOverdue(
+        makeTask(4, TaskStatus::Todo, TaskPriority::Normal, now.addSecs(1)), now));
+    QVERIFY(!TaskDeadlinePolicy::isOverdue(
+        makeTask(5, TaskStatus::Todo), now));
+
+    for (const TaskStatus terminalStatus : {TaskStatus::Done,
+                                            TaskStatus::Cancelled,
+                                            TaskStatus::Archived}) {
+        QVERIFY(!TaskDeadlinePolicy::isOverdue(
+            makeTask(10 + static_cast<int>(terminalStatus),
+                     terminalStatus,
+                     TaskPriority::Normal,
+                     now.addSecs(-1)),
+            now));
+    }
+
+    const QList<PlannedTask> plan = orderTasks(
+        {todoOverdue, inProgressOverdue}, now);
+    QCOMPARE(plan.at(0).task.id(), inProgressOverdue.id());
+    QCOMPARE(plan.at(0).reason, TaskOrderReason::InProgress);
+    QVERIFY(plan.at(0).overdue);
+    QCOMPARE(plan.at(1).reason, TaskOrderReason::Overdue);
+    QVERIFY(plan.at(1).overdue);
+}
+
+void TaskOrderingPolicyTest::taskEditAndDeletionEligibilityMatchesStatus()
+{
+    const Task todo = makeTask(1, TaskStatus::Todo);
+    QVERIFY(todo.canEditDetails());
+    QVERIFY(!todo.canDeletePermanently());
+
+    for (const TaskStatus status : {TaskStatus::InProgress,
+                                    TaskStatus::Done,
+                                    TaskStatus::Cancelled}) {
+        const Task task = makeTask(10 + static_cast<int>(status), status);
+        QVERIFY(!task.canEditDetails());
+        QVERIFY(!task.canDeletePermanently());
+    }
+
+    const Task archived = makeTask(20, TaskStatus::Archived);
+    QVERIFY(!archived.canEditDetails());
+    QVERIFY(archived.canDeletePermanently());
+
+    // 命令资格只投影领域实体判定，ViewModel无需复制状态判断。
+    const auto availabilities = taskCommandAvailabilities(
+        {todo,
+         makeTask(11, TaskStatus::InProgress),
+         makeTask(12, TaskStatus::Done),
+         makeTask(13, TaskStatus::Cancelled),
+         archived},
+        {});
+    QVERIFY(availabilities.value(todo.id()).canEditTask);
+    QVERIFY(!availabilities.value(todo.id()).canDeletePermanently);
+    QVERIFY(!availabilities.value(archived.id()).canEditTask);
+    QVERIFY(availabilities.value(archived.id()).canDeletePermanently);
 }
 
 void TaskOrderingPolicyTest::ordersAllPrioritiesIndependentlyOfInputOrder()
@@ -398,7 +475,7 @@ void TaskOrderingPolicyTest::plannerOrdersReadyBeforeTopologicalBlockedTasks()
     const QList<Task> tasks{
         makeTask(1, TaskStatus::Todo, TaskPriority::Low),
         makeTask(2, TaskStatus::Todo, TaskPriority::Urgent),
-        makeTask(3, TaskStatus::Todo, TaskPriority::Urgent),
+        makeTask(3, TaskStatus::Todo, TaskPriority::Urgent, now.addSecs(-1)),
         makeTask(4, TaskStatus::Todo, TaskPriority::Low),
     };
     const QList<TaskDependency> dependencies{
@@ -414,6 +491,8 @@ void TaskOrderingPolicyTest::plannerOrdersReadyBeforeTopologicalBlockedTasks()
     QVERIFY(!plan.at(0).dependencyState.blocked);
     QVERIFY(!plan.at(1).dependencyState.blocked);
     QVERIFY(plan.at(2).dependencyState.blocked);
+    // 依赖阻塞与截止时间是独立维度，阻塞任务仍会被标记为逾期。
+    QVERIFY(plan.at(2).overdue);
     QVERIFY(plan.at(3).dependencyState.blocked);
 }
 
@@ -446,7 +525,9 @@ void TaskOrderingPolicyTest::serviceReturnsPlanAndMapsRepositoryFailure()
     }};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    const TaskService service{repository, dependencyRepository, creationRepository};
+    FakeTaskDeletionRepository deletionRepository;
+    const TaskService service{repository, dependencyRepository,
+                              creationRepository, deletionRepository};
 
     const auto result = service.listRecommendedTasks();
     QVERIFY(result.ok());
@@ -463,7 +544,7 @@ void TaskOrderingPolicyTest::serviceReturnsPlanAndMapsRepositoryFailure()
          {taskId(20), taskId(10)}}};
     FakeTaskCreationRepository cyclicCreation{repository, cyclicDependencies};
     const TaskService cyclicService{repository, cyclicDependencies,
-                                    cyclicCreation};
+                                    cyclicCreation, deletionRepository};
     const auto cycle = cyclicService.listRecommendedTasks();
     QCOMPARE(cycle.error, TaskError::DependencyCycle);
     QCOMPARE(cycle.context.cyclePath.constFirst(),
@@ -493,7 +574,7 @@ void TaskOrderingPolicyTest::serviceReturnsPlanAndMapsRepositoryFailure()
         inconsistentRepository, inconsistentDependencies};
     const TaskService inconsistentService{
         inconsistentRepository, inconsistentDependencies,
-        inconsistentCreation};
+        inconsistentCreation, deletionRepository};
     const auto inconsistentPlan = inconsistentService.listRecommendedTasks();
     QCOMPARE(inconsistentPlan.error, TaskError::DependencyStateConflict);
     QCOMPARE(inconsistentService.taskGraphSnapshot().error,

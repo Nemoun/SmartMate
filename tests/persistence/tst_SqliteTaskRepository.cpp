@@ -148,6 +148,18 @@ void createVersionOneDatabase(const QString &databasePath, const Task &task)
     return false;
 }
 
+[[nodiscard]] bool permanentDeletionThrows(
+    SqliteTaskRepository &repository,
+    const QUuid &taskId)
+{
+    try {
+        (void) repository.deleteArchivedTaskWithDependencies(taskId);
+    } catch (const RepositoryException &) {
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 // 验证领域值与SQLite的双向映射、重复初始化安全性和数据库级约束。
@@ -173,6 +185,9 @@ private slots:
     void atomicallyCreatesTaskWithPredecessorsAcrossReopen();
     void atomicCreationRollsBackTaskAfterMidwayEdgeFailure();
     void atomicCreationRollsBackOnTaskOrSelfDependencyConstraint();
+    void permanentlyDeletesArchivedTaskAndAllDependenciesAcrossReopen();
+    void rejectsPermanentDeletionOfActiveOrMissingTaskAtomically();
+    void permanentDeletionRollsBackAfterTaskDeleteFailure();
 };
 
 void SqliteTaskRepositoryTest::initializesSchemaIdempotently()
@@ -720,6 +735,116 @@ void SqliteTaskRepositoryTest::atomicCreationRollsBackOnTaskOrSelfDependencyCons
         repository, selfDependent, {selfDependent.id()}));
     QVERIFY(!repository.findById(selfDependent.id()).has_value());
     QVERIFY(repository.findAllDependencies().isEmpty());
+}
+
+void SqliteTaskRepositoryTest::permanentlyDeletesArchivedTaskAndAllDependenciesAcrossReopen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("tasks.db"));
+    const QUuid predecessor = QUuid::createUuid();
+    const QUuid archivedId = QUuid::createUuid();
+    const QUuid successor = QUuid::createUuid();
+
+    {
+        SqliteTaskRepository repository(databasePath);
+        repository.insert(makeTask(predecessor, QStringLiteral("保留前置"),
+                                   TaskPriority::Normal, TaskStatus::Done));
+        repository.insert(makeTask(archivedId, QStringLiteral("永久删除目标"),
+                                   TaskPriority::Normal, TaskStatus::Archived,
+                                   TaskStatus::Done));
+        repository.insert(makeTask(successor, QStringLiteral("保留后继")));
+        repository.replacePredecessors(archivedId, {predecessor});
+        repository.replacePredecessors(successor, {archivedId, predecessor});
+
+        const auto result =
+            repository.deleteArchivedTaskWithDependencies(archivedId);
+        QVERIFY(result.taskDeleted);
+        QCOMPARE(result.removedDependencyCount, 2);
+        QVERIFY(!repository.findById(archivedId).has_value());
+        QVERIFY(repository.findById(predecessor).has_value());
+        QVERIFY(repository.findById(successor).has_value());
+        QCOMPARE(repository.findAllDependencies(),
+                 QList<TaskDependency>({TaskDependency{predecessor, successor}}));
+    }
+
+    // 重开数据库确认任务与关联边已经提交，而无关任务和无关边仍完整保留。
+    {
+        SqliteTaskRepository repository(databasePath);
+        QVERIFY(!repository.findById(archivedId).has_value());
+        QVERIFY(repository.findById(predecessor).has_value());
+        QVERIFY(repository.findById(successor).has_value());
+        QCOMPARE(repository.findAllDependencies(),
+                 QList<TaskDependency>({TaskDependency{predecessor, successor}}));
+    }
+}
+
+void SqliteTaskRepositoryTest::rejectsPermanentDeletionOfActiveOrMissingTaskAtomically()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    SqliteTaskRepository repository(directory.filePath(QStringLiteral("tasks.db")));
+    const QUuid predecessor = QUuid::createUuid();
+    const QUuid activeId = QUuid::createUuid();
+    repository.insert(makeTask(predecessor));
+    repository.insert(makeTask(activeId, QStringLiteral("仍是活动任务")));
+    repository.replacePredecessors(activeId, {predecessor});
+
+    const auto activeResult =
+        repository.deleteArchivedTaskWithDependencies(activeId);
+    QVERIFY(!activeResult.taskDeleted);
+    QCOMPARE(activeResult.removedDependencyCount, 0);
+    QVERIFY(repository.findById(activeId).has_value());
+    QCOMPARE(repository.findAllDependencies(),
+             QList<TaskDependency>({TaskDependency{predecessor, activeId}}));
+
+    const auto missingResult = repository.deleteArchivedTaskWithDependencies(
+        QUuid::createUuid());
+    QVERIFY(!missingResult.taskDeleted);
+    QCOMPARE(missingResult.removedDependencyCount, 0);
+    QCOMPARE(repository.findAllDependencies(),
+             QList<TaskDependency>({TaskDependency{predecessor, activeId}}));
+}
+
+void SqliteTaskRepositoryTest::permanentDeletionRollsBackAfterTaskDeleteFailure()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("tasks.db"));
+    const QUuid predecessor = QUuid::createUuid();
+    const QUuid archivedId = QUuid::createUuid();
+    SqliteTaskRepository repository(databasePath);
+    repository.insert(makeTask(predecessor));
+    repository.insert(makeTask(archivedId, QStringLiteral("触发回滚的归档任务"),
+                               TaskPriority::Normal, TaskStatus::Archived,
+                               TaskStatus::Cancelled));
+    repository.replacePredecessors(archivedId, {predecessor});
+
+    const QString connectionName =
+        uniqueConnectionName(QStringLiteral("delete_failure_trigger"));
+    {
+        auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                                  connectionName);
+        database.setDatabaseName(databasePath);
+        QVERIFY2(database.open(), qPrintable(database.lastError().text()));
+        QSqlQuery triggerQuery(database);
+        const QString statement = QStringLiteral(
+            "CREATE TRIGGER fail_archived_task_delete "
+            "BEFORE DELETE ON tasks WHEN OLD.id = '%1' "
+            "BEGIN SELECT RAISE(ABORT, 'simulated task delete failure'); END")
+                                      .arg(archivedId.toString(QUuid::WithoutBraces));
+        QVERIFY2(triggerQuery.exec(statement),
+                 qPrintable(triggerQuery.lastError().text()));
+        database.close();
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+
+    // 依赖DELETE已经执行后任务DELETE触发失败；事务必须恢复两张表。
+    QVERIFY(permanentDeletionThrows(repository, archivedId));
+    QVERIFY(repository.findById(archivedId).has_value());
+    QVERIFY(repository.findById(predecessor).has_value());
+    QCOMPARE(repository.findAllDependencies(),
+             QList<TaskDependency>({TaskDependency{predecessor, archivedId}}));
 }
 
 QTEST_MAIN(SqliteTaskRepositoryTest)

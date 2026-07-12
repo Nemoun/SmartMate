@@ -32,7 +32,8 @@ void TaskViewModelsTest::dependencyDraftCancelDoesNotChangeModel()
         TaskDependency{selectedCancelled.id(), target.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskDependencyViewModel editor{service};
 
     QVERIFY(editor.beginEdit(target.id().toString(QUuid::WithoutBraces)));
@@ -98,7 +99,8 @@ void TaskViewModelsTest::dependencyDraftSavesStableTaskIds()
     FakeTaskRepository repository{{second, target, first}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskDependencyViewModel editor{service};
     QSignalSpy savedSpy{&editor, &TaskDependencyViewModel::saved};
 
@@ -146,7 +148,8 @@ void TaskViewModelsTest::dependencyDraftMapsCompleteCyclePath()
         TaskDependency{second.id(), third.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskDependencyViewModel editor{service};
 
     QVERIFY(editor.beginEdit(first.id().toString(QUuid::WithoutBraces)));
@@ -162,5 +165,3 @@ void TaskViewModelsTest::dependencyDraftMapsCompleteCyclePath()
     QCOMPARE(dependencyRepository.replaceCount(), 0);
     QVERIFY(editor.dirty());
 }
-
-

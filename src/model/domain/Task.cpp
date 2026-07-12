@@ -59,7 +59,12 @@ TaskStatus Task::status() const noexcept
 
 bool Task::canEditDetails() const noexcept
 {
-    return m_status != TaskStatus::Archived;
+    return m_status == TaskStatus::Todo;
+}
+
+bool Task::canDeletePermanently() const noexcept
+{
+    return m_status == TaskStatus::Archived;
 }
 
 const std::optional<TaskStatus> &Task::statusBeforeArchive() const noexcept

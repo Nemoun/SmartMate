@@ -19,7 +19,8 @@ void TaskViewModelsTest::listProjectsActiveAndArchivedTasksInPlanOrder()
     FakeTaskRepository repository{{older, secondAtSameTime, archived, firstAtSameTime}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     QCOMPARE(viewModel.count(), 3);
@@ -84,7 +85,8 @@ void TaskViewModelsTest::listMapsEveryRecommendedOrderReason()
                                    overdue, completed, urgent, inProgress}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     QCOMPARE(reasonForId(viewModel, inProgress.id().toString(QUuid::WithoutBraces)),
@@ -131,7 +133,8 @@ void TaskViewModelsTest::listSearchesTrimmedKeywordsInTitleAndDescription()
     FakeTaskRepository repository{{noMatch, archivedMatch, descriptionMatch, titleMatch}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     viewModel.setSearchText(QStringLiteral("  report  "));
@@ -177,7 +180,8 @@ void TaskViewModelsTest::listCombinesPrioritySearchAndArchiveFilters()
                                    lowReport, urgentReport}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     QCOMPARE(viewModel.priorityFilterOptions(),
@@ -212,7 +216,8 @@ void TaskViewModelsTest::listFilterPropertiesNotifyOnceAndRejectInvalidIndexes()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
     QSignalSpy searchSpy{&viewModel, &TaskListViewModel::searchTextChanged};
     QSignalSpy prioritySpy{&viewModel,
@@ -263,7 +268,8 @@ void TaskViewModelsTest::listRetainsFiltersAndStableTaskIdAcrossServiceReloads()
     FakeTaskRepository repository{{other, stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     viewModel.setSearchText(QStringLiteral("needle"));
@@ -291,10 +297,16 @@ void TaskViewModelsTest::listRetainsFiltersAndStableTaskIdAcrossServiceReloads()
 
 void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
 {
-    FakeTaskRepository repository;
+    const QDateTime deadline = QDateTime::currentDateTimeUtc().addSecs(1);
+    const Task soonOverdue = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("等待定时刷新的任务"), TaskStatus::Todo,
+        1700000001000, TaskPriority::Normal, QString{}, deadline);
+    FakeTaskRepository repository{{soonOverdue}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     const auto timers = viewModel.findChildren<QTimer *>(
@@ -302,6 +314,79 @@ void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
     QCOMPARE(timers.size(), 1);
     QCOMPARE(timers.constFirst()->interval(), 60'000);
     QVERIFY(timers.constFirst()->isActive());
+
+    const auto projectedOverdue = [&viewModel]() {
+        return viewModel.data(viewModel.index(0),
+                              TaskListViewModel::OverdueRole).toBool();
+    };
+    QVERIFY(!projectedOverdue());
+    QVERIFY(!viewModel.focusOverdue());
+
+    // 不必真实等待一分钟：跨过截止时刻后直接触发同一 timeout 通道，
+    // 验证定时刷新会重新请求 Model 计划并更新列表与焦点投影。
+    QTRY_VERIFY_WITH_TIMEOUT(QDateTime::currentDateTimeUtc() > deadline, 3'000);
+    QVERIFY(QMetaObject::invokeMethod(timers.constFirst(), "timeout",
+                                      Qt::DirectConnection));
+    QVERIFY(projectedOverdue());
+    QVERIFY(viewModel.focusOverdue());
+}
+
+
+void TaskViewModelsTest::listProjectsOverdueStateIndependentlyFromOrderReason()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const Task overdueTodo = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("逾期待办"), TaskStatus::Todo, 1700000001000,
+        TaskPriority::Normal, QString{}, now.addSecs(-60));
+    const Task overdueInProgress = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("逾期进行中"), TaskStatus::InProgress, 1700000002000,
+        TaskPriority::Normal, QString{}, now.addSecs(-60));
+    const Task completed = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("完成后不逾期"), TaskStatus::Done, 1700000003000,
+        TaskPriority::Normal, QString{}, now.addSecs(-60));
+    const Task upcoming = task(
+        QStringLiteral("{44444444-4444-4444-4444-444444444444}"),
+        QStringLiteral("尚未逾期"), TaskStatus::Todo, 1700000004000,
+        TaskPriority::Normal, QString{}, now.addDays(1));
+    FakeTaskRepository repository{{completed, upcoming, overdueTodo,
+                                   overdueInProgress}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
+    TaskListViewModel viewModel{service};
+
+    const auto overdueFor = [&viewModel](const Task &stored) {
+        const int row = rowForId(
+            viewModel, stored.id().toString(QUuid::WithoutBraces));
+        return row >= 0
+            && viewModel.data(viewModel.index(row),
+                              TaskListViewModel::OverdueRole).toBool();
+    };
+    QVERIFY(overdueFor(overdueTodo));
+    QVERIFY(overdueFor(overdueInProgress));
+    QVERIFY(!overdueFor(completed));
+    QVERIFY(!overdueFor(upcoming));
+    QCOMPARE(viewModel.focusTaskId(),
+             overdueInProgress.id().toString(QUuid::WithoutBraces));
+    QVERIFY(viewModel.focusOverdue());
+    QCOMPARE(viewModel.focusReasonText(), QStringLiteral("正在进行"));
+
+    const QString inProgressId =
+        overdueInProgress.id().toString(QUuid::WithoutBraces);
+    QVERIFY(viewModel.completeTask(inProgressId));
+    QVERIFY(!overdueFor(overdueInProgress));
+    QVERIFY(viewModel.redoTask(inProgressId));
+    QVERIFY(overdueFor(overdueInProgress));
+
+    const QString todoId = overdueTodo.id().toString(QUuid::WithoutBraces);
+    QVERIFY(viewModel.cancelTask(todoId));
+    QVERIFY(!overdueFor(overdueTodo));
+    QVERIFY(viewModel.redoTask(todoId));
+    QVERIFY(overdueFor(overdueTodo));
 }
 
 
@@ -314,7 +399,8 @@ void TaskViewModelsTest::listProjectsAndExecutesStateActionsByStableTaskId()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
     QSignalSpy changedSpy{&service, &TaskService::tasksChanged};
     const QString stableId = idAt(viewModel, 0);
@@ -377,42 +463,107 @@ void TaskViewModelsTest::listProjectsAndExecutesStateActionsByStableTaskId()
 }
 
 
-void TaskViewModelsTest::archivedTasksCannotOpenEditorUntilRestored()
+void TaskViewModelsTest::onlyTodoTasksCanOpenEditor()
 {
-    const Task stored = task(
+    const Task todo = task(
         QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
-        QStringLiteral("restore before editing"), TaskStatus::Done,
+        QStringLiteral("可编辑待办"), TaskStatus::Todo,
         1700000001000);
-    FakeTaskRepository repository{{stored}};
+    const Task inProgress = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("进行中不可编辑"), TaskStatus::InProgress,
+        1700000002000);
+    const Task done = task(
+        QStringLiteral("{33333333-3333-3333-3333-333333333333}"),
+        QStringLiteral("完成不可编辑"), TaskStatus::Done,
+        1700000003000);
+    const Task cancelled = task(
+        QStringLiteral("{44444444-4444-4444-4444-444444444444}"),
+        QStringLiteral("取消不可编辑"), TaskStatus::Cancelled,
+        1700000004000);
+    const Task archived = task(
+        QStringLiteral("{55555555-5555-5555-5555-555555555555}"),
+        QStringLiteral("归档不可编辑"), TaskStatus::Archived,
+        1700000005000);
+    FakeTaskRepository repository{{todo, inProgress, done, cancelled, archived}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel list{service};
     TaskEditorViewModel editor{service};
-    const QString stableId = stored.id().toString(QUuid::WithoutBraces);
+    const auto canEdit = [&list](const Task &stored) {
+        const int row = rowForId(
+            list, stored.id().toString(QUuid::WithoutBraces));
+        return row >= 0
+            && list.data(list.index(row),
+                         TaskListViewModel::CanEditTaskRole).toBool();
+    };
+    QVERIFY(canEdit(todo));
+    QVERIFY(!canEdit(inProgress));
+    QVERIFY(!canEdit(done));
+    QVERIFY(!canEdit(cancelled));
 
-    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
-             true);
-    QVERIFY(list.archiveTask(stableId));
+    const QString todoId = todo.id().toString(QUuid::WithoutBraces);
+    QVERIFY(editor.beginEdit(todoId));
+    QVERIFY(editor.editMode());
+    QCOMPARE(editor.taskId(), todoId);
+    editor.cancel();
+
+    for (const Task *stored : {&inProgress, &done, &cancelled, &archived}) {
+        QVERIFY(!editor.beginEdit(
+            stored->id().toString(QUuid::WithoutBraces)));
+        QVERIFY(editor.errorMessage().contains(QStringLiteral("只有待办")));
+        QVERIFY(!editor.editMode());
+        QVERIFY(editor.taskId().isEmpty());
+    }
+
     list.setShowArchived(true);
     QCOMPARE(list.count(), 1);
-    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
-             false);
+    QVERIFY(!list.data(list.index(0),
+                       TaskListViewModel::CanEditTaskRole).toBool());
+}
 
-    // 即使绕过QML直接调用命令，ViewModel也不能为归档实体建立编辑草稿。
-    QVERIFY(!editor.beginEdit(stableId));
-    QVERIFY(editor.errorMessage().contains(QStringLiteral("归档")));
-    QVERIFY(!editor.editMode());
-    QVERIFY(editor.taskId().isEmpty());
 
-    QVERIFY(list.restoreTask(stableId));
-    list.setShowArchived(false);
-    QCOMPARE(list.count(), 1);
-    QCOMPARE(list.data(list.index(0), TaskListViewModel::CanEditTaskRole).toBool(),
-             true);
-    QVERIFY(editor.beginEdit(stableId));
-    QVERIFY(editor.editMode());
-    QCOMPARE(editor.taskId(), stableId);
+void TaskViewModelsTest::listProjectsAndForwardsPermanentDeletionByStableTaskId()
+{
+    const Task archived = task(
+        QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
+        QStringLiteral("永久删除"), TaskStatus::Archived, 1700000001000);
+    const Task todo = task(
+        QStringLiteral("{22222222-2222-2222-2222-222222222222}"),
+        QStringLiteral("保留待办"), TaskStatus::Todo, 1700000002000);
+    FakeTaskRepository repository{{todo, archived}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    FakeTaskDeletionRepository localDeletionRepository{repository,
+                                                        dependencyRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        localDeletionRepository};
+    TaskListViewModel viewModel{service};
+
+    const int todoRow = rowForId(
+        viewModel, todo.id().toString(QUuid::WithoutBraces));
+    QVERIFY(todoRow >= 0);
+    QVERIFY(!viewModel.data(viewModel.index(todoRow),
+                            TaskListViewModel::CanDeletePermanentlyRole).toBool());
+
+    viewModel.setShowArchived(true);
+    QCOMPARE(viewModel.count(), 1);
+    QVERIFY(viewModel.data(viewModel.index(0),
+                           TaskListViewModel::CanDeletePermanentlyRole).toBool());
+    const QString archivedId = archived.id().toString(QUuid::WithoutBraces);
+    QVERIFY(viewModel.selectTask(archivedId));
+    QCOMPARE(viewModel.selectedTaskId(), archivedId);
+    QVERIFY(viewModel.deleteArchivedTask(archivedId));
+    QCOMPARE(viewModel.count(), 0);
+    QVERIFY(viewModel.selectedTaskId().isEmpty());
+    QCOMPARE(localDeletionRepository.deletedTaskIds().size(), 1);
+    QCOMPARE(localDeletionRepository.deletedTaskIds().constFirst(), archived.id());
+
+    QVERIFY(!viewModel.deleteArchivedTask(QStringLiteral("invalid-id")));
+    QVERIFY(viewModel.errorMessage().contains(QStringLiteral("不存在")));
+    QCOMPARE(localDeletionRepository.deletedTaskIds().size(), 1);
 }
 
 
@@ -421,7 +572,8 @@ void TaskViewModelsTest::listExposesAndClearsChineseErrors()
     FakeTaskRepository repository;
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
     QSignalSpy errorSpy{&viewModel, &TaskListViewModel::errorOccurred};
 
@@ -453,7 +605,8 @@ void TaskViewModelsTest::listProjectsBlockingAndUnlockInformation()
         TaskDependency{predecessor.id(), successor.id()},
     }};
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     const int predecessorRow = rowForId(
@@ -502,7 +655,8 @@ void TaskViewModelsTest::listFocusProjectionIgnoresFiltersAndTracksInProgress()
     FakeTaskRepository repository{{normal, urgent}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     QCOMPARE(viewModel.focusState(), TaskListViewModel::FocusState::Suggested);
@@ -533,7 +687,8 @@ void TaskViewModelsTest::listSelectsStableTaskDetails()
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
-    TaskService service{repository, dependencyRepository, creationRepository};
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        deletionRepository};
     TaskListViewModel viewModel{service};
 
     QVERIFY(viewModel.selectTask(stored.id().toString(QUuid::WithoutBraces)));

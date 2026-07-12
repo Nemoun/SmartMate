@@ -133,6 +133,8 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
         return task.estimatedMinutes().has_value() ? *task.estimatedMinutes() : 0;
     case ArchivedRole:
         return task.status() == model::TaskStatus::Archived;
+    case OverdueRole:
+        return m_overdueStates.value(task.id(), false);
     case OrderReasonTextRole:
         return m_orderReasonTexts.value(task.id());
     case BlockedRole:
@@ -159,6 +161,8 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
         return availabilityFor(task.id()).canArchive;
     case CanRestoreRole:
         return availabilityFor(task.id()).canRestore;
+    case CanDeletePermanentlyRole:
+        return availabilityFor(task.id()).canDeletePermanently;
     default:
         return {};
     }
@@ -177,6 +181,7 @@ QHash<int, QByteArray> TaskListViewModel::roleNames() const
         {DeadlineTextRole, "deadlineText"},
         {EstimatedMinutesRole, "estimatedMinutes"},
         {ArchivedRole, "archived"},
+        {OverdueRole, "overdue"},
         {OrderReasonTextRole, "orderReasonText"},
         {BlockedRole, "blocked"},
         {BlockingReasonTextRole, "blockingReasonText"},
@@ -190,6 +195,7 @@ QHash<int, QByteArray> TaskListViewModel::roleNames() const
         {CanRedoRole, "canRedo"},
         {CanArchiveRole, "canArchive"},
         {CanRestoreRole, "canRestore"},
+        {CanDeletePermanentlyRole, "canDeletePermanently"},
     };
 }
 
@@ -282,6 +288,11 @@ int TaskListViewModel::focusEstimatedMinutes() const noexcept
 QString TaskListViewModel::focusReasonText() const
 {
     return m_orderReasonTexts.value(m_focusTaskId);
+}
+
+bool TaskListViewModel::focusOverdue() const noexcept
+{
+    return m_overdueStates.value(m_focusTaskId, false);
 }
 
 bool TaskListViewModel::focusCanStart() const noexcept
@@ -442,12 +453,14 @@ void TaskListViewModel::reload()
     setError({});
     QList<model::Task> allTasks;
     QHash<model::TaskId, QString> orderReasonTexts;
+    QHash<model::TaskId, bool> overdueStates;
     QHash<model::TaskId, QString> taskTitles;
     QHash<QString, int> titleCounts;
     QHash<model::TaskId, DependencyProjection> dependencyProjections;
     QHash<model::TaskId, model::TaskCommandAvailability> availabilities;
     allTasks.reserve(result.value->size());
     orderReasonTexts.reserve(result.value->size());
+    overdueStates.reserve(result.value->size());
     taskTitles.reserve(result.value->size());
     titleCounts.reserve(result.value->size());
     dependencyProjections.reserve(result.value->size());
@@ -461,6 +474,7 @@ void TaskListViewModel::reload()
         allTasks.push_back(plannedTask.task);
         orderReasonTexts.insert(plannedTask.task.id(),
                                 orderReasonText(plannedTask.reason));
+        overdueStates.insert(plannedTask.task.id(), plannedTask.overdue);
         const model::TaskDependencyState &state = plannedTask.dependencyState;
         dependencyProjections.insert(
             plannedTask.task.id(),
@@ -477,6 +491,7 @@ void TaskListViewModel::reload()
     }
     // 分钟定时刷新若没有产生新顺序或理由，不重置QML模型，避免列表滚动位置跳动。
     if (m_allTasks == allTasks && m_orderReasonTexts == orderReasonTexts
+        && m_overdueStates == overdueStates
         && m_dependencyProjections == dependencyProjections
         && m_availabilities == availabilities) {
         return;
@@ -484,6 +499,7 @@ void TaskListViewModel::reload()
 
     m_allTasks = std::move(allTasks);
     m_orderReasonTexts = std::move(orderReasonTexts);
+    m_overdueStates = std::move(overdueStates);
     m_dependencyProjections = std::move(dependencyProjections);
     m_availabilities = std::move(availabilities);
     rebuildFocusTask();
@@ -547,6 +563,23 @@ bool TaskListViewModel::archiveTask(const QString &taskId)
 bool TaskListViewModel::restoreTask(const QString &taskId)
 {
     return performTransition(taskId, model::TaskTransition::Restore);
+}
+
+bool TaskListViewModel::deleteArchivedTask(const QString &taskId)
+{
+    const model::TaskId id = parseTaskId(taskId);
+    if (id.isNull()) {
+        setError(taskErrorMessage(model::TaskError::NotFound));
+        return false;
+    }
+
+    const model::TaskResult result = m_taskService.deleteArchivedTask(id);
+    if (!result.ok()) {
+        setError(taskErrorMessage(result.error));
+        return false;
+    }
+    setError({});
+    return true;
 }
 
 void TaskListViewModel::clearError()

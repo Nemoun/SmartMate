@@ -31,6 +31,8 @@ Rectangle {
     required property bool canArchive
     required property bool canRestore
     required property int estimatedMinutes
+    required property bool overdue
+    required property bool canDeletePermanently
 
     signal detailsRequested(string taskId)
     signal editRequested(string taskId)
@@ -41,6 +43,7 @@ Rectangle {
     signal restoreRequested(string taskId)
     signal cancelRequested(string taskId, string title)
     signal archiveRequested(string taskId, string title)
+    signal deletePermanentlyRequested(string taskId, string title)
     signal dragActiveRequested(bool active)
 
     height: Math.max(card.theme.px(138), cardContent.implicitHeight + card.theme.px(24))
@@ -140,6 +143,23 @@ Rectangle {
                     font.bold: true
                 }
                 Rectangle {
+                    objectName: "overdueBadge_" + card.taskId
+                    visible: card.overdue
+                    implicitWidth: overdueBadgeLabel.implicitWidth + 16
+                    implicitHeight: overdueBadgeLabel.implicitHeight + 8
+                    radius: height / 2
+                    color: "#fef3f2"
+                    border.color: card.theme.danger
+                    Label {
+                        id: overdueBadgeLabel
+                        anchors.centerIn: parent
+                        text: qsTr("已逾期")
+                        color: card.theme.danger
+                        font.pixelSize: card.theme.px(12)
+                        font.bold: true
+                    }
+                }
+                Rectangle {
                     implicitWidth: priorityLabel.implicitWidth + 16
                     implicitHeight: priorityLabel.implicitHeight + 8
                     radius: height / 2
@@ -177,8 +197,19 @@ Rectangle {
                     return values.length > 0 ? values.join("  ·  ")
                                              : qsTr("未设置时间与前置任务")
                 }
-                color: card.theme.textMuted
+                color: card.overdue && card.deadlineText.length > 0
+                       ? card.theme.danger : card.theme.textMuted
                 font.pixelSize: card.theme.px(12)
+                elide: Text.ElideRight
+            }
+            Label {
+                objectName: "overdueReminder_" + card.taskId
+                Layout.fillWidth: true
+                visible: card.overdue
+                text: qsTr("已超过截止时间，请尽快处理")
+                color: card.theme.danger
+                font.pixelSize: card.theme.px(12)
+                font.bold: true
                 elide: Text.ElideRight
             }
             Label {
@@ -218,11 +249,12 @@ Rectangle {
             Menu {
                 id: cardMenu
                 MenuItem { objectName: "viewTaskDetails_" + card.taskId; text: qsTr("查看详情"); onTriggered: card.detailsRequested(card.taskId) }
-                MenuItem { objectName: "editTaskButton_" + card.taskId; enabled: card.canEditTask; text: qsTr("编辑任务"); onTriggered: card.editRequested(card.taskId) }
+                MenuItem { objectName: "editTaskButton_" + card.taskId; visible: card.canEditTask; text: qsTr("编辑任务"); onTriggered: card.editRequested(card.taskId) }
                 MenuItem { objectName: "editDependenciesButton_" + card.taskId; enabled: card.canEditDependencies; text: qsTr("编辑前置任务"); onTriggered: card.editDependenciesRequested(card.taskId) }
                 MenuSeparator { }
                 MenuItem { objectName: "cancelTaskButton_" + card.taskId; enabled: card.canCancel; text: qsTr("取消任务"); onTriggered: card.cancelRequested(card.taskId, card.title) }
                 MenuItem { objectName: "archiveTaskButton_" + card.taskId; enabled: card.canArchive; text: qsTr("归档"); onTriggered: card.archiveRequested(card.taskId, card.title) }
+                MenuItem { objectName: "deleteTaskPermanentlyButton_" + card.taskId; visible: card.canDeletePermanently; text: qsTr("永久删除"); onTriggered: card.deletePermanentlyRequested(card.taskId, card.title) }
             }
         }
     }
