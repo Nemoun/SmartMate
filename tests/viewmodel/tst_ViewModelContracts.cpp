@@ -4,6 +4,8 @@
 #include "TaskEditorViewModel.h"
 #include "TaskGraphViewModel.h"
 #include "TaskListViewModel.h"
+#include "TaskFocusViewModel.h"
+#include "TaskDetailsViewModel.h"
 #include "common/presentation/UiNotification.h"
 #include "fakes/FakeAppearanceSettingsRepository.h"
 #include "fakes/FakeTaskBatchTransitionRepository.h"
@@ -20,6 +22,8 @@
 #include "viewmodel/contracts/TaskEditorContract.h"
 #include "viewmodel/contracts/TaskGraphContract.h"
 #include "viewmodel/contracts/TaskListContract.h"
+#include "viewmodel/contracts/TaskFocusContract.h"
+#include "viewmodel/contracts/TaskDetailsContract.h"
 
 #include <QAbstractItemModelTester>
 #include <QMetaEnum>
@@ -38,6 +42,8 @@ static_assert(std::is_abstract_v<viewmodel::TaskDependencyContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskEditorContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskGraphContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskListContract>);
+static_assert(std::is_abstract_v<viewmodel::TaskFocusContract>);
+static_assert(std::is_abstract_v<viewmodel::TaskDetailsContract>);
 
 static_assert(std::has_virtual_destructor_v<viewmodel::AppearanceSettingsContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskCategoryContract>);
@@ -45,6 +51,8 @@ static_assert(std::has_virtual_destructor_v<viewmodel::TaskDependencyContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskEditorContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskGraphContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskListContract>);
+static_assert(std::has_virtual_destructor_v<viewmodel::TaskFocusContract>);
+static_assert(std::has_virtual_destructor_v<viewmodel::TaskDetailsContract>);
 
 static_assert(std::is_base_of_v<viewmodel::AppearanceSettingsContract,
                                 viewmodel::AppearanceSettingsViewModel>);
@@ -58,6 +66,10 @@ static_assert(std::is_base_of_v<viewmodel::TaskGraphContract,
                                 viewmodel::TaskGraphViewModel>);
 static_assert(std::is_base_of_v<viewmodel::TaskListContract,
                                 viewmodel::TaskListViewModel>);
+static_assert(std::is_base_of_v<viewmodel::TaskFocusContract,
+                                viewmodel::TaskFocusViewModel>);
+static_assert(std::is_base_of_v<viewmodel::TaskDetailsContract,
+                                viewmodel::TaskDetailsViewModel>);
 
 namespace {
 
@@ -131,6 +143,15 @@ void ViewModelContractsTest::contractReferencesDispatchToConcreteImplementations
     listContract.setShowArchived(true);
     QVERIFY(listContract.showArchived());
 
+    viewmodel::TaskFocusViewModel focus{fixture.service};
+    viewmodel::TaskFocusContract &focusContract = focus;
+    QCOMPARE(focusContract.focusState(),
+             viewmodel::TaskFocusContract::FocusState::NoTasks);
+
+    viewmodel::TaskDetailsViewModel details{fixture.service};
+    viewmodel::TaskDetailsContract &detailsContract = details;
+    QVERIFY(!detailsContract.selectTask(QStringLiteral("invalid")));
+
     viewmodel::TaskCategoryViewModel category{fixture.service};
     viewmodel::TaskCategoryContract &categoryContract = category;
     categoryContract.beginCreate();
@@ -161,6 +182,13 @@ void ViewModelContractsTest::concreteMetaObjectsExposeInheritedQmlApi()
     QVERIFY(hasMetaMethod(listMeta, QByteArrayLiteral("notificationRaised")));
     QVERIFY(listMeta.indexOfEnumerator("Role") >= 0);
 
+    const QMetaObject &focusMeta = viewmodel::TaskFocusViewModel::staticMetaObject;
+    QVERIFY(focusMeta.indexOfProperty("focusTaskId") >= 0);
+    QVERIFY(focusMeta.indexOfEnumerator("FocusState") >= 0);
+    const QMetaObject &detailsMeta = viewmodel::TaskDetailsViewModel::staticMetaObject;
+    QVERIFY(detailsMeta.indexOfProperty("selectedTaskId") >= 0);
+    QVERIFY(hasMetaMethod(detailsMeta, QByteArrayLiteral("selectTask")));
+
     const QMetaObject &graphMeta = viewmodel::TaskGraphViewModel::staticMetaObject;
     QVERIFY(graphMeta.indexOfProperty("edges") >= 0);
     QVERIFY(hasMetaMethod(graphMeta, QByteArrayLiteral("selectTask")));
@@ -168,6 +196,7 @@ void ViewModelContractsTest::concreteMetaObjectsExposeInheritedQmlApi()
 
     const QMetaObject &editorMeta = viewmodel::TaskEditorViewModel::staticMetaObject;
     QVERIFY(editorMeta.indexOfProperty("deadlineDisplayText") >= 0);
+    QVERIFY(editorMeta.indexOfProperty("sessionActive") >= 0);
     QVERIFY(hasMetaMethod(editorMeta, QByteArrayLiteral("setDeadlineSelection")));
 
     QVERIFY(viewmodel::TaskCategoryViewModel::staticMetaObject

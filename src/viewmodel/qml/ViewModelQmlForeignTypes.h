@@ -7,12 +7,16 @@
 #include "TaskEditorViewModel.h"
 #include "TaskGraphViewModel.h"
 #include "TaskListViewModel.h"
+#include "TaskFocusViewModel.h"
+#include "TaskDetailsViewModel.h"
 #include "viewmodel/contracts/AppearanceSettingsContract.h"
 #include "viewmodel/contracts/TaskCategoryContract.h"
 #include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
 #include "viewmodel/contracts/TaskGraphContract.h"
 #include "viewmodel/contracts/TaskListContract.h"
+#include "viewmodel/contracts/TaskFocusContract.h"
+#include "viewmodel/contracts/TaskDetailsContract.h"
 
 #include <QtQmlIntegration/qqmlintegration.h>
 
@@ -37,6 +41,10 @@ SMARTMATE_QML_ANONYMOUS_FOREIGN(TaskGraphContractForeign,
                                  smartmate::viewmodel::TaskGraphContract);
 SMARTMATE_QML_ANONYMOUS_FOREIGN(TaskListContractForeign,
                                  smartmate::viewmodel::TaskListContract);
+SMARTMATE_QML_ANONYMOUS_FOREIGN(TaskFocusContractForeign,
+                                 smartmate::viewmodel::TaskFocusContract);
+SMARTMATE_QML_ANONYMOUS_FOREIGN(TaskDetailsContractForeign,
+                                 smartmate::viewmodel::TaskDetailsContract);
 
 #undef SMARTMATE_QML_ANONYMOUS_FOREIGN
 
@@ -71,6 +79,12 @@ SMARTMATE_QML_UNCREATABLE_FOREIGN(
 SMARTMATE_QML_UNCREATABLE_FOREIGN(
     TaskListViewModelForeign, smartmate::viewmodel::TaskListViewModel,
     TaskListViewModel, "TaskListViewModel is owned by AppViewModel");
+SMARTMATE_QML_UNCREATABLE_FOREIGN(
+    TaskFocusViewModelForeign, smartmate::viewmodel::TaskFocusViewModel,
+    TaskFocusViewModel, "TaskFocusViewModel is owned by AppViewModel");
+SMARTMATE_QML_UNCREATABLE_FOREIGN(
+    TaskDetailsViewModelForeign, smartmate::viewmodel::TaskDetailsViewModel,
+    TaskDetailsViewModel, "TaskDetailsViewModel is owned by AppViewModel");
 
 #undef SMARTMATE_QML_UNCREATABLE_FOREIGN
 

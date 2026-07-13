@@ -67,7 +67,7 @@ Page {
     }
 
     function openFullDetails() {
-        if (appViewModel.taskList.selectTask(graph.selectedTaskId))
+        if (appViewModel.taskDetails.selectTask(graph.selectedTaskId))
             fullDetailsDialog.open()
     }
 
@@ -421,7 +421,7 @@ Page {
     TaskDetailsDialog {
         id: fullDetailsDialog
         anchors.centerIn: Overlay.overlay
-        taskList: root.appViewModel.taskList
+        taskDetails: root.appViewModel.taskDetails
         theme: root.theme
         actionsVisible: false
     }

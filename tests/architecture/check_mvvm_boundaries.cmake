@@ -124,6 +124,11 @@ if(EXISTS "${contracts_cmake}")
         record_violation("${contracts_cmake}"
             "Contracts may not link Model, concrete ViewModel, persistence, QML, Quick, SQL, or Widgets")
     endif()
+    if(NOT contracts_cmake_lower MATCHES "taskfocuscontract"
+       OR NOT contracts_cmake_lower MATCHES "taskdetailscontract")
+        record_violation("${contracts_cmake}"
+            "Task focus and details must remain independent Contracts")
+    endif()
 endif()
 
 set(persistence_cmake "${ROOT_DIR}/src/model/persistence/CMakeLists.txt")
@@ -143,6 +148,29 @@ if(EXISTS "${persistence_cmake}")
             "smartmate_persistence may not depend on ViewModel, Qt Quick, or QML")
     endif()
 endif()
+
+set(task_list_header "${ROOT_DIR}/src/viewmodel/TaskListViewModel.h")
+if(EXISTS "${task_list_header}")
+    file(READ "${task_list_header}" task_list_contents)
+    if(task_list_contents MATCHES "focusTaskId|selectedTaskId|selectTask")
+        record_violation("${task_list_header}"
+            "TaskListViewModel may not absorb focus or details session state")
+    endif()
+endif()
+
+foreach(split_viewmodel IN ITEMS TaskFocusViewModel TaskDetailsViewModel)
+    set(split_source "${ROOT_DIR}/src/viewmodel/${split_viewmodel}.cpp")
+    if(NOT EXISTS "${split_source}")
+        record_violation("${ROOT_DIR}/src/viewmodel/CMakeLists.txt"
+            "${split_viewmodel} is required by the task-main-flow boundary")
+    else()
+        file(READ "${split_source}" split_contents)
+        if(split_contents MATCHES "TaskListViewModel")
+            record_violation("${split_source}"
+                "Split child ViewModels may not call or include TaskListViewModel")
+        endif()
+    endif()
+endforeach()
 
 set(viewmodel_cmake "${ROOT_DIR}/src/viewmodel/CMakeLists.txt")
 if(EXISTS "${viewmodel_cmake}")

@@ -5,7 +5,8 @@ import SmartMate.ViewModel 1.0
 
 Dialog {
     id: root
-    required property TaskListViewModel taskList
+    required property TaskDetailsViewModel taskDetails
+    readonly property TaskDetailsViewModel taskList: taskDetails
     required property AppearanceTheme theme
     property bool actionsVisible: true
     signal editRequested(string taskId)

@@ -7,7 +7,8 @@ import SmartMate.ViewModel 1.0
 
 Rectangle {
     id: focus
-    required property TaskListViewModel taskList
+    required property TaskFocusViewModel taskFocus
+    readonly property TaskFocusViewModel taskList: taskFocus
     required property var theme
     required property var dragPreview
     signal detailsRequested(string taskId)
@@ -21,7 +22,7 @@ Rectangle {
                              + focus.theme.px(36))
     radius: 14
     color: focusDrop.containsDrag ? focus.theme.primarySoft
-          : focus.taskList.focusState === TaskListViewModel.InProgress
+          : focus.taskList.focusState === TaskFocusViewModel.InProgress
             ? focus.theme.primarySoft : focus.theme.surface
     border.width: focusDrop.containsDrag ? 2 : 1
     border.color: focusDrop.containsDrag ? focus.theme.primary : focus.theme.borderSoft
@@ -33,7 +34,7 @@ Rectangle {
         objectName: "focusTaskDropArea"
         anchors.fill: parent
         keys: ["smartmate-start-task"]
-        enabled: focus.taskList.focusState !== TaskListViewModel.InProgress
+        enabled: focus.taskList.focusState !== TaskFocusViewModel.InProgress
         onDropped: drop => {
             if (drop.source !== focus.dragPreview
                     || focus.dragPreview.taskId.length === 0)
@@ -57,8 +58,8 @@ Rectangle {
             color: focus.theme.primary
             Label {
                 anchors.centerIn: parent
-                text: focus.taskList.focusState === TaskListViewModel.InProgress
-                      ? "▶" : focus.taskList.focusState === TaskListViewModel.AllBlocked
+                text: focus.taskList.focusState === TaskFocusViewModel.InProgress
+                      ? "▶" : focus.taskList.focusState === TaskFocusViewModel.AllBlocked
                         ? "⌁" : "+"
                 color: "white"
                 font.pixelSize: focus.theme.px(20)
@@ -71,7 +72,7 @@ Rectangle {
             spacing: 5
             RowLayout {
                 Label {
-                    text: focus.taskList.focusState === TaskListViewModel.InProgress
+                    text: focus.taskList.focusState === TaskFocusViewModel.InProgress
                           ? qsTr("现在做 · 正在进行") : qsTr("现在做")
                     color: focus.theme.primary
                     font.pixelSize: focus.theme.px(13)
@@ -122,9 +123,9 @@ Rectangle {
             Label {
                 Layout.fillWidth: true
                 text: focusDrop.containsDrag ? qsTr("释放以开始任务")
-                      : focus.taskList.focusState === TaskListViewModel.AllBlocked
+                      : focus.taskList.focusState === TaskFocusViewModel.AllBlocked
                         ? qsTr("当前没有可执行任务")
-                        : focus.taskList.focusState === TaskListViewModel.NoTasks
+                        : focus.taskList.focusState === TaskFocusViewModel.NoTasks
                           ? qsTr("还没有待办任务") : focus.taskList.focusTitle
                 color: focus.theme.textPrimary
                 font.pixelSize: focus.theme.px(20)
@@ -133,11 +134,11 @@ Rectangle {
             }
             Label {
                 Layout.fillWidth: true
-                text: focus.taskList.focusState === TaskListViewModel.AllBlocked
+                text: focus.taskList.focusState === TaskFocusViewModel.AllBlocked
                       ? qsTr("任务正在等待前置任务完成，可前往依赖图查看。")
-                      : focus.taskList.focusState === TaskListViewModel.NoTasks
+                      : focus.taskList.focusState === TaskFocusViewModel.NoTasks
                         ? qsTr("创建第一项任务，开始安排你的计划。")
-                        : focus.taskList.focusState === TaskListViewModel.Suggested
+                        : focus.taskList.focusState === TaskFocusViewModel.Suggested
                           ? qsTr("淡化推荐 · %1 · 可拖入任意可执行卡片")
                               .arg(focus.taskList.focusReasonText)
                           : focus.taskList.focusDescription
@@ -181,18 +182,18 @@ Rectangle {
             }
             Button {
                 objectName: "focusPrimaryActionButton"
-                text: focus.taskList.focusState === TaskListViewModel.InProgress
+                text: focus.taskList.focusState === TaskFocusViewModel.InProgress
                       ? qsTr("完成任务")
-                      : focus.taskList.focusState === TaskListViewModel.Suggested
+                      : focus.taskList.focusState === TaskFocusViewModel.Suggested
                         ? qsTr("开始推荐任务")
-                        : focus.taskList.focusState === TaskListViewModel.AllBlocked
+                        : focus.taskList.focusState === TaskFocusViewModel.AllBlocked
                           ? qsTr("查看依赖图") : qsTr("新建任务")
                 onClicked: {
-                    if (focus.taskList.focusState === TaskListViewModel.InProgress)
+                    if (focus.taskList.focusState === TaskFocusViewModel.InProgress)
                         focus.completeRequested(focus.taskList.focusTaskId)
-                    else if (focus.taskList.focusState === TaskListViewModel.Suggested)
+                    else if (focus.taskList.focusState === TaskFocusViewModel.Suggested)
                         focus.startRequested(focus.taskList.focusTaskId)
-                    else if (focus.taskList.focusState === TaskListViewModel.AllBlocked)
+                    else if (focus.taskList.focusState === TaskFocusViewModel.AllBlocked)
                         focus.dependencyGraphRequested()
                     else
                         focus.createRequested()

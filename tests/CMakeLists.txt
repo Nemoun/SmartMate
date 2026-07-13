@@ -180,6 +180,15 @@ target_link_libraries(tst_settings_widgets
 add_test(NAME view.widgets_settings COMMAND tst_settings_widgets -platform offscreen)
 set_tests_properties(view.widgets_settings PROPERTIES TIMEOUT 15)
 
+qt_add_executable(tst_task_widgets
+    widgets/tst_TaskWidgets.cpp
+)
+target_link_libraries(tst_task_widgets
+    PRIVATE smartmate_widgets Qt6::Test
+)
+add_test(NAME view.widgets_tasks COMMAND tst_task_widgets -platform offscreen)
+set_tests_properties(view.widgets_tasks PROPERTIES TIMEOUT 20)
+
 qt_add_executable(tst_widgets_appearance_flow
     integration/tst_WidgetsAppearanceFlow.cpp
     fakes/FakeAppearanceSettingsRepository.h
@@ -190,6 +199,15 @@ target_link_libraries(tst_widgets_appearance_flow
 )
 add_test(NAME integration.widgets_appearance COMMAND tst_widgets_appearance_flow -platform offscreen)
 set_tests_properties(integration.widgets_appearance PROPERTIES TIMEOUT 15)
+
+qt_add_executable(tst_widgets_task_flow
+    integration/tst_WidgetsTaskFlow.cpp
+)
+target_link_libraries(tst_widgets_task_flow
+    PRIVATE smartmate_widgets smartmate_persistence smartmate_viewmodel Qt6::Test
+)
+add_test(NAME integration.widgets_tasks COMMAND tst_widgets_task_flow -platform offscreen)
+set_tests_properties(integration.widgets_tasks PROPERTIES TIMEOUT 25)
 
 qt_add_executable(tst_task_creation_flow
     integration/tst_TaskCreationFlow.cpp
@@ -297,8 +315,8 @@ get_target_property(qmake_executable Qt6::qmake IMPORTED_LOCATION)
 get_filename_component(qt_runtime_directory "${qmake_executable}" DIRECTORY)
 get_filename_component(compiler_runtime_directory "${CMAKE_CXX_COMPILER}" DIRECTORY)
 set(runtime_path_modifications
-    "PATH=path_list_prepend:${qt_runtime_directory}"
     "PATH=path_list_prepend:${compiler_runtime_directory}"
+    "PATH=path_list_prepend:${qt_runtime_directory}"
 )
 
 set_tests_properties(
@@ -315,7 +333,9 @@ set_tests_properties(
     viewmodel.appearance_settings
     viewmodel.contracts
     view.widgets_settings
+    view.widgets_tasks
     integration.widgets_appearance
+    integration.widgets_tasks
     integration.task_creation_flow
     view.qml_pickers
     view.qml_dependency_graph

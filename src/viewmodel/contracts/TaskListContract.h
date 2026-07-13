@@ -10,7 +10,7 @@ namespace smartmate::viewmodel {
 
 /// 任务列表、筛选、批量选择和状态命令的抽象展示契约。
 ///
-/// 焦点任务与详情选择仍属于迁移期具体 ViewModel API，后续再拆为窄契约。
+/// 焦点任务与详情选择分别由 TaskFocusContract、TaskDetailsContract 提供。
 class TaskListContract : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(bool showArchived READ showArchived WRITE setShowArchived NOTIFY showArchivedChanged)

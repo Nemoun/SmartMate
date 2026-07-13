@@ -3,6 +3,8 @@
 #include "TaskEditorViewModel.h"
 #include "TaskGraphViewModel.h"
 #include "TaskListViewModel.h"
+#include "TaskFocusViewModel.h"
+#include "TaskDetailsViewModel.h"
 #include "TaskCategoryViewModel.h"
 #include "fakes/FakeTaskDependencyRepository.h"
 #include "fakes/FakeTaskCreationRepository.h"
@@ -46,6 +48,8 @@ using smartmate::viewmodel::TaskDependencyViewModel;
 using smartmate::viewmodel::TaskEditorViewModel;
 using smartmate::viewmodel::TaskGraphViewModel;
 using smartmate::viewmodel::TaskListViewModel;
+using smartmate::viewmodel::TaskFocusViewModel;
+using smartmate::viewmodel::TaskDetailsViewModel;
 using smartmate::viewmodel::TaskCategoryViewModel;
 
 namespace {
@@ -233,6 +237,8 @@ void TaskViewModelsTest::appViewModelOwnsBindableChildren()
 
     QCOMPARE(app.applicationName(), QStringLiteral("SmartMate"));
     QVERIFY(app.taskList() != nullptr);
+    QVERIFY(app.taskFocus() != nullptr);
+    QVERIFY(app.taskDetails() != nullptr);
     QVERIFY(app.taskEditor() != nullptr);
     QVERIFY(app.taskDependencies() != nullptr);
     QVERIFY(app.taskGraph() != nullptr);

@@ -6,6 +6,8 @@ AppViewModel::AppViewModel(model::TaskService &taskService, QObject *parent)
     : QObject(parent)
     , m_taskCategories(taskService)
     , m_taskList(taskService)
+    , m_taskFocus(taskService)
+    , m_taskDetails(taskService)
     , m_taskEditor(taskService)
     , m_taskDependencies(new TaskDependencyViewModel(taskService, this))
     , m_taskGraph(taskService)
@@ -19,6 +21,8 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
     : QObject(parent)
     , m_taskCategories(taskService)
     , m_taskList(taskService)
+    , m_taskFocus(taskService)
+    , m_taskDetails(taskService)
     , m_taskEditor(taskService)
     , m_taskDependencies(new TaskDependencyViewModel(taskService, this))
     , m_taskGraph(taskService)
@@ -32,6 +36,8 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
     : QObject(parent)
     , m_taskCategories(taskService, &categoryService)
     , m_taskList(taskService, categoryService)
+    , m_taskFocus(taskService, categoryService)
+    , m_taskDetails(taskService, categoryService)
     , m_taskEditor(taskService, categoryService)
     , m_taskDependencies(new TaskDependencyViewModel(
           taskService, categoryService, this))
@@ -47,6 +53,8 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
     : QObject(parent)
     , m_taskCategories(taskService, &categoryService)
     , m_taskList(taskService, categoryService)
+    , m_taskFocus(taskService, categoryService)
+    , m_taskDetails(taskService, categoryService)
     , m_taskEditor(taskService, categoryService)
     , m_taskDependencies(new TaskDependencyViewModel(
           taskService, categoryService, this))
@@ -63,6 +71,16 @@ QString AppViewModel::applicationName() const
 TaskListViewModel *AppViewModel::taskList() noexcept
 {
     return &m_taskList;
+}
+
+TaskFocusViewModel *AppViewModel::taskFocus() noexcept
+{
+    return &m_taskFocus;
+}
+
+TaskDetailsViewModel *AppViewModel::taskDetails() noexcept
+{
+    return &m_taskDetails;
 }
 
 TaskEditorViewModel *AppViewModel::taskEditor() noexcept

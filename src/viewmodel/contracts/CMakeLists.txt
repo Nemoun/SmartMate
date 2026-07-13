@@ -3,6 +3,8 @@ add_library(smartmate_viewmodel_contracts STATIC
     TaskCategoryContract.h
     TaskDependencyContract.h
     TaskEditorContract.h
+    TaskFocusContract.h
+    TaskDetailsContract.h
     TaskGraphContract.h
     TaskListContract.h
     ViewModelContracts.cpp

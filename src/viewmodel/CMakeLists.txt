@@ -11,6 +11,8 @@ add_library(smartmate_viewmodel STATIC
     TaskErrorMapper.cpp
     TaskPresentationFormatter.h
     TaskPresentationFormatter.cpp
+    TaskPlanProjection.h
+    TaskPlanProjection.cpp
     TaskCategoryPresentation.h
     TaskCategoryPresentation.cpp
     TaskCategoryViewModel.h
@@ -23,6 +25,10 @@ add_library(smartmate_viewmodel STATIC
     TaskGraphLayout.cpp
     TaskListViewModel.h
     TaskListViewModel.cpp
+    TaskFocusViewModel.h
+    TaskFocusViewModel.cpp
+    TaskDetailsViewModel.h
+    TaskDetailsViewModel.cpp
 )
 
 target_include_directories(smartmate_viewmodel

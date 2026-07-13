@@ -1,6 +1,7 @@
 #include "view/widgets/MainWindow.h"
 
 #include "view/widgets/settings/SettingsPage.h"
+#include "view/widgets/task/TaskPage.h"
 #include "view/widgets/theme/WidgetTheme.h"
 
 #include <QApplication>
@@ -51,8 +52,37 @@ QPushButton *navigationButton(const QString &text,
 } // namespace
 
 MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
+    : MainWindow(dependencies.appearanceSettings,
+                 new TaskPage{{dependencies.taskList,
+                               dependencies.taskFocus,
+                               dependencies.taskDetails,
+                               dependencies.taskEditor}}, parent)
+{
+    auto *taskPage = qobject_cast<TaskPage *>(m_pages->widget(0));
+    connect(taskPage, &TaskPage::showDependencyGraphRequested, m_pages,
+            [this] { m_pages->setCurrentIndex(1); });
+    connect(&dependencies.taskList, &viewmodel::TaskListContract::notificationRaised,
+            this, &MainWindow::showNotification);
+    connect(&dependencies.taskFocus, &viewmodel::TaskFocusContract::notificationRaised,
+            this, &MainWindow::showNotification);
+    connect(&dependencies.taskDetails, &viewmodel::TaskDetailsContract::notificationRaised,
+            this, &MainWindow::showNotification);
+    connect(&dependencies.taskEditor, &viewmodel::TaskEditorContract::notificationRaised,
+            this, &MainWindow::showNotification);
+}
+
+MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
+                       QWidget *parent)
+    : MainWindow(appearanceSettings,
+                 migrationPlaceholder(tr("任务"), tr("任务页面未注入测试依赖。")),
+                 parent)
+{
+}
+
+MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
+                       QWidget *taskPage, QWidget *parent)
     : QMainWindow(parent)
-    , m_dependencies(dependencies)
+    , m_appearanceSettings(appearanceSettings)
     , m_baselineFont(QApplication::font())
     , m_pages(new QStackedWidget(this))
 {
@@ -98,11 +128,10 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
     rootLayout->addWidget(navigation);
     rootLayout->addWidget(m_pages, 1);
 
-    m_pages->addWidget(migrationPlaceholder(
-        tr("任务"), tr("任务主流程正在迁移到 Qt Widgets；当前请使用 QML 基线程序。")));
+    m_pages->addWidget(taskPage);
     m_pages->addWidget(migrationPlaceholder(
         tr("依赖图"), tr("依赖图将在后续阶段使用 QGraphicsView 迁移。")));
-    m_pages->addWidget(new SettingsPage{dependencies.appearanceSettings, m_pages});
+    m_pages->addWidget(new SettingsPage{appearanceSettings, m_pages});
 
     connect(navigationGroup, &QButtonGroup::idClicked, m_pages,
             [this](const int index) { m_pages->setCurrentIndex(index); });
@@ -110,10 +139,10 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
     m_pages->setCurrentIndex(0);
 
     statusBar()->setObjectName(QStringLiteral("notificationStatusBar"));
-    connect(&dependencies.appearanceSettings,
+    connect(&appearanceSettings,
             &viewmodel::AppearanceSettingsContract::appearanceChanged,
             this, &MainWindow::applyAppearance);
-    connect(&dependencies.appearanceSettings,
+    connect(&appearanceSettings,
             &viewmodel::AppearanceSettingsContract::notificationRaised,
             this, &MainWindow::showNotification);
     applyAppearance();
@@ -121,7 +150,7 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
 
 void MainWindow::applyAppearance()
 {
-    const auto &settings = m_dependencies.appearanceSettings;
+    const auto &settings = m_appearanceSettings;
     const WidgetTheme theme = WidgetTheme::fromAccentIndex(
         settings.accentThemeIndex());
     setPalette(theme.palette());
@@ -135,7 +164,7 @@ void MainWindow::showNotification(const common::UiNotification &notification)
         ? notification.message
         : QStringLiteral("%1：%2").arg(notification.title, notification.message);
     const WidgetTheme theme = WidgetTheme::fromAccentIndex(
-        m_dependencies.appearanceSettings.accentThemeIndex());
+        m_appearanceSettings.accentThemeIndex());
     QPalette notificationPalette = statusBar()->palette();
     switch (notification.severity) {
     case common::UiSeverity::Information:

@@ -69,7 +69,11 @@ AppBootstrapper::~AppBootstrapper() = default;
 
 view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noexcept
 {
-    return {*m_appViewModel->appearanceSettings()};
+    return {*m_appViewModel->appearanceSettings(),
+            *m_appViewModel->taskList(),
+            *m_appViewModel->taskFocus(),
+            *m_appViewModel->taskDetails(),
+            *m_appViewModel->taskEditor()};
 }
 
 } // namespace smartmate::app

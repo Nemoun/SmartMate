@@ -13,6 +13,7 @@ class TaskEditorContract : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QString taskId READ taskId NOTIFY modeChanged)
     Q_PROPERTY(bool editMode READ editMode NOTIFY modeChanged)
+    Q_PROPERTY(bool sessionActive READ sessionActive NOTIFY sessionActiveChanged)
     Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY titleChanged)
     Q_PROPERTY(QString description READ description WRITE setDescription NOTIFY descriptionChanged)
     Q_PROPERTY(QString currentStatusText READ currentStatusText NOTIFY currentStatusTextChanged)
@@ -68,6 +69,7 @@ public:
 
     [[nodiscard]] virtual QString taskId() const = 0;
     [[nodiscard]] virtual bool editMode() const noexcept = 0;
+    [[nodiscard]] virtual bool sessionActive() const noexcept = 0;
     [[nodiscard]] virtual QString title() const = 0;
     virtual void setTitle(const QString &title) = 0;
     [[nodiscard]] virtual QString description() const = 0;
@@ -120,6 +122,7 @@ public slots:
     virtual void cancel() = 0;
 
 signals:
+    void sessionActiveChanged();
     void modeChanged();
     void titleChanged();
     void descriptionChanged();

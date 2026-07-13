@@ -5,6 +5,16 @@ add_library(smartmate_widgets STATIC
     binding/WidgetBinding.h
     settings/SettingsPage.h
     settings/SettingsPage.cpp
+    task/TaskPage.h
+    task/TaskPage.cpp
+    task/TaskItemDelegate.h
+    task/TaskItemDelegate.cpp
+    task/TaskEditorDialog.h
+    task/TaskEditorDialog.cpp
+    task/DeadlinePickerDialog.h
+    task/DeadlinePickerDialog.cpp
+    task/DurationPickerDialog.h
+    task/DurationPickerDialog.cpp
     theme/WidgetTheme.h
     theme/WidgetTheme.cpp
 )

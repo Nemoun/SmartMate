@@ -46,6 +46,7 @@ public:
 
     [[nodiscard]] QString taskId() const override;
     [[nodiscard]] bool editMode() const noexcept override;
+    [[nodiscard]] bool sessionActive() const noexcept override;
     [[nodiscard]] QString title() const override;
     void setTitle(const QString &title) override;
     [[nodiscard]] QString description() const override;
@@ -138,6 +139,7 @@ private:
     void rememberCurrentDraft();
     void updateFormState();
     void setErrorMessage(const QString &message);
+    void setSessionActive(bool active);
     [[nodiscard]] std::optional<model::TaskDraft> buildTaskDraft();
     [[nodiscard]] std::optional<QDateTime> displayedDeadline() const;
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
@@ -158,6 +160,8 @@ private:
     // 当前可编辑草稿采用表单友好形态，便于与 QML 双向绑定。
     QString m_taskId;
     bool m_editMode{false};
+    /// 只表达编辑会话是否打开，不持有或控制任何具体 Dialog。
+    bool m_sessionActive{false};
     QString m_title;
     QString m_description;
     /// 仅用于展示当前持久化状态；所有改变都必须通过任务列表的显式状态命令。

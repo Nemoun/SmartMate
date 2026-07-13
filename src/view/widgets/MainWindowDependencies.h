@@ -1,6 +1,10 @@
 #pragma once
 
 #include "viewmodel/contracts/AppearanceSettingsContract.h"
+#include "viewmodel/contracts/TaskListContract.h"
+#include "viewmodel/contracts/TaskFocusContract.h"
+#include "viewmodel/contracts/TaskDetailsContract.h"
+#include "viewmodel/contracts/TaskEditorContract.h"
 
 namespace smartmate::view::widgets {
 
@@ -10,6 +14,10 @@ namespace smartmate::view::widgets {
 /// 只按实际使用增加新的窄 Contract，不提前注入具体 ViewModel。
 struct MainWindowDependencies {
     viewmodel::AppearanceSettingsContract &appearanceSettings;
+    viewmodel::TaskListContract &taskList;
+    viewmodel::TaskFocusContract &taskFocus;
+    viewmodel::TaskDetailsContract &taskDetails;
+    viewmodel::TaskEditorContract &taskEditor;
 };
 
 } // namespace smartmate::view::widgets

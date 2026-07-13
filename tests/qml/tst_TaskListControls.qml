@@ -289,9 +289,9 @@ TestCase {
         const dialog = findChild(subject, "taskDetailsDialog")
         verify(dialog !== null)
         tryCompare(dialog, "opened", true)
-        compare(testAppViewModel.taskList.selectedTaskId, alphaId)
+        compare(testAppViewModel.taskDetails.selectedTaskId, alphaId)
         dialog.close()
-        tryCompare(testAppViewModel.taskList, "selectedTaskId", "")
+        tryCompare(testAppViewModel.taskDetails, "selectedTaskId", "")
     }
 
     function test_focusSlotAcceptsRealPointerDrag() {
@@ -301,8 +301,8 @@ TestCase {
         verify(slot !== null)
         verify(dropArea !== null)
         verify(preview !== null)
-        compare(testAppViewModel.taskList.focusState, 1)
-        const focusId = testAppViewModel.taskList.focusTaskId
+        compare(testAppViewModel.taskFocus.focusState, 1)
+        const focusId = testAppViewModel.taskFocus.focusTaskId
         const handle = findChild(taskDelegate(focusId), "dragHandle_" + focusId)
         verify(handle !== null)
         tryCompare(handle, "visible", true)
@@ -315,11 +315,11 @@ TestCase {
         tryCompare(dropArea, "containsDrag", true)
         mouseRelease(handle, target.x, target.y, Qt.LeftButton)
 
-        tryCompare(testAppViewModel.taskList, "focusState", 2)
-        compare(testAppViewModel.taskList.focusTaskId, focusId)
+        tryCompare(testAppViewModel.taskFocus, "focusState", 2)
+        compare(testAppViewModel.taskFocus.focusTaskId, focusId)
         verify(testAppViewModel.taskList.completeTask(focusId))
         verify(testAppViewModel.taskList.redoTask(focusId))
-        tryCompare(testAppViewModel.taskList, "focusState", 1)
+        tryCompare(testAppViewModel.taskFocus, "focusState", 1)
     }
 
     function test_blockedTaskDoesNotExposeDragHandle() {
@@ -461,7 +461,7 @@ TestCase {
                editor.errorMessage)
         verify(editor.save(), editor.errorMessage)
         const overdueId = editor.taskId
-        tryCompare(testAppViewModel.taskList, "focusTaskId", overdueId)
+        tryCompare(testAppViewModel.taskFocus, "focusTaskId", overdueId)
         const focusBadge = findChild(subject, "focusOverdueBadge")
         const focusReminder = findChild(subject, "focusOverdueReminder")
         verify(focusBadge !== null)

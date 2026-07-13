@@ -6,6 +6,8 @@
 #include "TaskCategoryViewModel.h"
 #include "TaskGraphViewModel.h"
 #include "TaskListViewModel.h"
+#include "TaskFocusViewModel.h"
+#include "TaskDetailsViewModel.h"
 
 #include <QObject>
 #include <QString>
@@ -24,6 +26,8 @@ class AppViewModel : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString applicationName READ applicationName CONSTANT)
     Q_PROPERTY(smartmate::viewmodel::TaskListViewModel *taskList READ taskList CONSTANT)
+    Q_PROPERTY(smartmate::viewmodel::TaskFocusViewModel *taskFocus READ taskFocus CONSTANT)
+    Q_PROPERTY(smartmate::viewmodel::TaskDetailsViewModel *taskDetails READ taskDetails CONSTANT)
     Q_PROPERTY(smartmate::viewmodel::TaskEditorViewModel *taskEditor READ taskEditor CONSTANT)
     Q_PROPERTY(smartmate::viewmodel::TaskDependencyViewModel *taskDependencies
                    READ taskDependencies CONSTANT)
@@ -47,6 +51,8 @@ public:
 
     [[nodiscard]] QString applicationName() const;
     [[nodiscard]] TaskListViewModel *taskList() noexcept;
+    [[nodiscard]] TaskFocusViewModel *taskFocus() noexcept;
+    [[nodiscard]] TaskDetailsViewModel *taskDetails() noexcept;
     [[nodiscard]] TaskEditorViewModel *taskEditor() noexcept;
     [[nodiscard]] TaskDependencyViewModel *taskDependencies() noexcept;
     [[nodiscard]] TaskGraphViewModel *taskGraph() noexcept;
@@ -58,6 +64,8 @@ private:
     // 从而让列表、编辑器、类别管理和依赖图保持同步而不形成隐式耦合。
     TaskCategoryViewModel m_taskCategories;
     TaskListViewModel m_taskList;
+    TaskFocusViewModel m_taskFocus;
+    TaskDetailsViewModel m_taskDetails;
     TaskEditorViewModel m_taskEditor;
     /// 采用 QObject 子对象所有权，使 QML 只能观察且无需 app 层单独登记生命周期。
     TaskDependencyViewModel *m_taskDependencies;

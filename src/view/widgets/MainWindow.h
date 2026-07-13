@@ -17,12 +17,17 @@ class MainWindow final : public QMainWindow {
 public:
     explicit MainWindow(MainWindowDependencies dependencies,
                         QWidget *parent = nullptr);
+    /// 仅用于隔离测试设置页与窗口主题；生产组合根始终使用完整依赖构造函数。
+    explicit MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
+                        QWidget *parent = nullptr);
 
 private:
+    MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
+               QWidget *taskPage, QWidget *parent);
     void applyAppearance();
     void showNotification(const common::UiNotification &notification);
 
-    MainWindowDependencies m_dependencies;
+    viewmodel::AppearanceSettingsContract &m_appearanceSettings;
     QFont m_baselineFont;
     QStackedWidget *m_pages;
 };

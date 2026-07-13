@@ -127,7 +127,7 @@ void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
     settings.accentIndex = 1;
     settings.familyIndex = 2;
     settings.scaleIndex = 0;
-    MainWindow window{MainWindowDependencies{settings}};
+    MainWindow window{settings};
 
     QVERIFY(requiredChild<QPushButton>(window, "accentThemeButton_1")->isChecked());
     QCOMPARE(requiredChild<QComboBox>(window, "fontFamilyComboBox")->currentIndex(), 2);
@@ -185,7 +185,7 @@ void SettingsWidgetsTest::contractNotificationUpdatesControlsWithoutWriteBack()
 void SettingsWidgetsTest::themeAndUiNotificationArePresentedByMainWindow()
 {
     FakeAppearanceSettingsContract settings;
-    MainWindow window{MainWindowDependencies{settings}};
+    MainWindow window{settings};
     const qreal baselineSize = window.font().pointSizeF();
 
     settings.replaceProjection(1, 0, 2);
