@@ -81,7 +81,7 @@ qt_add_qml_module(smartmate_ui
         qml/TaskDetailsDialog.qml
         qml/TaskCategoryDialog.qml
     IMPORTS
-        TARGET smartmate_viewmodel
+        TARGET smartmate_viewmodel_qml
     DEPENDENCIES
         QtQuick
         QtQuick.Controls

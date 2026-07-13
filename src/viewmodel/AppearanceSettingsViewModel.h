@@ -3,7 +3,6 @@
 #include "domain/AppearanceSettings.h"
 #include "viewmodel/contracts/AppearanceSettingsContract.h"
 
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class AppearanceSettingsService;
@@ -15,9 +14,6 @@ namespace smartmate::viewmodel {
 class AppearanceSettingsViewModel : public AppearanceSettingsContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(AppearanceSettingsViewModel)
-    QML_UNCREATABLE("AppearanceSettingsViewModel is owned by AppViewModel")
-
 public:
     explicit AppearanceSettingsViewModel(QObject *parent = nullptr);
     explicit AppearanceSettingsViewModel(model::AppearanceSettingsService &service,

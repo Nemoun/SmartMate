@@ -5,7 +5,6 @@
 #include "viewmodel/contracts/TaskGraphContract.h"
 
 #include <QHash>
-#include <QtQmlIntegration/qqmlintegration.h>
 #include <QVariantList>
 
 namespace smartmate::model {
@@ -23,9 +22,6 @@ class TaskGraphRelationListModel;
 class TaskGraphViewModel final : public TaskGraphContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(TaskGraphViewModel)
-    QML_UNCREATABLE("TaskGraphViewModel is owned by AppViewModel")
-
 public:
     explicit TaskGraphViewModel(model::TaskService &taskService,
                                 QObject *parent = nullptr);

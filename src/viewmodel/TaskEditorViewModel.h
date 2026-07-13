@@ -9,7 +9,6 @@
 #include <QStringList>
 #include <QTimeZone>
 #include <QVariantList>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 #include <optional>
 
@@ -27,9 +26,6 @@ namespace smartmate::viewmodel {
 class TaskEditorViewModel final : public TaskEditorContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(TaskEditorViewModel)
-    QML_UNCREATABLE("TaskEditorViewModel is owned by AppViewModel")
-
 public:
     explicit TaskEditorViewModel(model::TaskService &taskService, QObject *parent = nullptr);
     TaskEditorViewModel(model::TaskService &taskService,

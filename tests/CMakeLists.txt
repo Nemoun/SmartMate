@@ -171,6 +171,26 @@ target_link_libraries(tst_viewmodel_contracts
 )
 add_test(NAME viewmodel.contracts COMMAND tst_viewmodel_contracts)
 
+qt_add_executable(tst_settings_widgets
+    widgets/tst_SettingsWidgets.cpp
+)
+target_link_libraries(tst_settings_widgets
+    PRIVATE smartmate_widgets Qt6::Test
+)
+add_test(NAME view.widgets_settings COMMAND tst_settings_widgets -platform offscreen)
+set_tests_properties(view.widgets_settings PROPERTIES TIMEOUT 15)
+
+qt_add_executable(tst_widgets_appearance_flow
+    integration/tst_WidgetsAppearanceFlow.cpp
+    fakes/FakeAppearanceSettingsRepository.h
+)
+target_include_directories(tst_widgets_appearance_flow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_widgets_appearance_flow
+    PRIVATE smartmate_widgets smartmate_viewmodel Qt6::Test
+)
+add_test(NAME integration.widgets_appearance COMMAND tst_widgets_appearance_flow -platform offscreen)
+set_tests_properties(integration.widgets_appearance PROPERTIES TIMEOUT 15)
+
 qt_add_executable(tst_task_creation_flow
     integration/tst_TaskCreationFlow.cpp
 )
@@ -198,7 +218,8 @@ target_link_libraries(tst_qml_pickers
     PRIVATE
         smartmate_persistence
         smartmate_viewmodel
-        smartmate_viewmodelplugin
+        smartmate_viewmodel_qml
+        smartmate_viewmodel_qmlplugin
         smartmate_ui
         smartmate_uiplugin
         Qt6::Qml
@@ -236,7 +257,8 @@ target_link_libraries(tst_qml_dependency_graph
     PRIVATE
         smartmate_persistence
         smartmate_viewmodel
-        smartmate_viewmodelplugin
+        smartmate_viewmodel_qml
+        smartmate_viewmodel_qmlplugin
         smartmate_ui
         smartmate_uiplugin
         Qt6::Qml
@@ -265,6 +287,12 @@ add_test(
 )
 set_tests_properties(view.qml_bootstrap PROPERTIES TIMEOUT 10)
 
+add_test(
+    NAME view.widgets_bootstrap
+    COMMAND SmartMateWidgets --smoke-test -platform offscreen
+)
+set_tests_properties(view.widgets_bootstrap PROPERTIES TIMEOUT 10)
+
 get_target_property(qmake_executable Qt6::qmake IMPORTED_LOCATION)
 get_filename_component(qt_runtime_directory "${qmake_executable}" DIRECTORY)
 get_filename_component(compiler_runtime_directory "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -286,10 +314,13 @@ set_tests_properties(
     viewmodel.task_viewmodels
     viewmodel.appearance_settings
     viewmodel.contracts
+    view.widgets_settings
+    integration.widgets_appearance
     integration.task_creation_flow
     view.qml_pickers
     view.qml_dependency_graph
     view.qml_bootstrap
+    view.widgets_bootstrap
     PROPERTIES
         ENVIRONMENT_MODIFICATION
             "${runtime_path_modifications}"

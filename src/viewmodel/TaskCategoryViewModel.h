@@ -3,7 +3,6 @@
 #include "domain/TaskCategory.h"
 #include "viewmodel/contracts/TaskCategoryContract.h"
 
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class TaskService;
@@ -19,9 +18,6 @@ namespace smartmate::viewmodel {
 class TaskCategoryViewModel final : public TaskCategoryContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(TaskCategoryViewModel)
-    QML_UNCREATABLE("TaskCategoryViewModel is owned by AppViewModel")
-
 public:
     /// categoryService 可为空以兼容不加载类别功能的隔离测试；生产组合根必须注入。
     explicit TaskCategoryViewModel(model::TaskService &taskService,

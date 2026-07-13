@@ -6,7 +6,6 @@
 
 #include <QHash>
 #include <QSet>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class TaskService;
@@ -22,9 +21,6 @@ namespace smartmate::viewmodel {
 class TaskDependencyViewModel final : public TaskDependencyContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(TaskDependencyViewModel)
-    QML_UNCREATABLE("TaskDependencyViewModel is owned by AppViewModel")
-
 public:
     explicit TaskDependencyViewModel(model::TaskService &taskService,
                                      QObject *parent = nullptr);

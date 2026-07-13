@@ -9,7 +9,6 @@
 
 #include <QObject>
 #include <QString>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class TaskService;
@@ -33,9 +32,6 @@ class AppViewModel : public QObject {
                    READ taskCategories CONSTANT)
     Q_PROPERTY(smartmate::viewmodel::AppearanceSettingsViewModel *appearanceSettings
                    READ appearanceSettings CONSTANT)
-    QML_NAMED_ELEMENT(AppViewModel)
-    QML_UNCREATABLE("AppViewModel is created and owned by AppBootstrapper")
-
 public:
     explicit AppViewModel(model::TaskService &taskService, QObject *parent = nullptr);
     AppViewModel(model::TaskService &taskService,

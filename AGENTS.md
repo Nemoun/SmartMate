@@ -114,6 +114,13 @@ ctest --preset debug --output-on-failure
 cmake --build --preset debug --target all_qmllint
 ```
 
-创建 `SmartMateWidgets` 目标后，还必须构建该目标并运行 Widget 测试；具体命令随目标落地同步加入本节。最终删除 QML 后才移除 `all_qmllint`。
+当前临时 `SmartMateWidgets` 目标已经建立，每次修改还必须确认：
+
+```powershell
+cmake --build --preset debug --target SmartMateWidgets
+ctest --preset debug --output-on-failure -R "view.widgets|integration.widgets"
+```
+
+完整 `ctest` 仍是最终验收命令，上述筛选只用于 Widgets 开发时快速定位回归。最终删除 QML 后才移除 `all_qmllint`。
 
 禁止提交构建产物、运行数据库、IDE用户配置、凭据、生成缓存或无关改动。

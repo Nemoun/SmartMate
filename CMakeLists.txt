@@ -17,6 +17,7 @@ find_package(Qt6 6.10.2 EXACT REQUIRED COMPONENTS
     QuickTest
     Sql
     Test
+    Widgets
 )
 
 qt_standard_project_setup(REQUIRES 6.10)
@@ -28,7 +29,9 @@ add_subdirectory(src/model)
 add_subdirectory(src/model/persistence)
 add_subdirectory(src/viewmodel/contracts)
 add_subdirectory(src/viewmodel)
+add_subdirectory(src/viewmodel/qml)
 add_subdirectory(src/view)
+add_subdirectory(src/view/widgets)
 add_subdirectory(src/app)
 
 if(BUILD_TESTING)

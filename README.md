@@ -2,7 +2,7 @@
 
 SmartMate 是一个仅面向 Windows 的桌面任务规划应用，使用 C++20、Qt 6、SQLite 与严格 MVVM 架构开发。项目以“可执行的任务计划 + 陪伴式桌宠”为核心：用户管理任务与依赖关系，系统生成合理的执行顺序，桌宠则随时展示当前任务并提供快捷交互。
 
-> **View 技术迁移状态**：当前可执行程序仍使用 Qt Quick/QML，它只作为迁移期行为基线继续维护。目标前端是完全由 `.h/.cpp` 构建的 Qt Widgets，并通过 ViewModel Contracts 与具体 ViewModel 解耦；迁移期间不增加新功能，也不提前删除当前 QML 构建、测试和部署链路。实施顺序与退出条件见[Qt Widgets 迁移指南](docs/widgets-migration.md)。
+> **View 技术迁移状态**：当前正式可执行程序仍使用 Qt Quick/QML，它只作为迁移期行为基线继续维护。临时 `SmartMateWidgets` 已提供纯 C++ 主窗口、导航、主题和外观设置页，并通过 ViewModel Contracts 与具体 ViewModel 解耦；任务页与依赖图页仍是迁移占位内容。迁移期间不增加新功能，也不提前删除当前 QML 构建、测试和部署链路。实施顺序与退出条件见[Qt Widgets 迁移指南](docs/widgets-migration.md)。
 
 > 当前版本已经完成基础任务 CRUD、用户自定义类别、Finish-to-Start依赖、原子新建依赖、有向依赖图、依赖感知排序、推荐理由、实时搜索和组合筛选。主窗口提供可折叠左侧导航、“现在做”任务槽、逾期提醒、卡片详情以及可持久化的青绿/清蓝与字体设置。任务、类别与依赖通过 SQLite 保留，外观偏好通过 persistence 层的 QSettings 保留；桌宠、专注计时和统计仍按后续阶段逐步实现。
 
@@ -70,6 +70,15 @@ ctest --preset debug --output-on-failure
 cmake --build --preset debug --target all_qmllint
 ```
 
+单独构建和运行迁移期 Widgets 前端：
+
+```powershell
+cmake --build --preset debug --target SmartMateWidgets
+.\build\debug\SmartMateWidgets.exe
+```
+
+`SmartMateWidgets` 不链接 Qt QML、Qt Quick、QML 插件或当前 QML 页面；它与正式程序复用同一组合根、数据库格式和外观设置格式。
+
 Release 构建使用对应的 `release` preset：
 
 ```powershell
@@ -78,7 +87,7 @@ cmake --build --preset release
 ctest --preset release --output-on-failure
 ```
 
-所有构建产物都位于 `build/`，不会被 Git 跟踪。迁移期 CTest 继续包含当前 QML 基线的离屏启动测试；临时 `SmartMateWidgets` 目标建立后，将同时增加只注入 Fake Contract 的 Widget 测试和完整 Widgets 纵向集成测试。
+所有构建产物都位于 `build/`，不会被 Git 跟踪。迁移期 CTest 同时包含当前 QML 基线与 `SmartMateWidgets` 的离屏启动测试、只注入 Fake Contract 的 Widget 测试，以及外观设置的 Widgets 纵向集成测试。
 
 正式运行时，任务数据库保存在 Windows 当前用户的本地应用数据目录。测试与离屏启动使用内存数据库，不会写入真实任务数据。SQLite 只由 Repository 实现访问，ViewModel 和任何 View 都不能直接执行 SQL。
 

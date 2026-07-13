@@ -10,7 +10,6 @@
 #include <QStringList>
 #include <QTimer>
 #include <QVariantList>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class TaskService;
@@ -59,9 +58,6 @@ class TaskListViewModel final : public TaskListContract {
     Q_PROPERTY(QString selectedCategoryName READ selectedCategoryName NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedCategoryAccent READ selectedCategoryAccent NOTIFY selectionChanged)
     Q_PROPERTY(bool selectedHasCategory READ selectedHasCategory NOTIFY selectionChanged)
-    QML_NAMED_ELEMENT(TaskListViewModel)
-    QML_UNCREATABLE("TaskListViewModel is owned by AppViewModel")
-
 public:
     enum class FocusState {
         NoTasks = 0,

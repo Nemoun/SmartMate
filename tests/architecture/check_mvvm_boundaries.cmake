@@ -81,6 +81,11 @@ scan_includes("${ROOT_DIR}/src/viewmodel" "ViewModel"
     "qtquick" "qquick" "qqmlengine" "qqmlcontext" "qtsql" "qsql"
     "model/persistence" "view/")
 
+scan_includes("${ROOT_DIR}/src/view/widgets" "Qt Widgets View"
+    "domain/" "services/" "repositories/" "persistence/"
+    "appviewmodel" "appearance.*viewmodel\\.h" "task.*viewmodel\\.h"
+    "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql" "qsettings")
+
 # include 检查之外，再验证 CMake 链接关系，避免通过传递依赖绕过边界。
 set(model_cmake "${ROOT_DIR}/src/model/CMakeLists.txt")
 if(EXISTS "${model_cmake}")
@@ -164,6 +169,36 @@ if(EXISTS "${view_cmake}")
     if(view_cmake_lower MATCHES "smartmate_persistence|qt6::sql")
         record_violation("${view_cmake}"
             "smartmate_ui may not link concrete persistence or Qt SQL")
+    endif()
+endif()
+
+set(widgets_cmake "${ROOT_DIR}/src/view/widgets/CMakeLists.txt")
+if(EXISTS "${widgets_cmake}")
+    file(READ "${widgets_cmake}" widgets_cmake_contents)
+    string(TOLOWER "${widgets_cmake_contents}" widgets_cmake_lower)
+    if(NOT widgets_cmake_lower MATCHES "smartmate_viewmodel_contracts"
+       OR NOT widgets_cmake_lower MATCHES "smartmate_common"
+       OR NOT widgets_cmake_lower MATCHES "qt6::widgets")
+        record_violation("${widgets_cmake}"
+            "smartmate_widgets must link Contracts, Common, and Qt Widgets")
+    endif()
+    if(widgets_cmake_lower MATCHES "smartmate_viewmodel[ \t\r\n]|smartmate_model|smartmate_persistence|smartmate_ui|qt6::(qml|quick|sql)")
+        record_violation("${widgets_cmake}"
+            "smartmate_widgets may not link concrete ViewModel, Model, persistence, QML, Quick, or SQL")
+    endif()
+endif()
+
+set(app_cmake "${ROOT_DIR}/src/app/CMakeLists.txt")
+if(EXISTS "${app_cmake}")
+    file(READ "${app_cmake}" app_cmake_contents)
+    string(TOLOWER "${app_cmake_contents}" app_cmake_lower)
+    string(FIND "${app_cmake_lower}" "qt_add_executable(smartmatewidgets" widgets_target_start)
+    if(widgets_target_start GREATER_EQUAL 0)
+        string(SUBSTRING "${app_cmake_lower}" ${widgets_target_start} -1 widgets_target_section)
+        if(widgets_target_section MATCHES "smartmate_(ui|viewmodel_qml)|qt6::(qml|quick)")
+            record_violation("${app_cmake}"
+                "SmartMateWidgets may not link the migration QML frontend")
+        endif()
     endif()
 endif()
 
@@ -268,10 +303,27 @@ foreach(source_file IN LISTS production_cpp)
     if(contents MATCHES "QML_FOREIGN")
         file(RELATIVE_PATH foreign_relative "${ROOT_DIR}" "${source_file}")
         file(TO_CMAKE_PATH "${foreign_relative}" foreign_relative)
-        if(NOT foreign_relative STREQUAL "src/viewmodel/ContractQmlForeignTypes.h")
+        if(NOT foreign_relative STREQUAL "src/viewmodel/qml/ViewModelQmlForeignTypes.h")
             record_violation("${source_file}"
                 "QML foreign wrappers may exist only in the concrete ViewModel module")
         endif()
+    endif()
+endforeach()
+
+file(GLOB_RECURSE ui_files LIST_DIRECTORIES FALSE "${ROOT_DIR}/src/*.ui")
+foreach(ui_file IN LISTS ui_files)
+    record_violation("${ui_file}" "Qt Designer .ui files are forbidden")
+endforeach()
+
+file(GLOB_RECURSE widget_cpp LIST_DIRECTORIES FALSE
+    "${ROOT_DIR}/src/view/widgets/*.h"
+    "${ROOT_DIR}/src/view/widgets/*.cpp")
+foreach(source_file IN LISTS widget_cpp)
+    file(READ "${source_file}" widget_contents)
+    string(TOLOWER "${widget_contents}" widget_lower)
+    if(widget_lower MATCHES "qmetaobject::invokemethod|setproperty[ \t\r\n]*\\(")
+        record_violation("${source_file}"
+            "Widgets may not use string reflection for binding or commands")
     endif()
 endforeach()
 

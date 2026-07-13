@@ -6,13 +6,10 @@
 #include "services/AppearanceSettingsService.h"
 #include "services/TaskCategoryService.h"
 #include "services/TaskService.h"
+#include "view/widgets/MainWindowDependencies.h"
 
 #include <QByteArray>
-#include <QQmlApplicationEngine>
-#include <QQmlEngine>
 #include <QString>
-#include <QVariant>
-#include <QVariantMap>
 
 #include <stdexcept>
 #include <utility>
@@ -70,27 +67,9 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
 
 AppBootstrapper::~AppBootstrapper() = default;
 
-void AppBootstrapper::configure(QQmlApplicationEngine &engine)
+view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noexcept
 {
-    // QML 只能观察这些对象，生命周期仍由 C++ 管理；否则 QML 引擎可能误删
-    // AppViewModel 内部拥有的子 ViewModel。
-    QQmlEngine::setObjectOwnership(m_appViewModel.get(), QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->taskList(), QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->taskEditor(), QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->taskDependencies(),
-                                   QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->taskGraph(),
-                                   QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->taskCategories(),
-                                   QQmlEngine::CppOwnership);
-    QQmlEngine::setObjectOwnership(m_appViewModel->appearanceSettings(),
-                                   QQmlEngine::CppOwnership);
-
-    // 通过根组件的 required property 显式注入依赖，避免隐式全局状态。
-    QVariantMap initialProperties;
-    initialProperties.insert(QStringLiteral("appViewModel"),
-                             QVariant::fromValue(m_appViewModel.get()));
-    engine.setInitialProperties(initialProperties);
+    return {*m_appViewModel->appearanceSettings()};
 }
 
 } // namespace smartmate::app
