@@ -36,7 +36,7 @@ TaskCategoryViewModel::TaskCategoryViewModel(
     model::TaskService &taskService,
     model::TaskCategoryService *categoryService,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskCategoryContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
 {
@@ -274,6 +274,11 @@ QString TaskCategoryViewModel::categoryErrorText(const int error) const
 
 void TaskCategoryViewModel::setErrorMessage(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("类别操作失败"),
+                                 message});
+    }
     if (m_errorMessage == message) return;
     m_errorMessage = message;
     emit errorMessageChanged();

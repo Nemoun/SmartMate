@@ -3,6 +3,7 @@ qt_add_qml_module(smartmate_viewmodel
     URI SmartMate.ViewModel
     VERSION 1.0
     SOURCES
+        ContractQmlForeignTypes.h
         AppViewModel.h
     AppViewModel.cpp
     AppearanceSettingsViewModel.h
@@ -36,6 +37,7 @@ target_include_directories(smartmate_viewmodel
 
 target_link_libraries(smartmate_viewmodel
     PUBLIC
+        smartmate_viewmodel_contracts
         smartmate_model
         Qt6::Core
         Qt6::QmlIntegration

@@ -96,7 +96,7 @@ TaskListViewModel::TaskListViewModel(
     model::TaskService &taskService,
     model::TaskCategoryService *categoryService,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskListContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
     , m_reloadTimer(this)
@@ -1228,6 +1228,11 @@ const model::TaskCategory *TaskListViewModel::categoryForTask(
 void TaskListViewModel::setError(const QString &message)
 {
     // 属性支持持续绑定，事件信号用于立即弹出反馈；二者表达同一份展示错误。
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("任务操作失败"),
+                                 message});
+    }
     if (m_errorMessage == message) {
         if (!message.isEmpty()) {
             emit errorOccurred(message);

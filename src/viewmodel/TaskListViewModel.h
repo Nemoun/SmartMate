@@ -3,8 +3,8 @@
 #include "domain/Task.h"
 #include "domain/TaskStateMachine.h"
 #include "planner/TaskOrderingPolicy.h"
+#include "viewmodel/contracts/TaskListContract.h"
 
-#include <QAbstractListModel>
 #include <QHash>
 #include <QSet>
 #include <QStringList>
@@ -21,28 +21,8 @@ namespace smartmate::viewmodel {
 
 /// 将领域任务集合投影成 QML 可绑定的列表；它负责展示格式与命令转发，
 /// 不拥有任务真相，也不直接访问 Repository。
-class TaskListViewModel final : public QAbstractListModel {
+class TaskListViewModel final : public TaskListContract {
     Q_OBJECT
-    Q_PROPERTY(bool showArchived READ showArchived WRITE setShowArchived NOTIFY showArchivedChanged)
-    Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
-    Q_PROPERTY(int priorityFilterIndex READ priorityFilterIndex WRITE setPriorityFilterIndex
-                   NOTIFY priorityFilterIndexChanged)
-    Q_PROPERTY(QStringList priorityFilterOptions READ priorityFilterOptions CONSTANT)
-    Q_PROPERTY(QVariantList categoryFilterOptions READ categoryFilterOptions
-                   NOTIFY categoryOptionsChanged)
-    Q_PROPERTY(int categoryFilterMode READ categoryFilterMode NOTIFY categoryFilterChanged)
-    Q_PROPERTY(QString categoryFilterCategoryId READ categoryFilterCategoryId
-                   NOTIFY categoryFilterChanged)
-    Q_PROPERTY(bool hasActiveFilters READ hasActiveFilters NOTIFY hasActiveFiltersChanged)
-    Q_PROPERTY(int count READ count NOTIFY countChanged)
-    Q_PROPERTY(bool bulkSelectionMode READ bulkSelectionMode NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(int bulkSelectedCount READ bulkSelectedCount NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(int bulkSelectableVisibleCount READ bulkSelectableVisibleCount
-                   NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(bool allVisibleSelected READ allVisibleSelected NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(bool canBulkArchive READ canBulkArchive NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(bool canBulkRestore READ canBulkRestore NOTIFY bulkSelectionChanged)
-    Q_PROPERTY(bool canBulkDelete READ canBulkDelete NOTIFY bulkSelectionChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(FocusState focusState READ focusState NOTIFY focusTaskChanged)
     Q_PROPERTY(QString focusTaskId READ focusTaskId NOTIFY focusTaskChanged)
@@ -91,67 +71,31 @@ public:
     };
     Q_ENUM(FocusState)
 
-    /// 行号会随筛选和排序变化，只有 taskId 是可用于编辑、归档和恢复的稳定身份。
-    enum Role {
-        TaskIdRole = Qt::UserRole + 1,
-        TitleRole,
-        DescriptionRole,
-        StatusRole,
-        StatusTextRole,
-        PriorityRole,
-        PriorityTextRole,
-        DeadlineTextRole,
-        EstimatedMinutesRole,
-        ArchivedRole,
-        OverdueRole,
-        OrderReasonTextRole,
-        BlockedRole,
-        BlockingReasonTextRole,
-        PredecessorCountRole,
-        UnlockCountRole,
-        CanEditTaskRole,
-        CanEditDependenciesRole,
-        CanStartRole,
-        CanCancelRole,
-        CanCompleteRole,
-        CanRedoRole,
-        CanArchiveRole,
-        CanRestoreRole,
-        CanDeletePermanentlyRole,
-        BulkSelectedRole,
-        BulkSelectableRole,
-        CategoryIdRole,
-        CategoryNameRole,
-        CategoryAccentRole,
-        HasCategoryRole,
-    };
-    Q_ENUM(Role)
-
     explicit TaskListViewModel(model::TaskService &taskService, QObject *parent = nullptr);
     TaskListViewModel(model::TaskService &taskService,
                       model::TaskCategoryService &categoryService,
                       QObject *parent = nullptr);
 
     [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
-    [[nodiscard]] int count() const noexcept;
+    [[nodiscard]] int count() const noexcept override;
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
-    [[nodiscard]] bool showArchived() const noexcept;
-    [[nodiscard]] QString searchText() const;
-    [[nodiscard]] int priorityFilterIndex() const noexcept;
-    [[nodiscard]] QStringList priorityFilterOptions() const;
-    [[nodiscard]] QVariantList categoryFilterOptions() const;
-    [[nodiscard]] int categoryFilterMode() const noexcept;
-    [[nodiscard]] QString categoryFilterCategoryId() const;
-    [[nodiscard]] bool hasActiveFilters() const;
-    [[nodiscard]] bool bulkSelectionMode() const noexcept;
-    [[nodiscard]] int bulkSelectedCount() const noexcept;
-    [[nodiscard]] int bulkSelectableVisibleCount() const;
-    [[nodiscard]] bool allVisibleSelected() const;
-    [[nodiscard]] bool canBulkArchive() const noexcept;
-    [[nodiscard]] bool canBulkRestore() const;
-    [[nodiscard]] bool canBulkDelete() const noexcept;
+    [[nodiscard]] bool showArchived() const noexcept override;
+    [[nodiscard]] QString searchText() const override;
+    [[nodiscard]] int priorityFilterIndex() const noexcept override;
+    [[nodiscard]] QStringList priorityFilterOptions() const override;
+    [[nodiscard]] QVariantList categoryFilterOptions() const override;
+    [[nodiscard]] int categoryFilterMode() const noexcept override;
+    [[nodiscard]] QString categoryFilterCategoryId() const override;
+    [[nodiscard]] bool hasActiveFilters() const override;
+    [[nodiscard]] bool bulkSelectionMode() const noexcept override;
+    [[nodiscard]] int bulkSelectedCount() const noexcept override;
+    [[nodiscard]] int bulkSelectableVisibleCount() const override;
+    [[nodiscard]] bool allVisibleSelected() const override;
+    [[nodiscard]] bool canBulkArchive() const noexcept override;
+    [[nodiscard]] bool canBulkRestore() const override;
+    [[nodiscard]] bool canBulkDelete() const noexcept override;
     [[nodiscard]] QString errorMessage() const;
     [[nodiscard]] FocusState focusState() const noexcept;
     [[nodiscard]] QString focusTaskId() const;
@@ -186,59 +130,51 @@ public:
     [[nodiscard]] QString selectedCategoryName() const;
     [[nodiscard]] QString selectedCategoryAccent() const;
     [[nodiscard]] bool selectedHasCategory() const noexcept;
-    void setShowArchived(bool showArchived);
-    void setSearchText(const QString &searchText);
-    void setPriorityFilterIndex(int priorityFilterIndex);
+    void setShowArchived(bool showArchived) override;
+    void setSearchText(const QString &searchText) override;
+    void setPriorityFilterIndex(int priorityFilterIndex) override;
     /// mode: 0=全部，1=未分类，2=指定类别；指定类别始终使用稳定CategoryId。
-    Q_INVOKABLE bool setCategoryFilter(int mode, const QString &categoryId = {});
+    bool setCategoryFilter(int mode, const QString &categoryId = {}) override;
 
     /// 从Service重新获取快照并重建当前展示投影。
-    Q_INVOKABLE void reload();
+    void reload() override;
     /// 只清除关键字和优先级条件，活动/归档视图保持不变。
-    Q_INVOKABLE void clearFilters();
+    void clearFilters() override;
     /// 请求 Todo → InProgress；阻塞与单进行中约束由 Model 最终判定。
-    Q_INVOKABLE bool startTask(const QString &taskId);
+    bool startTask(const QString &taskId) override;
     /// 请求 Todo/InProgress → Cancelled；取消确认由 View 负责。
-    Q_INVOKABLE bool cancelTask(const QString &taskId);
+    bool cancelTask(const QString &taskId) override;
     /// 请求 InProgress → Done，禁止绕过进行中状态。
-    Q_INVOKABLE bool completeTask(const QString &taskId);
+    bool completeTask(const QString &taskId) override;
     /// 请求 Done/Cancelled → Todo，并由 Model 重新计算依赖有效性。
-    Q_INVOKABLE bool redoTask(const QString &taskId);
+    bool redoTask(const QString &taskId) override;
     /// 按稳定TaskId请求软归档，并把领域错误映射为展示状态。
-    Q_INVOKABLE bool archiveTask(const QString &taskId);
+    bool archiveTask(const QString &taskId) override;
     /// 按稳定TaskId请求恢复，并保留Service给出的业务约束。
-    Q_INVOKABLE bool restoreTask(const QString &taskId);
+    bool restoreTask(const QString &taskId) override;
     /// 永久删除已归档任务；关联依赖由 Model 的原子删除端口统一清理。
-    Q_INVOKABLE bool deleteArchivedTask(const QString &taskId);
+    bool deleteArchivedTask(const QString &taskId) override;
     /// 进入会话级批量选择模式；此时不会自动选择任何任务。
-    Q_INVOKABLE void beginBulkSelection();
+    void beginBulkSelection() override;
     /// 按稳定 TaskId 切换选择；不具备当前批量操作资格的任务会被忽略。
-    Q_INVOKABLE bool toggleBulkSelection(const QString &taskId);
+    bool toggleBulkSelection(const QString &taskId) override;
     /// 选择或取消选择当前筛选结果中所有具备批量资格的任务。
-    Q_INVOKABLE void toggleSelectAllVisible();
+    void toggleSelectAllVisible() override;
     /// 清空批量选择但保持批量模式。
-    Q_INVOKABLE void clearBulkSelection();
+    void clearBulkSelection() override;
     /// 清空选择并退出批量模式。
-    Q_INVOKABLE void cancelBulkSelection();
+    void cancelBulkSelection() override;
     /// 将选中的已完成/已取消任务作为一个原子批次归档。
-    Q_INVOKABLE bool archiveSelectedTasks();
+    bool archiveSelectedTasks() override;
     /// 将选中的归档任务作为一个原子批次恢复。
-    Q_INVOKABLE bool restoreSelectedTasks();
+    bool restoreSelectedTasks() override;
     /// 将选中的归档任务及其关联依赖作为一个原子批次永久删除。
-    Q_INVOKABLE bool deleteSelectedArchivedTasks();
+    bool deleteSelectedArchivedTasks() override;
     Q_INVOKABLE void clearError();
     Q_INVOKABLE bool selectTask(const QString &taskId);
     Q_INVOKABLE void clearSelection();
 
 signals:
-    void showArchivedChanged();
-    void searchTextChanged();
-    void priorityFilterIndexChanged();
-    void categoryOptionsChanged();
-    void categoryFilterChanged();
-    void hasActiveFiltersChanged();
-    void countChanged();
-    void bulkSelectionChanged();
     void errorMessageChanged();
     void errorOccurred(const QString &message);
     void focusTaskChanged();

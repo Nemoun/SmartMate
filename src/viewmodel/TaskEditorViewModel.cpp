@@ -72,7 +72,7 @@ TaskEditorViewModel::TaskEditorViewModel(
     model::TaskCategoryService *categoryService,
     QTimeZone timeZone,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskEditorContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
     , m_timeZone(std::move(timeZone))
@@ -811,6 +811,11 @@ void TaskEditorViewModel::updateFormState()
 
 void TaskEditorViewModel::setErrorMessage(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("任务编辑失败"),
+                                 message});
+    }
     if (m_errorMessage == message) {
         return;
     }

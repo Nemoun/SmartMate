@@ -23,8 +23,10 @@ qt_standard_project_setup(REQUIRES 6.10)
 
 include(CTest)
 
+add_subdirectory(src/common)
 add_subdirectory(src/model)
 add_subdirectory(src/model/persistence)
+add_subdirectory(src/viewmodel/contracts)
 add_subdirectory(src/viewmodel)
 add_subdirectory(src/view)
 add_subdirectory(src/app)

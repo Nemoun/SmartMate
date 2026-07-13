@@ -2,8 +2,8 @@
 
 #include "domain/Task.h"
 #include "services/TaskResult.h"
+#include "viewmodel/contracts/TaskDependencyContract.h"
 
-#include <QAbstractListModel>
 #include <QHash>
 #include <QSet>
 #include <QtQmlIntegration/qqmlintegration.h>
@@ -19,34 +19,13 @@ namespace smartmate::viewmodel {
 ///
 /// 候选行始终使用稳定 TaskId；勾选只修改本地草稿，save() 成功后才会通过
 /// TaskService 整体替换关系，cancel() 不改变 Model。
-class TaskDependencyViewModel final : public QAbstractListModel {
+class TaskDependencyViewModel final : public TaskDependencyContract {
     Q_OBJECT
-    Q_PROPERTY(QString taskId READ taskId NOTIFY contextChanged)
-    Q_PROPERTY(QString taskTitle READ taskTitle NOTIFY contextChanged)
-    Q_PROPERTY(int count READ count NOTIFY countChanged)
-    Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectionChanged)
-    Q_PROPERTY(bool dirty READ dirty NOTIFY formStateChanged)
-    Q_PROPERTY(bool canSave READ canSave NOTIFY formStateChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     QML_NAMED_ELEMENT(TaskDependencyViewModel)
     QML_UNCREATABLE("TaskDependencyViewModel is owned by AppViewModel")
 
 public:
-    enum Role {
-        TaskIdRole = Qt::UserRole + 1,
-        ShortIdRole,
-        TitleRole,
-        StatusTextRole,
-        PriorityTextRole,
-        SelectedRole,
-        ArchivedRole,
-        SelectableRole,
-        CategoryNameRole,
-        CategoryAccentRole,
-        HasCategoryRole,
-    };
-    Q_ENUM(Role)
-
     explicit TaskDependencyViewModel(model::TaskService &taskService,
                                      QObject *parent = nullptr);
     TaskDependencyViewModel(model::TaskService &taskService,
@@ -57,33 +36,27 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
-    [[nodiscard]] QString taskId() const;
-    [[nodiscard]] QString taskTitle() const;
-    [[nodiscard]] int count() const noexcept;
-    [[nodiscard]] int selectedCount() const noexcept;
-    [[nodiscard]] bool dirty() const noexcept;
-    [[nodiscard]] bool canSave() const noexcept;
+    [[nodiscard]] QString taskId() const override;
+    [[nodiscard]] QString taskTitle() const override;
+    [[nodiscard]] int count() const noexcept override;
+    [[nodiscard]] int selectedCount() const noexcept override;
+    [[nodiscard]] bool dirty() const noexcept override;
+    [[nodiscard]] bool canSave() const noexcept override;
     [[nodiscard]] QString errorMessage() const;
 
     /// 读取任务和依赖快照并开始新的本地草稿；任务不可编辑或读取失败时返回 false。
-    Q_INVOKABLE bool beginEdit(const QString &taskId);
+    bool beginEdit(const QString &taskId) override;
     /// 按稳定 TaskId 改变候选项选择，不接受列表行号。
-    Q_INVOKABLE bool setPredecessorSelected(const QString &predecessorTaskId,
-                                            bool selected);
+    bool setPredecessorSelected(const QString &predecessorTaskId,
+                                bool selected) override;
     /// 将完整前置 TaskId 集合交给 Service；环检测等规则仍由 Model 判定。
-    Q_INVOKABLE bool save();
+    bool save() override;
     /// 恢复打开时的选择并放弃草稿，不访问 Repository。
-    Q_INVOKABLE void cancel();
+    void cancel() override;
     Q_INVOKABLE void clearError();
 
 signals:
-    void contextChanged();
-    void countChanged();
-    void selectionChanged();
-    void formStateChanged();
     void errorMessageChanged();
-    void saved(const QString &taskId);
-    void cancelled();
 
 private:
     [[nodiscard]] static QString statusText(model::TaskStatus status);

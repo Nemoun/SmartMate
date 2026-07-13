@@ -65,6 +65,18 @@ scan_includes("${ROOT_DIR}/src/model/persistence" "Model persistence"
     "qtquick" "qquick" "qtqml" "qqml"
     "viewmodel" "view/")
 
+scan_includes("${ROOT_DIR}/src/common" "Common"
+    "model/" "domain/" "services/" "repositories/" "persistence/"
+    "viewmodel" "contracts/" "view/"
+    "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql"
+    "qsettings" "qtwidgets" "qwidget" "qdialog" "qgraphics")
+
+scan_includes("${ROOT_DIR}/src/viewmodel/contracts" "ViewModel Contracts"
+    "domain/" "services/" "repositories/" "persistence/"
+    "appearance.*viewmodel" "task.*viewmodel" "appviewmodel"
+    "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql"
+    "qtwidgets" "qwidget" "qdialog" "qgraphics")
+
 scan_includes("${ROOT_DIR}/src/viewmodel" "ViewModel"
     "qtquick" "qquick" "qqmlengine" "qqmlcontext" "qtsql" "qsql"
     "model/persistence" "view/")
@@ -77,6 +89,35 @@ if(EXISTS "${model_cmake}")
     if(model_cmake_lower MATCHES "qt6::(quick|qml|sql)")
         record_violation("${model_cmake}"
             "smartmate_model may link only Qt Core, not Quick/Qml/Sql")
+    endif()
+endif()
+
+set(common_cmake "${ROOT_DIR}/src/common/CMakeLists.txt")
+if(EXISTS "${common_cmake}")
+    file(READ "${common_cmake}" common_cmake_contents)
+    string(TOLOWER "${common_cmake_contents}" common_cmake_lower)
+    if(NOT common_cmake_lower MATCHES "qt6::core")
+        record_violation("${common_cmake}"
+            "smartmate_common must link Qt Core")
+    endif()
+    if(common_cmake_lower MATCHES "smartmate_(model|viewmodel|persistence|ui)|qt6::(qml|quick|sql|widgets)")
+        record_violation("${common_cmake}"
+            "smartmate_common may depend only on Qt Core")
+    endif()
+endif()
+
+set(contracts_cmake "${ROOT_DIR}/src/viewmodel/contracts/CMakeLists.txt")
+if(EXISTS "${contracts_cmake}")
+    file(READ "${contracts_cmake}" contracts_cmake_contents)
+    string(TOLOWER "${contracts_cmake_contents}" contracts_cmake_lower)
+    if(NOT contracts_cmake_lower MATCHES "smartmate_common"
+       OR NOT contracts_cmake_lower MATCHES "qt6::core")
+        record_violation("${contracts_cmake}"
+            "smartmate_viewmodel_contracts must link smartmate_common and Qt Core")
+    endif()
+    if(contracts_cmake_lower MATCHES "smartmate_model|smartmate_persistence|smartmate_viewmodel[ \t\r\n]|qt6::(qml|quick|sql|widgets)")
+        record_violation("${contracts_cmake}"
+            "Contracts may not link Model, concrete ViewModel, persistence, QML, Quick, SQL, or Widgets")
     endif()
 endif()
 
@@ -109,6 +150,10 @@ if(EXISTS "${viewmodel_cmake}")
     if(viewmodel_cmake_lower MATCHES "smartmate_persistence")
         record_violation("${viewmodel_cmake}"
             "smartmate_viewmodel may not link concrete persistence")
+    endif()
+    if(NOT viewmodel_cmake_lower MATCHES "smartmate_viewmodel_contracts")
+        record_violation("${viewmodel_cmake}"
+            "smartmate_viewmodel must implement and link the Contracts target")
     endif()
 endif()
 
@@ -215,6 +260,18 @@ foreach(source_file IN LISTS production_cpp)
     string(TOLOWER "${contents}" contents_lower)
     if(contents_lower MATCHES "(class|struct)[ \t\r\n]+[a-z0-9_]*controller")
         record_violation("${source_file}" "Controller types are forbidden")
+    endif()
+    if(contents_lower MATCHES "(class|struct)[ \t\r\n]+[a-z0-9_]*(eventbus|servicelocator)")
+        record_violation("${source_file}"
+            "EventBus and Service Locator types are forbidden")
+    endif()
+    if(contents MATCHES "QML_FOREIGN")
+        file(RELATIVE_PATH foreign_relative "${ROOT_DIR}" "${source_file}")
+        file(TO_CMAKE_PATH "${foreign_relative}" foreign_relative)
+        if(NOT foreign_relative STREQUAL "src/viewmodel/ContractQmlForeignTypes.h")
+            record_violation("${source_file}"
+                "QML foreign wrappers may exist only in the concrete ViewModel module")
+        endif()
     endif()
 endforeach()
 

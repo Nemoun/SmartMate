@@ -1,0 +1,6 @@
+#include "viewmodel/contracts/AppearanceSettingsContract.h"
+#include "viewmodel/contracts/TaskCategoryContract.h"
+#include "viewmodel/contracts/TaskDependencyContract.h"
+#include "viewmodel/contracts/TaskEditorContract.h"
+#include "viewmodel/contracts/TaskGraphContract.h"
+#include "viewmodel/contracts/TaskListContract.h"

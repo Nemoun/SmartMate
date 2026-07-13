@@ -41,7 +41,7 @@ TaskGraphViewModel::TaskGraphViewModel(
     model::TaskService &taskService,
     model::TaskCategoryService *categoryService,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskGraphContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
     , m_edges(new TaskGraphEdgeListModel(this))
@@ -483,6 +483,11 @@ void TaskGraphViewModel::rebuildRelationModels()
 
 void TaskGraphViewModel::setErrorMessage(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("依赖图操作失败"),
+                                 message});
+    }
     if (m_errorMessage == message) return;
     m_errorMessage = message;
     emit errorMessageChanged();

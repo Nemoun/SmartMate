@@ -30,7 +30,7 @@ TaskDependencyViewModel::TaskDependencyViewModel(
     model::TaskService &taskService,
     model::TaskCategoryService *categoryService,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskDependencyContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
 {
@@ -338,6 +338,11 @@ void TaskDependencyViewModel::notifySelectionChanged()
 
 void TaskDependencyViewModel::setErrorMessage(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("依赖操作失败"),
+                                 message});
+    }
     if (m_errorMessage == message) {
         return;
     }

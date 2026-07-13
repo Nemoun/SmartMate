@@ -155,6 +155,22 @@ target_include_directories(tst_appearance_settings PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(tst_appearance_settings PRIVATE smartmate_viewmodel Qt6::Test)
 add_test(NAME viewmodel.appearance_settings COMMAND tst_appearance_settings)
 
+qt_add_executable(tst_viewmodel_contracts
+    viewmodel/tst_ViewModelContracts.cpp
+    fakes/FakeAppearanceSettingsRepository.h
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+    fakes/FakeTaskBatchTransitionRepository.h
+    fakes/FakeTaskDeletionRepository.h
+    fakes/FakeTaskCategoryRepository.h
+)
+target_include_directories(tst_viewmodel_contracts PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_viewmodel_contracts
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.contracts COMMAND tst_viewmodel_contracts)
+
 qt_add_executable(tst_task_creation_flow
     integration/tst_TaskCreationFlow.cpp
 )
@@ -269,6 +285,7 @@ set_tests_properties(
     persistence.appearance_settings
     viewmodel.task_viewmodels
     viewmodel.appearance_settings
+    viewmodel.contracts
     integration.task_creation_flow
     view.qml_pickers
     view.qml_dependency_graph

@@ -1,9 +1,8 @@
 #pragma once
 
 #include "domain/AppearanceSettings.h"
+#include "viewmodel/contracts/AppearanceSettingsContract.h"
 
-#include <QObject>
-#include <QStringList>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
@@ -13,19 +12,8 @@ class AppearanceSettingsService;
 namespace smartmate::viewmodel {
 
 /// 将外观偏好投影为有限索引并即时保存；不暴露 QSettings。
-class AppearanceSettingsViewModel : public QObject {
+class AppearanceSettingsViewModel : public AppearanceSettingsContract {
     Q_OBJECT
-    Q_PROPERTY(int accentThemeIndex READ accentThemeIndex WRITE setAccentThemeIndex
-                   NOTIFY appearanceChanged)
-    Q_PROPERTY(int fontFamilyIndex READ fontFamilyIndex WRITE setFontFamilyIndex
-                   NOTIFY appearanceChanged)
-    Q_PROPERTY(int fontScaleIndex READ fontScaleIndex WRITE setFontScaleIndex
-                   NOTIFY appearanceChanged)
-    Q_PROPERTY(QStringList accentThemeOptions READ accentThemeOptions CONSTANT)
-    Q_PROPERTY(QStringList fontFamilyOptions READ fontFamilyOptions CONSTANT)
-    Q_PROPERTY(QStringList fontScaleOptions READ fontScaleOptions CONSTANT)
-    Q_PROPERTY(QString fontFamilyName READ fontFamilyName NOTIFY appearanceChanged)
-    Q_PROPERTY(qreal fontScale READ fontScale NOTIFY appearanceChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     QML_NAMED_ELEMENT(AppearanceSettingsViewModel)
     QML_UNCREATABLE("AppearanceSettingsViewModel is owned by AppViewModel")
@@ -35,24 +23,23 @@ public:
     explicit AppearanceSettingsViewModel(model::AppearanceSettingsService &service,
                                          QObject *parent = nullptr);
 
-    [[nodiscard]] int accentThemeIndex() const noexcept;
-    [[nodiscard]] int fontFamilyIndex() const noexcept;
-    [[nodiscard]] int fontScaleIndex() const noexcept;
-    [[nodiscard]] QStringList accentThemeOptions() const;
-    [[nodiscard]] QStringList fontFamilyOptions() const;
-    [[nodiscard]] QStringList fontScaleOptions() const;
-    [[nodiscard]] QString fontFamilyName() const;
-    [[nodiscard]] qreal fontScale() const noexcept;
+    [[nodiscard]] int accentThemeIndex() const noexcept override;
+    [[nodiscard]] int fontFamilyIndex() const noexcept override;
+    [[nodiscard]] int fontScaleIndex() const noexcept override;
+    [[nodiscard]] QStringList accentThemeOptions() const override;
+    [[nodiscard]] QStringList fontFamilyOptions() const override;
+    [[nodiscard]] QStringList fontScaleOptions() const override;
+    [[nodiscard]] QString fontFamilyName() const override;
+    [[nodiscard]] qreal fontScale() const noexcept override;
     [[nodiscard]] QString errorMessage() const;
 
-    void setAccentThemeIndex(int index);
-    void setFontFamilyIndex(int index);
-    void setFontScaleIndex(int index);
-    Q_INVOKABLE void resetDefaults();
+    void setAccentThemeIndex(int index) override;
+    void setFontFamilyIndex(int index) override;
+    void setFontScaleIndex(int index) override;
+    void resetDefaults() override;
     Q_INVOKABLE void clearError();
 
 signals:
-    void appearanceChanged();
     void errorMessageChanged();
     void errorOccurred(const QString &message);
 
