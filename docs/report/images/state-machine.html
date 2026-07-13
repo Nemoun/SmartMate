@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SmartMate 任务状态机</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; background: #f5f7fb;
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+  }
+  .box {
+    position: relative; width: 920px; height: 500px;
+  }
+
+  /* ── 状态节点 ── */
+  .state {
+    position: absolute; width: 140px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 28px; font-size: 14px; font-weight: 700;
+    border: 2.5px solid; z-index: 2;
+  }
+  .todo       { left: 30px;  top: 220px; background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
+  .inprogress { left: 230px; top: 220px; background: #fef9c3; border-color: #eab308; color: #a16207; }
+  .done       { left: 430px; top: 220px; background: #dcfce7; border-color: #22c55e; color: #15803d; }
+  .cancelled  { left: 130px; top: 350px; background: #f3f4f6; border-color: #9ca3af; color: #4b5563; }
+  .archived   { left: 330px; top: 350px; background: #faf5ff; border-color: #a855f7; color: #7e22ce; }
+
+  /* ── SVG 连线 ── */
+  svg { position: absolute; top: 0; left: 0; width: 650px; height: 500px; pointer-events: none; z-index: 1; }
+
+  /* ── 标签 ── */
+  .label {
+    position: absolute; z-index: 3;
+    font-size: 12px; font-weight: 600; color: #475467;
+    background: #f5f7fb; padding: 2px 8px; border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  /* ── 图例 ── */
+  .legend {
+    position: absolute; left: 680px; top: 60px; width: 200px;
+    background: white; border-radius: 10px; padding: 18px 22px;
+    border: 1px solid #e4e7ec; font-size: 13px; line-height: 2.2;
+  }
+  .legend b { font-size: 14px; }
+  .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  .legend .l-blue   { background: #3b82f6; }
+  .legend .l-yellow { background: #eab308; }
+  .legend .l-green  { background: #22c55e; }
+  .legend .l-gray   { background: #9ca3af; }
+  .legend .l-purple { background: #a855f7; }
+
+  /* ── 规则说明 ── */
+  .note {
+    position: absolute; left: 680px; top: 310px; width: 200px;
+    font-size: 12px; color: #667085; line-height: 1.8;
+    background: white; border-radius: 8px; padding: 14px 18px;
+    border: 1px solid #e4e7ec;
+  }
+</style>
+</head>
+<body>
+<div class="box">
+
+  <!-- SVG 箭头 -->
+  <svg>
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+      </marker>
+    </defs>
+
+    <!-- Todo → InProgress : Start -->
+    <line x1="170" y1="248" x2="216" y2="248" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+    <!-- InProgress → Done : Complete -->
+    <line x1="370" y1="248" x2="416" y2="248" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+    <!-- Todo → Cancelled : Cancel -->
+    <path d="M90,262 C90,320 140,320 160,348" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- InProgress → Cancelled : Cancel -->
+    <path d="M280,270 C270,320 240,340 220,348" stroke="#9ca3af" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Done → Todo : Redo -->
+    <path d="M430,262 C430,140 230,140 100,262" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Cancelled → Todo : Redo -->
+    <path d="M130,350 C70,350 20,300 40,250 C45,240 60,242 80,248" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Done → Archived : Archive -->
+    <path d="M460,268 C450,320 420,340 390,348" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Cancelled → Archived : Archive -->
+    <path d="M270,360 C300,368 310,360 320,355" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Archived → Todo : Restore -->
+    <path d="M330,378 C270,400 180,400 100,310" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" fill="none" marker-end="url(#arrow)"/>
+  </svg>
+
+  <!-- 状态节点 -->
+  <div class="state todo">待办 Todo</div>
+  <div class="state inprogress">进行中 InProgress</div>
+  <div class="state done">已完成 Done</div>
+  <div class="state cancelled">已取消 Cancelled</div>
+  <div class="state archived">已归档 Archived</div>
+
+  <!-- 转换标签 -->
+  <div class="label" style="left:178px; top:207px; color:#3b82f6;">Start</div>
+  <div class="label" style="left:376px; top:207px; color:#22c55e;">Complete</div>
+  <div class="label" style="left:245px; top:170px; color:#f59e0b;">Redo</div>
+  <div class="label" style="left:30px;  top:150px; color:#f59e0b;">Redo</div>
+  <div class="label" style="left:400px; top:325px; color:#a855f7;">Archive</div>
+  <div class="label" style="left:255px; top:375px; color:#a855f7;">Archive</div>
+  <div class="label" style="left:200px; top:400px; color:#f59e0b;">Restore</div>
+  <div class="label" style="left:90px;  top:310px; color:#9ca3af;">Cancel</div>
+  <div class="label" style="left:228px; top:310px; color:#9ca3af;">Cancel</div>
+
+  <!-- 图例 -->
+  <div class="legend">
+    <b>状态图例</b><br>
+    <span class="l-blue"></span> Todo 待办<br>
+    <span class="l-yellow"></span> InProgress 进行中<br>
+    <span class="l-green"></span> Done 已完成<br>
+    <span class="l-gray"></span> Cancelled 已取消<br>
+    <span class="l-purple"></span> Archived 已归档
+  </div>
+
+  <!-- 规则说明 -->
+  <div class="note">
+    <b>转换规则</b><br>
+    · 同一时间最多 1 个进行中<br>
+    · 被阻塞的任务不能<br>
+    &nbsp;&nbsp;Start / Complete<br>
+    · 只有 Done/Cancelled<br>
+    &nbsp;&nbsp;可归档<br>
+    · 只有 Archived 可永久删除
+  </div>
+
+</div>
+</body>
+</html>
