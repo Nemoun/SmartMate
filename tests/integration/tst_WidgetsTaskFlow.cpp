@@ -52,7 +52,8 @@ void WidgetsTaskFlowTest::taskMainFlowPersistsAndRefreshesEveryProjection()
                                repository, repository, repository};
     viewmodel::AppViewModel app{service};
     view::widgets::TaskPage page{{*app.taskList(), *app.taskFocus(),
-                                  *app.taskDetails(), *app.taskEditor()}};
+                                  *app.taskDetails(), *app.taskEditor(),
+                                  *app.taskCategories(), *app.taskDependencies()}};
     page.resize(980, 700);
     page.show();
 

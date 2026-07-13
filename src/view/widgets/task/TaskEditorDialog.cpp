@@ -2,6 +2,7 @@
 
 #include "DeadlinePickerDialog.h"
 #include "DurationPickerDialog.h"
+#include "TaskCreationPredecessorDialog.h"
 
 #include "viewmodel/contracts/TaskEditorContract.h"
 
@@ -29,10 +30,14 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
     , m_status(new QLabel(this))
     , m_priority(new QComboBox(this))
     , m_category(new QComboBox(this))
+    , m_predecessors(new QLabel(this))
+    , m_choosePredecessors(new QPushButton(this))
+    , m_clearPredecessors(new QPushButton(tr("清除"), this))
     , m_deadline(new QLabel(this))
     , m_duration(new QLabel(this))
     , m_validation(new QLabel(this))
     , m_save(new QPushButton(tr("保存"), this))
+    , m_predecessorDialog(new TaskCreationPredecessorDialog(m_editor, this))
 {
     setObjectName(QStringLiteral("taskEditorDialog"));
     setWindowModality(Qt::WindowModal);
@@ -45,6 +50,8 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
     m_status->setObjectName(QStringLiteral("taskCurrentStatusLabel"));
     m_priority->setObjectName(QStringLiteral("taskPriorityComboBox"));
     m_category->setObjectName(QStringLiteral("taskCategoryComboBox"));
+    m_choosePredecessors->setObjectName(QStringLiteral("openCreationPredecessorButton"));
+    m_clearPredecessors->setObjectName(QStringLiteral("clearCreationPredecessorButton"));
     m_save->setObjectName(QStringLiteral("saveTaskButton"));
     m_description->setMinimumHeight(130);
     m_validation->setWordWrap(true);
@@ -55,7 +62,22 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
     form->addRow(tr("描述"), m_description);
     form->addRow(tr("状态"), m_status);
     form->addRow(tr("优先级"), m_priority);
-    form->addRow(tr("类别"), m_category);
+    auto *categoryRow = new QWidget(this);
+    auto *categoryLayout = new QHBoxLayout(categoryRow);
+    categoryLayout->setContentsMargins(0, 0, 0, 0);
+    categoryLayout->addWidget(m_category, 1);
+    auto *manageCategories = new QPushButton(tr("管理类别"), categoryRow);
+    manageCategories->setObjectName(QStringLiteral("manageCategoriesFromEditorButton"));
+    categoryLayout->addWidget(manageCategories);
+    form->addRow(tr("类别"), categoryRow);
+
+    auto *predecessorRow = new QWidget(this);
+    auto *predecessorLayout = new QHBoxLayout(predecessorRow);
+    predecessorLayout->setContentsMargins(0, 0, 0, 0);
+    predecessorLayout->addWidget(m_predecessors, 1);
+    predecessorLayout->addWidget(m_choosePredecessors);
+    predecessorLayout->addWidget(m_clearPredecessors);
+    form->addRow(tr("前置任务"), predecessorRow);
 
     auto *deadlineRow = new QWidget(this);
     auto *deadlineLayout = new QHBoxLayout(deadlineRow);
@@ -98,6 +120,12 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
     connect(m_category, &QComboBox::activated, this, [this](const int index) {
         m_editor.setSelectedCategoryId(m_category->itemData(index).toString());
     });
+    connect(manageCategories, &QPushButton::clicked, this,
+            &TaskEditorDialog::manageCategoriesRequested);
+    connect(m_choosePredecessors, &QPushButton::clicked, m_predecessorDialog,
+            &TaskCreationPredecessorDialog::openSelection);
+    connect(m_clearPredecessors, &QPushButton::clicked, &m_editor,
+            &viewmodel::TaskEditorContract::clearCreationPredecessors);
     connect(deadlineChoose, &QPushButton::clicked, this, &TaskEditorDialog::chooseDeadline);
     connect(deadlineClear, &QPushButton::clicked, &m_editor,
             &viewmodel::TaskEditorContract::clearDeadline);
@@ -119,6 +147,10 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
     connect(&m_editor, &viewmodel::TaskEditorContract::categoryOptionsChanged, this, sync);
     connect(&m_editor, &viewmodel::TaskEditorContract::categoryChanged, this, sync);
     connect(&m_editor, &viewmodel::TaskEditorContract::formStateChanged, this, sync);
+    connect(&m_editor, &viewmodel::TaskEditorContract::predecessorCandidatesChanged,
+            this, sync);
+    connect(&m_editor, &viewmodel::TaskEditorContract::predecessorSelectionChanged,
+            this, sync);
     connect(&m_editor, &viewmodel::TaskEditorContract::sessionActiveChanged,
             this, &TaskEditorDialog::synchronizeSession);
     synchronize();
@@ -127,6 +159,7 @@ TaskEditorDialog::TaskEditorDialog(viewmodel::TaskEditorContract &editor,
 
 void TaskEditorDialog::reject()
 {
+    if (m_predecessorDialog->isVisible()) m_predecessorDialog->reject();
     if (m_editor.sessionActive()) m_editor.cancel();
     QDialog::reject();
 }
@@ -164,6 +197,14 @@ void TaskEditorDialog::synchronize()
     }
     const int categoryIndex = m_category->findData(m_editor.selectedCategoryId());
     m_category->setCurrentIndex(categoryIndex < 0 ? 0 : categoryIndex);
+    m_predecessors->setText(m_editor.predecessorSummaryText());
+    m_choosePredecessors->setText(m_editor.selectedPredecessorCount() > 0
+        ? tr("修改") : tr("选择"));
+    m_choosePredecessors->setVisible(m_editor.canConfigurePredecessors());
+    m_choosePredecessors->setEnabled(m_editor.predecessorCandidateCount() > 0);
+    m_clearPredecessors->setVisible(m_editor.canConfigurePredecessors()
+                                    && m_editor.selectedPredecessorCount() > 0);
+    m_predecessors->setVisible(m_editor.canConfigurePredecessors());
     m_deadline->setText(m_editor.deadlineDisplayText());
     m_duration->setText(m_editor.estimatedDurationDisplayText());
     m_validation->setText(m_editor.validationMessage());

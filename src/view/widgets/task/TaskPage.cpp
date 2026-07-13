@@ -2,6 +2,10 @@
 
 #include "TaskEditorDialog.h"
 #include "TaskItemDelegate.h"
+#include "TaskCategoryDialog.h"
+#include "TaskDependencyDialog.h"
+#include "viewmodel/contracts/TaskCategoryContract.h"
+#include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskDetailsContract.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
 #include "viewmodel/contracts/TaskFocusContract.h"
@@ -138,11 +142,13 @@ TaskDetailsDialog::TaskDetailsDialog(viewmodel::TaskDetailsContract &details,
     , m_summary(new QLabel(this)), m_description(new QLabel(this))
     , m_schedule(new QLabel(this)), m_insight(new QLabel(this))
     , m_edit(new QPushButton(tr("编辑任务"), this))
+    , m_editDependencies(new QPushButton(tr("编辑前置任务"), this))
 {
     setObjectName(QStringLiteral("taskDetailsDialog"));
     setWindowTitle(tr("任务详情"));
     setModal(true); resize(560, 440);
     m_edit->setObjectName(QStringLiteral("editSelectedTaskButton"));
+    m_editDependencies->setObjectName(QStringLiteral("editSelectedDependenciesButton"));
     auto *layout = new QVBoxLayout(this);
     m_title->setObjectName(QStringLiteral("sectionTitle"));
     m_description->setWordWrap(true); m_insight->setWordWrap(true);
@@ -151,12 +157,18 @@ TaskDetailsDialog::TaskDetailsDialog(viewmodel::TaskDetailsContract &details,
     layout->addWidget(m_insight);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     buttons->addButton(m_edit, QDialogButtonBox::ActionRole);
+    buttons->addButton(m_editDependencies, QDialogButtonBox::ActionRole);
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_edit, &QPushButton::clicked, this, [this] {
         const QString id = m_details.selectedTaskId();
         accept();
         emit editRequested(id);
+    });
+    connect(m_editDependencies, &QPushButton::clicked, this, [this] {
+        const QString id = m_details.selectedTaskId();
+        accept();
+        emit editDependenciesRequested(id);
     });
     connect(&m_details, &viewmodel::TaskDetailsContract::selectionChanged,
             this, &TaskDetailsDialog::synchronize);
@@ -193,14 +205,18 @@ void TaskDetailsDialog::synchronize()
         ? tr("阻塞：%1").arg(m_details.selectedBlockingReasonText())
         : tr("推荐：%1").arg(m_details.selectedReasonText()));
     m_edit->setVisible(m_details.selectedCanEditTask());
+    m_editDependencies->setVisible(m_details.selectedCanEditDependencies());
 }
 
 TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     : QWidget(parent), m_dependencies(dependencies)
     , m_focus(new TaskFocusPanel(dependencies.taskFocus, dependencies.taskList, this))
     , m_search(new QLineEdit(this)), m_priority(new QComboBox(this))
+    , m_category(new QComboBox(this))
     , m_active(new QToolButton(this)), m_archived(new QToolButton(this))
     , m_bulk(new QPushButton(tr("批量管理"), this)), m_newTask(new QPushButton(tr("新建任务"), this))
+    , m_manageCategories(new QPushButton(tr("管理类别"), this))
+    , m_clearFilters(new QPushButton(tr("清除条件"), this))
     , m_bulkBar(new QWidget(this)), m_bulkCount(new QLabel(m_bulkBar))
     , m_selectAll(new QPushButton(tr("全选可操作项"), m_bulkBar))
     , m_bulkArchive(new QPushButton(tr("批量归档"), m_bulkBar))
@@ -208,7 +224,13 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     , m_bulkDelete(new QPushButton(tr("批量永久删除"), m_bulkBar))
     , m_list(new TaskListView(this)), m_empty(new QLabel(this))
     , m_details(new TaskDetailsDialog(dependencies.taskDetails, this))
+    , m_editor(new TaskEditorDialog(dependencies.taskEditor, this))
+    , m_categories(new TaskCategoryDialog(dependencies.taskCategories, this))
+    , m_editorCategories(new TaskCategoryDialog(dependencies.taskCategories, m_editor))
+    , m_dependencyEditor(new TaskDependencyDialog(dependencies.taskDependencies, this))
 {
+    // 编辑器为窗口模态；使用同一 Contract 的子对话框，避免同级类别窗口被模态层阻挡。
+    m_editorCategories->setObjectName(QStringLiteral("taskEditorCategoryDialog"));
     setObjectName(QStringLiteral("taskPage"));
     auto *root = new QVBoxLayout(this); root->setContentsMargins(24, 22, 24, 22);
     auto *heading = new QLabel(tr("任务"), this); heading->setObjectName(QStringLiteral("pageTitle"));
@@ -223,10 +245,16 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     m_search->setObjectName(QStringLiteral("taskSearchField"));
     m_search->setPlaceholderText(tr("搜索标题或描述"));
     m_priority->setObjectName(QStringLiteral("priorityFilterComboBox"));
+    m_category->setObjectName(QStringLiteral("categoryFilterComboBox"));
     m_bulk->setObjectName(QStringLiteral("bulkManagementButton"));
     m_newTask->setObjectName(QStringLiteral("newTaskButton"));
+    m_manageCategories->setObjectName(QStringLiteral("manageCategoriesButton"));
+    m_clearFilters->setObjectName(QStringLiteral("clearFiltersButton"));
     filters->addWidget(m_active); filters->addWidget(m_archived);
     filters->addWidget(m_search, 1); filters->addWidget(m_priority);
+    filters->addWidget(m_category);
+    filters->addWidget(m_manageCategories);
+    filters->addWidget(m_clearFilters);
     filters->addWidget(m_bulk); filters->addWidget(m_newTask);
     root->addLayout(filters);
     auto *bulkLayout = new QHBoxLayout(m_bulkBar); bulkLayout->setContentsMargins(0, 0, 0, 0);
@@ -249,10 +277,18 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     m_list->setModel(&dependencies.taskList);
     auto *delegate = new TaskItemDelegate(dependencies.taskList, m_list);
     m_list->setItemDelegate(delegate);
-    auto *editor = new TaskEditorDialog(dependencies.taskEditor, this);
     connect(scope, &QButtonGroup::idClicked, this, [this](int id) { m_dependencies.taskList.setShowArchived(id == 1); });
     connect(m_search, &QLineEdit::textEdited, &dependencies.taskList, &viewmodel::TaskListContract::setSearchText);
     connect(m_priority, &QComboBox::activated, &dependencies.taskList, &viewmodel::TaskListContract::setPriorityFilterIndex);
+    connect(m_category, &QComboBox::activated, this, [this](const int index) {
+        m_dependencies.taskList.setCategoryFilter(
+            m_category->itemData(index, Qt::UserRole).toInt(),
+            m_category->itemData(index, Qt::UserRole + 1).toString());
+    });
+    connect(m_manageCategories, &QPushButton::clicked, m_categories,
+            &TaskCategoryDialog::openManager);
+    connect(m_clearFilters, &QPushButton::clicked, &dependencies.taskList,
+            &viewmodel::TaskListContract::clearFilters);
     connect(m_bulk, &QPushButton::clicked, &dependencies.taskList, &viewmodel::TaskListContract::beginBulkSelection);
     connect(m_newTask, &QPushButton::clicked, &dependencies.taskEditor, &viewmodel::TaskEditorContract::beginCreate);
     connect(m_selectAll, &QPushButton::clicked, &dependencies.taskList, &viewmodel::TaskListContract::toggleSelectAllVisible);
@@ -269,6 +305,8 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     });
     connect(delegate, &TaskItemDelegate::detailsRequested, m_details, &TaskDetailsDialog::openTask);
     connect(delegate, &TaskItemDelegate::editRequested, this, &TaskPage::openEditor);
+    connect(delegate, &TaskItemDelegate::editDependenciesRequested,
+            m_dependencyEditor, &TaskDependencyDialog::openTask);
     connect(delegate, &TaskItemDelegate::cancelRequested, this, [this](const QString &id, const QString &title) {
         if (confirm(tr("确认取消任务"), tr("确定取消“%1”吗？").arg(title))) m_dependencies.taskList.cancelTask(id);
     });
@@ -282,17 +320,26 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
         m_details->openTask(index.data(ListRole::TaskIdRole).toString());
     });
     connect(m_details, &TaskDetailsDialog::editRequested, this, &TaskPage::openEditor);
+    connect(m_details, &TaskDetailsDialog::editDependenciesRequested,
+            m_dependencyEditor, &TaskDependencyDialog::openTask);
+    connect(m_editor, &TaskEditorDialog::manageCategoriesRequested,
+            m_editorCategories, &TaskCategoryDialog::openManager);
     connect(m_focus, &TaskFocusPanel::detailsRequested, m_details, &TaskDetailsDialog::openTask);
     connect(m_focus, &TaskFocusPanel::createRequested, &dependencies.taskEditor, &viewmodel::TaskEditorContract::beginCreate);
     connect(m_focus, &TaskFocusPanel::dependencyGraphRequested, this, &TaskPage::showDependencyGraphRequested);
     connect(&dependencies.taskList, &viewmodel::TaskListContract::showArchivedChanged, this, &TaskPage::updateControls);
     connect(&dependencies.taskList, &viewmodel::TaskListContract::searchTextChanged, this, &TaskPage::updateControls);
     connect(&dependencies.taskList, &viewmodel::TaskListContract::priorityFilterIndexChanged, this, &TaskPage::updateControls);
+    connect(&dependencies.taskList, &viewmodel::TaskListContract::categoryOptionsChanged,
+            this, &TaskPage::updateControls);
+    connect(&dependencies.taskList, &viewmodel::TaskListContract::categoryFilterChanged,
+            this, &TaskPage::updateControls);
+    connect(&dependencies.taskList, &viewmodel::TaskListContract::hasActiveFiltersChanged,
+            this, &TaskPage::updateControls);
     connect(&dependencies.taskList, &viewmodel::TaskListContract::bulkSelectionChanged, this, &TaskPage::updateControls);
     connect(&dependencies.taskList, &viewmodel::TaskListContract::countChanged, this, &TaskPage::updateControls);
     connect(&dependencies.taskList, &QAbstractItemModel::modelReset, this, &TaskPage::updateControls);
     updateControls();
-    Q_UNUSED(editor);
 }
 
 bool TaskPage::confirm(const QString &title, const QString &message)
@@ -310,12 +357,30 @@ void TaskPage::updateControls()
 {
     const auto &tasks = m_dependencies.taskList;
     const QSignalBlocker searchBlocker(m_search), priorityBlocker(m_priority),
+                         categoryBlocker(m_category),
                          activeBlocker(m_active), archivedBlocker(m_archived);
     m_search->setText(tasks.searchText());
     if (m_priority->count() != tasks.priorityFilterOptions().size()) {
         m_priority->clear(); m_priority->addItems(tasks.priorityFilterOptions());
     }
     m_priority->setCurrentIndex(tasks.priorityFilterIndex());
+    m_category->clear();
+    int currentCategoryIndex = 0;
+    const QVariantList categoryOptions = tasks.categoryFilterOptions();
+    for (int i = 0; i < categoryOptions.size(); ++i) {
+        const QVariantMap option = categoryOptions.at(i).toMap();
+        const int mode = option.value(QStringLiteral("mode")).toInt();
+        const QString categoryId = option.value(QStringLiteral("categoryId")).toString();
+        m_category->addItem(option.value(QStringLiteral("name")).toString());
+        m_category->setItemData(i, mode, Qt::UserRole);
+        m_category->setItemData(i, categoryId, Qt::UserRole + 1);
+        if (mode == tasks.categoryFilterMode()
+            && (mode != 2 || categoryId == tasks.categoryFilterCategoryId())) {
+            currentCategoryIndex = i;
+        }
+    }
+    m_category->setCurrentIndex(currentCategoryIndex);
+    m_clearFilters->setVisible(tasks.hasActiveFilters());
     m_active->setChecked(!tasks.showArchived()); m_archived->setChecked(tasks.showArchived());
     m_bulkBar->setVisible(tasks.bulkSelectionMode());
     m_focus->setVisible(!tasks.bulkSelectionMode());

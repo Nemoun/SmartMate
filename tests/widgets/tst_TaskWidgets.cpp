@@ -1,22 +1,48 @@
 #include "view/widgets/task/TaskPage.h"
 #include "view/widgets/task/DeadlinePickerDialog.h"
 #include "view/widgets/task/DurationPickerDialog.h"
+#include "view/widgets/task/TaskCategoryDialog.h"
+#include "view/widgets/task/TaskCreationPredecessorDialog.h"
+#include "view/widgets/task/TaskDependencyDialog.h"
+#include "viewmodel/contracts/TaskCategoryContract.h"
+#include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskDetailsContract.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
 #include "viewmodel/contracts/TaskFocusContract.h"
 #include "viewmodel/contracts/TaskListContract.h"
 
+#include <QAbstractButton>
+#include <QApplication>
 #include <QComboBox>
+#include <QLabel>
 #include <QLineEdit>
+#include <QListView>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QSignalBlocker>
 #include <QTest>
+#include <QTimer>
 
 using namespace smartmate;
 
 namespace {
+
+constexpr auto categoryId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+constexpr auto taskId = "11111111-1111-1111-1111-111111111111";
+constexpr auto predecessorId = "22222222-2222-2222-2222-222222222222";
+
+void answerNextConfirmation(const QMessageBox::StandardButton answer)
+{
+    QTimer::singleShot(0, [answer] {
+        auto *messageBox = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        Q_ASSERT(messageBox);
+        QAbstractButton *button = messageBox->button(answer);
+        Q_ASSERT(button);
+        button->click();
+    });
+}
 
 class FakeTaskList final : public viewmodel::TaskListContract {
 public:
@@ -26,13 +52,13 @@ public:
     QVariant data(const QModelIndex &index, int role) const override {
         if (!index.isValid() || index.row() != 0) return {};
         switch (role) {
-        case TaskIdRole: return QStringLiteral("11111111-1111-1111-1111-111111111111");
+        case TaskIdRole: return QString::fromLatin1(taskId);
         case TitleRole: return QStringLiteral("契约任务");
         case DescriptionRole: return QStringLiteral("仅由 Fake Contract 提供");
         case StatusTextRole: return QStringLiteral("待办");
         case PriorityTextRole: return QStringLiteral("高");
         case OrderReasonTextRole: return QStringLiteral("高优先");
-        case CanEditTaskRole: case CanStartRole: case CanCancelRole:
+        case CanEditTaskRole: case CanEditDependenciesRole: case CanStartRole: case CanCancelRole:
         case BulkSelectableRole: return true;
         default: return false;
         }
@@ -41,10 +67,13 @@ public:
     QString searchText() const override { return search; }
     int priorityFilterIndex() const noexcept override { return priority; }
     QStringList priorityFilterOptions() const override { return {QStringLiteral("全部优先级"), QStringLiteral("低"), QStringLiteral("普通"), QStringLiteral("高"), QStringLiteral("紧急")}; }
-    QVariantList categoryFilterOptions() const override { return {}; }
-    int categoryFilterMode() const noexcept override { return 0; }
-    QString categoryFilterCategoryId() const override { return {}; }
-    bool hasActiveFilters() const override { return !search.isEmpty() || priority != 0; }
+    QVariantList categoryFilterOptions() const override { return {
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("全部类别")}, {QStringLiteral("mode"), 0}, {QStringLiteral("categoryId"), QString{}}},
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("未分类")}, {QStringLiteral("mode"), 1}, {QStringLiteral("categoryId"), QString{}}},
+        QVariantMap{{QStringLiteral("name"), QStringLiteral("学习")}, {QStringLiteral("mode"), 2}, {QStringLiteral("categoryId"), QString::fromLatin1(categoryId)}}}; }
+    int categoryFilterMode() const noexcept override { return categoryMode; }
+    QString categoryFilterCategoryId() const override { return category; }
+    bool hasActiveFilters() const override { return !search.isEmpty() || priority != 0 || categoryMode != 0; }
     bool bulkSelectionMode() const noexcept override { return bulk; }
     int bulkSelectedCount() const noexcept override { return selected ? 1 : 0; }
     int bulkSelectableVisibleCount() const override { return 1; }
@@ -55,9 +84,9 @@ public:
     void setShowArchived(bool value) override { ++showArchivedCalls; archived = value; emit showArchivedChanged(); }
     void setSearchText(const QString &value) override { ++searchCalls; search = value; emit searchTextChanged(); }
     void setPriorityFilterIndex(int value) override { ++priorityCalls; priority = value; emit priorityFilterIndexChanged(); }
-    bool setCategoryFilter(int, const QString &) override { return true; }
+    bool setCategoryFilter(int mode, const QString &id) override { ++categoryCalls; categoryMode = mode; category = id; emit categoryFilterChanged(); emit hasActiveFiltersChanged(); return true; }
     void reload() override {}
-    void clearFilters() override { search.clear(); priority = 0; emit searchTextChanged(); emit priorityFilterIndexChanged(); }
+    void clearFilters() override { search.clear(); priority = 0; categoryMode = 0; category.clear(); emit searchTextChanged(); emit priorityFilterIndexChanged(); emit categoryFilterChanged(); emit hasActiveFiltersChanged(); }
     bool startTask(const QString &id) override { ++startCalls; lastId = id; return true; }
     bool cancelTask(const QString &id) override { ++cancelCalls; lastId = id; return true; }
     bool completeTask(const QString &id) override { ++completeCalls; lastId = id; return true; }
@@ -76,8 +105,8 @@ public:
 
     void pushSearch(QString value) { search = std::move(value); emit searchTextChanged(); }
     bool archived{false}, bulk{false}, selected{false};
-    QString search, lastId; int priority{0};
-    int searchCalls{0}, priorityCalls{0}, showArchivedCalls{0}, startCalls{0};
+    QString search, lastId, category; int priority{0}, categoryMode{0};
+    int searchCalls{0}, priorityCalls{0}, categoryCalls{0}, showArchivedCalls{0}, startCalls{0};
     int cancelCalls{0}, completeCalls{0}, redoCalls{0}, archiveCalls{0}, restoreCalls{0}, deleteCalls{0};
     int bulkArchiveCalls{0}, bulkRestoreCalls{0}, bulkDeleteCalls{0};
 };
@@ -101,7 +130,7 @@ public:
     QString focusCategoryAccent() const override { return QStringLiteral("#94a3b8"); }
     bool focusHasCategory() const noexcept override { return false; }
     FocusState state{FocusState::Suggested};
-    QString id{QStringLiteral("11111111-1111-1111-1111-111111111111")};
+    QString id{QString::fromLatin1(taskId)};
 };
 
 class FakeDetails final : public viewmodel::TaskDetailsContract {
@@ -121,7 +150,7 @@ public:
     int selectedPredecessorCount() const noexcept override { return 0; }
     int selectedUnlockCount() const noexcept override { return 0; }
     bool selectedCanEditTask() const noexcept override { return true; }
-    bool selectedCanEditDependencies() const noexcept override { return false; }
+    bool selectedCanEditDependencies() const noexcept override { return true; }
     QString selectedCategoryName() const override { return {}; }
     QString selectedCategoryAccent() const override { return QStringLiteral("#94a3b8"); }
     bool selectedHasCategory() const noexcept override { return false; }
@@ -133,8 +162,22 @@ public:
 class FakeEditor final : public viewmodel::TaskEditorContract {
 public:
     FakeEditor() : TaskEditorContract(nullptr) {}
-    int rowCount(const QModelIndex & = {}) const override { return 0; }
-    QVariant data(const QModelIndex &, int) const override { return {}; }
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : 1; }
+    QVariant data(const QModelIndex &index, int role) const override {
+        if (!index.isValid() || index.row() != 0) return {};
+        switch (role) {
+        case CandidateTaskIdRole: return QString::fromLatin1(predecessorId);
+        case CandidateShortIdRole: return QStringLiteral("22222222");
+        case CandidateTitleRole: return QStringLiteral("前置候选");
+        case CandidateStatusTextRole: return QStringLiteral("待办");
+        case CandidatePriorityTextRole: return QStringLiteral("高");
+        case CandidateCategoryNameRole: return QStringLiteral("学习");
+        case CandidateCategoryAccentRole: return QStringLiteral("#2563eb");
+        case CandidateHasCategoryRole: return true;
+        case CandidateSelectedRole: return pickerSelected;
+        default: return {};
+        }
+    }
     QString taskId() const override { return {}; }
     bool editMode() const noexcept override { return edit; }
     bool sessionActive() const noexcept override { return active; }
@@ -166,9 +209,9 @@ public:
     bool dirty() const noexcept override { return !titleValue.isEmpty(); }
     bool canSave() const noexcept override { return dirty(); }
     QString validationMessage() const override { return {}; }
-    int predecessorCandidateCount() const noexcept override { return 0; }
-    int selectedPredecessorCount() const noexcept override { return 0; }
-    QString predecessorSummaryText() const override { return {}; }
+    int predecessorCandidateCount() const noexcept override { return 1; }
+    int selectedPredecessorCount() const noexcept override { return acceptedSelected ? 1 : 0; }
+    QString predecessorSummaryText() const override { return acceptedSelected ? QStringLiteral("已选择 1 项") : QStringLiteral("未选择前置任务"); }
     bool canConfigurePredecessors() const noexcept override { return !edit; }
     bool beginCreate() override { ++beginCreateCalls; edit = false; active = true; emit modeChanged(); emit sessionActiveChanged(); return true; }
     bool beginEdit(const QString &) override { ++beginEditCalls; edit = true; active = true; emit modeChanged(); emit sessionActiveChanged(); return true; }
@@ -176,15 +219,95 @@ public:
     void clearDeadline() override {}
     bool setEstimatedDuration(int, int, int) override { return true; }
     void clearEstimatedDuration() override {}
-    void beginPredecessorSelection() override {}
-    bool setCreationPredecessorSelected(const QString &, bool) override { return true; }
-    void acceptPredecessorSelection() override {} void cancelPredecessorSelection() override {}
-    void clearCreationPredecessors() override {}
+    void beginPredecessorSelection() override { ++beginPredecessorCalls; pickerSelected = acceptedSelected; emit predecessorSelectionChanged(); }
+    bool setCreationPredecessorSelected(const QString &id, bool value) override { ++predecessorWrites; lastPredecessorId = id; pickerSelected = value; emit dataChanged(index(0), index(0), {CandidateSelectedRole}); emit predecessorSelectionChanged(); return true; }
+    void acceptPredecessorSelection() override { ++acceptPredecessorCalls; acceptedSelected = pickerSelected; emit predecessorSelectionChanged(); }
+    void cancelPredecessorSelection() override { ++cancelPredecessorCalls; pickerSelected = acceptedSelected; emit predecessorSelectionChanged(); }
+    void clearCreationPredecessors() override { ++clearPredecessorCalls; pickerSelected = false; acceptedSelected = false; emit predecessorSelectionChanged(); }
     bool save() override { if (!canSave()) return false; active = false; emit sessionActiveChanged(); emit saved(QStringLiteral("id")); return true; }
     void cancel() override { active = false; emit sessionActiveChanged(); emit cancelled(); }
     void pushTitle(QString value) { titleValue = std::move(value); emit titleChanged(); }
-    bool edit{false}, active{false}; int priority{1};
-    QString titleValue, descriptionValue; int beginCreateCalls{0}, beginEditCalls{0}, titleWrites{0}, descriptionWrites{0};
+    bool edit{false}, active{false}, pickerSelected{false}, acceptedSelected{false}; int priority{1};
+    QString titleValue, descriptionValue, lastPredecessorId;
+    int beginCreateCalls{0}, beginEditCalls{0}, titleWrites{0}, descriptionWrites{0};
+    int beginPredecessorCalls{0}, predecessorWrites{0}, acceptPredecessorCalls{0};
+    int cancelPredecessorCalls{0}, clearPredecessorCalls{0};
+};
+
+class FakeCategory final : public viewmodel::TaskCategoryContract {
+public:
+    FakeCategory() : TaskCategoryContract(nullptr) {}
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : 1; }
+    QVariant data(const QModelIndex &index, int role) const override {
+        if (!index.isValid() || index.row() != 0) return {};
+        switch (role) {
+        case CategoryIdRole: return QString::fromLatin1(categoryId);
+        case NameRole: return QStringLiteral("学习");
+        case ColorIndexRole: return 1;
+        case AccentRole: return QStringLiteral("#2563eb");
+        case TaskCountRole: return 2;
+        default: return {};
+        }
+    }
+    int count() const noexcept override { return 1; }
+    bool empty() const noexcept override { return false; }
+    bool editMode() const noexcept override { return editing; }
+    QString editingCategoryId() const override { return editing ? QString::fromLatin1(categoryId) : QString{}; }
+    QString draftName() const override { return name; }
+    void setDraftName(const QString &value) override { ++nameWrites; name = value; emit draftChanged(); }
+    int draftColorIndex() const noexcept override { return color; }
+    void setDraftColorIndex(int value) override { ++colorWrites; color = value; emit draftChanged(); }
+    QStringList colorOptions() const override { return {QStringLiteral("蓝色"), QStringLiteral("绿色")}; }
+    QStringList colorAccents() const override { return {QStringLiteral("#2563eb"), QStringLiteral("#16a34a")}; }
+    bool dirty() const noexcept override { return !name.isEmpty(); }
+    bool canSave() const noexcept override { return dirty(); }
+    void reload() override { ++reloadCalls; }
+    void beginCreate() override { ++beginCreateCalls; editing = false; name.clear(); emit draftChanged(); }
+    bool beginEdit(const QString &id) override { ++beginEditCalls; lastId = id; editing = true; name = QStringLiteral("学习"); emit draftChanged(); return true; }
+    bool save() override { ++saveCalls; editing = true; emit saved(QString::fromLatin1(categoryId)); return true; }
+    bool deleteCategory(const QString &id) override { ++deleteCalls; lastId = id; emit deleted(id, 2); return true; }
+    void cancel() override { ++cancelCalls; beginCreate(); emit cancelled(); }
+
+    bool editing{false}; int color{0}; QString name, lastId;
+    int reloadCalls{0}, beginCreateCalls{0}, beginEditCalls{0}, saveCalls{0};
+    int deleteCalls{0}, cancelCalls{0}, nameWrites{0}, colorWrites{0};
+};
+
+class FakeDependency final : public viewmodel::TaskDependencyContract {
+public:
+    FakeDependency() : TaskDependencyContract(nullptr) {}
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : 1; }
+    QVariant data(const QModelIndex &index, int role) const override {
+        if (!index.isValid() || index.row() != 0) return {};
+        switch (role) {
+        case TaskIdRole: return QString::fromLatin1(predecessorId);
+        case ShortIdRole: return QStringLiteral("22222222");
+        case TitleRole: return QStringLiteral("前置候选");
+        case StatusTextRole: return QStringLiteral("待办");
+        case PriorityTextRole: return QStringLiteral("高");
+        case SelectedRole: return selected;
+        case ArchivedRole: return false;
+        case SelectableRole: return selectable;
+        case CategoryNameRole: return QStringLiteral("学习");
+        case CategoryAccentRole: return QStringLiteral("#2563eb");
+        case HasCategoryRole: return true;
+        default: return {};
+        }
+    }
+    QString taskId() const override { return targetId; }
+    QString taskTitle() const override { return QStringLiteral("目标任务"); }
+    int count() const noexcept override { return 1; }
+    int selectedCount() const noexcept override { return selected ? 1 : 0; }
+    bool dirty() const noexcept override { return selected; }
+    bool canSave() const noexcept override { return selected; }
+    bool beginEdit(const QString &id) override { ++beginEditCalls; targetId = id; emit contextChanged(); return beginSucceeds; }
+    bool setPredecessorSelected(const QString &id, bool value) override { ++selectionCalls; lastId = id; selected = value; emit dataChanged(index(0), index(0), {SelectedRole}); emit selectionChanged(); emit formStateChanged(); return true; }
+    bool save() override { ++saveCalls; if (!saveSucceeds) { emit notificationRaised({common::UiSeverity::Error, QStringLiteral("依赖操作失败"), QStringLiteral("循环依赖：目标任务 → 前置候选 → 目标任务")}); return false; } selected = false; emit formStateChanged(); emit saved(targetId); return true; }
+    void cancel() override { ++cancelCalls; selected = false; emit selectionChanged(); emit formStateChanged(); emit cancelled(); }
+
+    bool selectable{true}, selected{false}, beginSucceeds{true}, saveSucceeds{true};
+    QString targetId, lastId;
+    int beginEditCalls{0}, selectionCalls{0}, saveCalls{0}, cancelCalls{0};
 };
 
 } // namespace
@@ -195,12 +318,16 @@ private slots:
     void initialBindingAndUserCommandsUseContracts();
     void programmaticUpdatesDoNotWriteBack();
     void typedPickersPreserveValuesAndContractBounds();
+    void categoryAndDependencyDialogsUseStableContractCommands();
+    void creationPredecessorSelectionCommitsOrRestoresLocalDraft();
 };
 
 void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
 {
     FakeTaskList tasks; FakeFocus focus; FakeDetails details; FakeEditor editor;
-    view::widgets::TaskPage page{{tasks, focus, details, editor}};
+    FakeCategory categories; FakeDependency dependencies;
+    view::widgets::TaskPage page{{tasks, focus, details, editor,
+                                  categories, dependencies}};
     page.resize(900, 650); page.show();
 
     auto *search = page.findChild<QLineEdit *>(QStringLiteral("taskSearchField"));
@@ -213,6 +340,12 @@ void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
     QVERIFY(priority);
     priority->activated(3);
     QCOMPARE(tasks.priority, 3);
+    auto *category = page.findChild<QComboBox *>(QStringLiteral("categoryFilterComboBox"));
+    QVERIFY(category);
+    category->activated(2);
+    QCOMPARE(tasks.categoryMode, 2);
+    QCOMPARE(tasks.category, QString::fromLatin1(categoryId));
+    QCOMPARE(tasks.categoryCalls, 1);
 
     auto *focusAction = page.findChild<QPushButton *>(QStringLiteral("focusPrimaryActionButton"));
     QTest::mouseClick(focusAction, Qt::LeftButton);
@@ -244,7 +377,9 @@ void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
 void TaskWidgetsTest::programmaticUpdatesDoNotWriteBack()
 {
     FakeTaskList tasks; FakeFocus focus; FakeDetails details; FakeEditor editor;
-    view::widgets::TaskPage page{{tasks, focus, details, editor}};
+    FakeCategory categories; FakeDependency dependencies;
+    view::widgets::TaskPage page{{tasks, focus, details, editor,
+                                  categories, dependencies}};
     page.resize(900, 650); page.show();
     const int searchCalls = tasks.searchCalls;
     tasks.pushSearch(QStringLiteral("服务刷新"));
@@ -285,6 +420,88 @@ void TaskWidgetsTest::typedPickersPreserveValuesAndContractBounds()
     QVERIFY(hours && minutes);
     QCOMPARE(hours->maximum(), 1);
     QCOMPARE(minutes->maximum(), 0);
+}
+
+void TaskWidgetsTest::categoryAndDependencyDialogsUseStableContractCommands()
+{
+    FakeCategory categories;
+    view::widgets::TaskCategoryDialog categoryDialog{categories};
+    categoryDialog.openManager();
+    QTRY_VERIFY(categoryDialog.isVisible());
+    QCOMPARE(categories.reloadCalls, 1);
+
+    auto *name = categoryDialog.findChild<QLineEdit *>(QStringLiteral("categoryNameField"));
+    auto *saveCategory = categoryDialog.findChild<QPushButton *>(QStringLiteral("saveCategoryButton"));
+    QVERIFY(name && saveCategory);
+    QTest::keyClicks(name, QStringLiteral("Study"));
+    QTest::mouseClick(saveCategory, Qt::LeftButton);
+    QCOMPARE(categories.saveCalls, 1);
+
+    auto *categoryList = categoryDialog.findChild<QListView *>(QStringLiteral("categoryListView"));
+    auto *deleteCategory = categoryDialog.findChild<QPushButton *>(QStringLiteral("deleteSelectedCategoryButton"));
+    QVERIFY(categoryList && deleteCategory);
+    categoryList->setCurrentIndex(categories.index(0));
+    answerNextConfirmation(QMessageBox::Cancel);
+    QTest::mouseClick(deleteCategory, Qt::LeftButton);
+    QCOMPARE(categories.deleteCalls, 0);
+    answerNextConfirmation(QMessageBox::Ok);
+    QTest::mouseClick(deleteCategory, Qt::LeftButton);
+    QCOMPARE(categories.deleteCalls, 1);
+    QCOMPARE(categories.lastId, QString::fromLatin1(categoryId));
+    categoryDialog.close();
+
+    FakeDependency dependencies;
+    view::widgets::TaskDependencyDialog dependencyDialog{dependencies};
+    QVERIFY(dependencyDialog.openTask(QString::fromLatin1(taskId)));
+    QTRY_VERIFY(dependencyDialog.isVisible());
+    QCOMPARE(dependencies.targetId, QString::fromLatin1(taskId));
+    auto *candidateList = dependencyDialog.findChild<QListView *>(QStringLiteral("dependencyCandidateList"));
+    QVERIFY(candidateList);
+    QTest::mouseClick(candidateList->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      candidateList->visualRect(dependencies.index(0)).center());
+    QCOMPARE(dependencies.selectionCalls, 1);
+    QCOMPARE(dependencies.lastId, QString::fromLatin1(predecessorId));
+
+    dependencies.saveSucceeds = false;
+    auto *saveDependencies = dependencyDialog.findChild<QPushButton *>(QStringLiteral("saveDependenciesButton"));
+    QTest::mouseClick(saveDependencies, Qt::LeftButton);
+    QCOMPARE(dependencies.saveCalls, 1);
+    QVERIFY(dependencyDialog.isVisible());
+    auto *notification = dependencyDialog.findChild<QLabel *>(QStringLiteral("dependencyNotificationLabel"));
+    QVERIFY(notification->text().contains(QStringLiteral("循环依赖")));
+
+    dependencies.saveSucceeds = true;
+    QTest::mouseClick(saveDependencies, Qt::LeftButton);
+    QCOMPARE(dependencies.saveCalls, 2);
+    QTRY_VERIFY(!dependencyDialog.isVisible());
+    QCOMPARE(dependencies.cancelCalls, 0);
+}
+
+void TaskWidgetsTest::creationPredecessorSelectionCommitsOrRestoresLocalDraft()
+{
+    FakeEditor editor;
+    view::widgets::TaskCreationPredecessorDialog dialog{editor};
+    dialog.openSelection();
+    QTRY_VERIFY(dialog.isVisible());
+    auto *list = dialog.findChild<QListView *>(QStringLiteral("creationPredecessorCandidateList"));
+    QVERIFY(list);
+    QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      list->visualRect(editor.index(0)).center());
+    QCOMPARE(editor.lastPredecessorId, QString::fromLatin1(predecessorId));
+    QVERIFY(editor.pickerSelected);
+    dialog.reject();
+    QCOMPARE(editor.cancelPredecessorCalls, 1);
+    QVERIFY(!editor.acceptedSelected);
+
+    dialog.openSelection();
+    QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                      list->visualRect(editor.index(0)).center());
+    auto *accept = dialog.findChild<QPushButton *>(QStringLiteral("acceptCreationPredecessorsButton"));
+    QVERIFY(accept);
+    QTest::mouseClick(accept, Qt::LeftButton);
+    QCOMPARE(editor.acceptPredecessorCalls, 1);
+    QVERIFY(editor.acceptedSelected);
+    QTRY_VERIFY(!dialog.isVisible());
 }
 
 QTEST_MAIN(TaskWidgetsTest)

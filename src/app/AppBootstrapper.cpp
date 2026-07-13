@@ -73,7 +73,9 @@ view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noex
             *m_appViewModel->taskList(),
             *m_appViewModel->taskFocus(),
             *m_appViewModel->taskDetails(),
-            *m_appViewModel->taskEditor()};
+            *m_appViewModel->taskEditor(),
+            *m_appViewModel->taskCategories(),
+            *m_appViewModel->taskDependencies()};
 }
 
 } // namespace smartmate::app

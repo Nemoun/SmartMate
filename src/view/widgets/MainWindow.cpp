@@ -56,7 +56,9 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
                  new TaskPage{{dependencies.taskList,
                                dependencies.taskFocus,
                                dependencies.taskDetails,
-                               dependencies.taskEditor}}, parent)
+                               dependencies.taskEditor,
+                               dependencies.taskCategories,
+                               dependencies.taskDependencies}}, parent)
 {
     auto *taskPage = qobject_cast<TaskPage *>(m_pages->widget(0));
     connect(taskPage, &TaskPage::showDependencyGraphRequested, m_pages,
@@ -68,6 +70,12 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
     connect(&dependencies.taskDetails, &viewmodel::TaskDetailsContract::notificationRaised,
             this, &MainWindow::showNotification);
     connect(&dependencies.taskEditor, &viewmodel::TaskEditorContract::notificationRaised,
+            this, &MainWindow::showNotification);
+    connect(&dependencies.taskCategories,
+            &viewmodel::TaskCategoryContract::notificationRaised,
+            this, &MainWindow::showNotification);
+    connect(&dependencies.taskDependencies,
+            &viewmodel::TaskDependencyContract::notificationRaised,
             this, &MainWindow::showNotification);
 }
 

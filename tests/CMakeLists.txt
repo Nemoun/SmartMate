@@ -209,6 +209,16 @@ target_link_libraries(tst_widgets_task_flow
 add_test(NAME integration.widgets_tasks COMMAND tst_widgets_task_flow -platform offscreen)
 set_tests_properties(integration.widgets_tasks PROPERTIES TIMEOUT 25)
 
+qt_add_executable(tst_widgets_category_dependency_flow
+    integration/tst_WidgetsCategoryDependencyFlow.cpp
+)
+target_link_libraries(tst_widgets_category_dependency_flow
+    PRIVATE smartmate_widgets smartmate_persistence smartmate_viewmodel Qt6::Test
+)
+add_test(NAME integration.widgets_category_dependencies
+    COMMAND tst_widgets_category_dependency_flow -platform offscreen)
+set_tests_properties(integration.widgets_category_dependencies PROPERTIES TIMEOUT 30)
+
 qt_add_executable(tst_task_creation_flow
     integration/tst_TaskCreationFlow.cpp
 )
@@ -336,6 +346,7 @@ set_tests_properties(
     view.widgets_tasks
     integration.widgets_appearance
     integration.widgets_tasks
+    integration.widgets_category_dependencies
     integration.task_creation_flow
     view.qml_pickers
     view.qml_dependency_graph

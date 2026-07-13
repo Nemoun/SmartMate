@@ -5,6 +5,8 @@
 #include "viewmodel/contracts/TaskFocusContract.h"
 #include "viewmodel/contracts/TaskDetailsContract.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
+#include "viewmodel/contracts/TaskCategoryContract.h"
+#include "viewmodel/contracts/TaskDependencyContract.h"
 
 namespace smartmate::view::widgets {
 
@@ -18,6 +20,8 @@ struct MainWindowDependencies {
     viewmodel::TaskFocusContract &taskFocus;
     viewmodel::TaskDetailsContract &taskDetails;
     viewmodel::TaskEditorContract &taskEditor;
+    viewmodel::TaskCategoryContract &taskCategories;
+    viewmodel::TaskDependencyContract &taskDependencies;
 };
 
 } // namespace smartmate::view::widgets

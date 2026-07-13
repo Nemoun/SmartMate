@@ -16,6 +16,8 @@ class TaskListContract;
 class TaskFocusContract;
 class TaskDetailsContract;
 class TaskEditorContract;
+class TaskCategoryContract;
+class TaskDependencyContract;
 }
 
 namespace smartmate::view::widgets {
@@ -25,7 +27,13 @@ struct TaskPageDependencies {
     viewmodel::TaskFocusContract &taskFocus;
     viewmodel::TaskDetailsContract &taskDetails;
     viewmodel::TaskEditorContract &taskEditor;
+    viewmodel::TaskCategoryContract &taskCategories;
+    viewmodel::TaskDependencyContract &taskDependencies;
 };
+
+class TaskCategoryDialog;
+class TaskDependencyDialog;
+class TaskEditorDialog;
 
 class TaskListView final : public QListView {
     Q_OBJECT
@@ -67,6 +75,7 @@ public:
     bool openTask(const QString &taskId);
 signals:
     void editRequested(const QString &taskId);
+    void editDependenciesRequested(const QString &taskId);
 protected:
     void done(int result) override;
 private:
@@ -78,6 +87,7 @@ private:
     QLabel *m_schedule;
     QLabel *m_insight;
     QPushButton *m_edit;
+    QPushButton *m_editDependencies;
 };
 
 /// 任务主流程页面，只组合抽象 Contract 并转发稳定 TaskId。
@@ -97,10 +107,13 @@ private:
     TaskFocusPanel *m_focus;
     QLineEdit *m_search;
     QComboBox *m_priority;
+    QComboBox *m_category;
     QToolButton *m_active;
     QToolButton *m_archived;
     QPushButton *m_bulk;
     QPushButton *m_newTask;
+    QPushButton *m_manageCategories;
+    QPushButton *m_clearFilters;
     QWidget *m_bulkBar;
     QLabel *m_bulkCount;
     QPushButton *m_selectAll;
@@ -110,6 +123,10 @@ private:
     TaskListView *m_list;
     QLabel *m_empty;
     TaskDetailsDialog *m_details;
+    TaskEditorDialog *m_editor;
+    TaskCategoryDialog *m_categories;
+    TaskCategoryDialog *m_editorCategories;
+    TaskDependencyDialog *m_dependencyEditor;
 };
 
 } // namespace smartmate::view::widgets

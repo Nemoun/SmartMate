@@ -130,6 +130,8 @@ bool TaskItemDelegate::editorEvent(QEvent *event, QAbstractItemModel *,
         QMenu menu;
         QAction *details = menu.addAction(tr("查看详情"));
         QAction *edit = index.data(Role::CanEditTaskRole).toBool() ? menu.addAction(tr("编辑任务")) : nullptr;
+        QAction *editDependencies = index.data(Role::CanEditDependenciesRole).toBool()
+            ? menu.addAction(tr("编辑前置任务")) : nullptr;
         menu.addSeparator();
         QAction *cancel = index.data(Role::CanCancelRole).toBool() ? menu.addAction(tr("取消任务")) : nullptr;
         QAction *archive = index.data(Role::CanArchiveRole).toBool() ? menu.addAction(tr("归档")) : nullptr;
@@ -137,6 +139,7 @@ bool TaskItemDelegate::editorEvent(QEvent *event, QAbstractItemModel *,
         QAction *chosen = menu.exec(mouse->globalPosition().toPoint());
         if (chosen == details) emit detailsRequested(id);
         else if (chosen && chosen == edit) emit editRequested(id);
+        else if (chosen && chosen == editDependencies) emit editDependenciesRequested(id);
         else if (chosen && chosen == cancel) emit cancelRequested(id, title);
         else if (chosen && chosen == archive) emit archiveRequested(id, title);
         else if (chosen && chosen == remove) emit deleteRequested(id, title);

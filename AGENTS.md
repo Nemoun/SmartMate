@@ -123,6 +123,8 @@ ctest --preset debug --output-on-failure -R "view.widgets|integration.widgets"
 
 阶段 3 的任务主流程迁移已完成，后续修改必须保持 `TaskListContract`、`TaskFocusContract`、`TaskDetailsContract` 与 `TaskEditorContract` 职责分离。焦点和详情 ViewModel 不得直接调用列表 ViewModel；任务 Widget 只能通过这些 Contract 读取投影和提交稳定 `TaskId` 命令。
 
+阶段 4 的类别与依赖编辑迁移已完成。类别筛选与命令必须使用稳定 `TaskCategoryId`，创建前置集合只能作为 `TaskEditorContract` 草稿一次提交，已有任务依赖只能通过 `TaskDependencyContract::save()` 原子替换；Widget 不得遍历候选重建规则或循环调用持久化命令。
+
 完整 `ctest` 仍是最终验收命令，上述筛选只用于 Widgets 开发时快速定位回归。最终删除 QML 后才移除 `all_qmllint`。
 
 禁止提交构建产物、运行数据库、IDE用户配置、凭据、生成缓存或无关改动。

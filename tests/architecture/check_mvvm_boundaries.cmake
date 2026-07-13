@@ -353,7 +353,42 @@ foreach(source_file IN LISTS widget_cpp)
         record_violation("${source_file}"
             "Widgets may not use string reflection for binding or commands")
     endif()
+    if(widget_lower MATCHES "errormessage")
+        record_violation("${source_file}"
+            "Widgets must consume UiNotification instead of concrete ViewModel errorMessage compatibility APIs")
+    endif()
 endforeach()
+
+foreach(stage4_widget IN ITEMS
+        TaskCategoryDialog TaskCreationPredecessorDialog TaskDependencyDialog)
+    set(stage4_source "${ROOT_DIR}/src/view/widgets/task/${stage4_widget}.cpp")
+    if(NOT EXISTS "${stage4_source}")
+        record_violation("${ROOT_DIR}/src/view/widgets/CMakeLists.txt"
+            "${stage4_widget} is required by the category/dependency migration")
+    endif()
+endforeach()
+
+set(category_widget "${ROOT_DIR}/src/view/widgets/task/TaskCategoryDialog.cpp")
+if(EXISTS "${category_widget}")
+    file(READ "${category_widget}" category_widget_contents)
+    if(NOT category_widget_contents MATCHES "CategoryIdRole")
+        record_violation("${category_widget}"
+            "Category commands must use the stable CategoryIdRole")
+    endif()
+endif()
+
+set(dependency_widget "${ROOT_DIR}/src/view/widgets/task/TaskDependencyDialog.cpp")
+if(EXISTS "${dependency_widget}")
+    file(READ "${dependency_widget}" dependency_widget_contents)
+    if(NOT dependency_widget_contents MATCHES "TaskIdRole")
+        record_violation("${dependency_widget}"
+            "Dependency commands must use the stable TaskIdRole")
+    endif()
+    if(dependency_widget_contents MATCHES "for[ \t\r\n]*\\([^)]*\\)[ \t\r\n]*\\{[^}]*m_dependencies\\.save")
+        record_violation("${dependency_widget}"
+            "Dependency persistence must be one atomic Contract save, not a per-row loop")
+    endif()
+endif()
 
 get_property(violations GLOBAL PROPERTY MVVM_VIOLATIONS)
 if(violations)

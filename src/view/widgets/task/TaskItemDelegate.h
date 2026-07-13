@@ -23,6 +23,7 @@ public:
 signals:
     void detailsRequested(const QString &taskId);
     void editRequested(const QString &taskId);
+    void editDependenciesRequested(const QString &taskId);
     void cancelRequested(const QString &taskId, const QString &title);
     void archiveRequested(const QString &taskId, const QString &title);
     void deleteRequested(const QString &taskId, const QString &title);
