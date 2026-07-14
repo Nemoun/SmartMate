@@ -11,11 +11,13 @@ namespace {
 
 [[nodiscard]] QString stableId(const TaskId &taskId)
 {
+    // UUID 文本用于确定性排序和边键，不作为新的业务身份。
     return taskId.toString(QUuid::WithoutBraces);
 }
 
 void normalizeIds(QList<TaskId> &taskIds)
 {
+    // 所有集合型结果统一排序并去重，使输出与 Repository 返回顺序无关。
     std::sort(taskIds.begin(), taskIds.end(), [](const TaskId &left,
                                                  const TaskId &right) {
         return stableId(left) < stableId(right);
@@ -25,6 +27,7 @@ void normalizeIds(QList<TaskId> &taskIds)
 
 [[nodiscard]] QString edgeKey(const TaskDependency &dependency)
 {
+    // 有向边键保留前置→后继方向，用于识别完全相同的重复关系。
     return stableId(dependency.predecessorId) + QLatin1Char('>')
         + stableId(dependency.successorId);
 }
@@ -36,6 +39,7 @@ TaskDependencyGraph::TaskDependencyGraph(QList<Task> tasks,
     : m_tasks(std::move(tasks))
     , m_dependencies(std::move(dependencies))
 {
+    // 预建 O(1) 平均查找索引，避免长链算法反复线性扫描任务列表。
     m_taskIndexes.reserve(m_tasks.size());
     for (qsizetype index = 0; index < m_tasks.size(); ++index) {
         m_taskIndexes.insert(m_tasks.at(index).id(), index);
@@ -44,6 +48,7 @@ TaskDependencyGraph::TaskDependencyGraph(QList<Task> tasks,
 
 DependencyGraphValidation TaskDependencyGraph::validation() const
 {
+    // 校验顺序固定，保证同一坏快照始终返回相同的首要错误语义。
     QList<TaskId> missingTaskIds;
     for (const TaskDependency &dependency : m_dependencies) {
         if (!containsTask(dependency.predecessorId)) {
@@ -69,6 +74,7 @@ DependencyGraphValidation TaskDependencyGraph::validation() const
         return {DependencyGraphError::SelfDependency, selfDependencies, {}};
     }
 
+    // 端点合法后再检查重复边，错误上下文只报告真实任务身份。
     QSet<QString> knownEdges;
     QList<TaskId> duplicateEndpoints;
     for (const TaskDependency &dependency : m_dependencies) {
@@ -85,6 +91,7 @@ DependencyGraphValidation TaskDependencyGraph::validation() const
         return {DependencyGraphError::DuplicateDependency, duplicateEndpoints, {}};
     }
 
+    // 邻接表按稳定 ID 排序，确保 DFS 发现的循环路径可以确定性测试和展示。
     QHash<TaskId, QList<TaskId>> successorsByTask;
     for (const TaskDependency &dependency : m_dependencies) {
         successorsByTask[dependency.predecessorId].append(dependency.successorId);
@@ -105,7 +112,9 @@ DependencyGraphValidation TaskDependencyGraph::validation() const
     QHash<TaskId, int> colors;
     QList<TaskId> cyclePath;
     struct DfsFrame final {
+        /// 当前显式递归帧对应的任务。
         TaskId taskId;
+        /// 下一个尚未访问的后继下标。
         qsizetype nextSuccessorIndex{0};
     };
 
@@ -139,6 +148,7 @@ DependencyGraphValidation TaskDependencyGraph::validation() const
                 continue;
             }
 
+            // 指向当前 DFS 路径中的灰色节点即为回边；截取并闭合实际循环路径。
             qsizetype cycleStart = 0;
             while (cycleStart < stack.size()
                    && stack.at(cycleStart).taskId != successorId) {
@@ -189,6 +199,7 @@ QList<TaskId> TaskDependencyGraph::successorIds(const TaskId &taskId) const
 
 QList<TaskId> TaskDependencyGraph::unsatisfiedPredecessorIds(const TaskId &taskId) const
 {
+    // AND 语义下只要结果非空，后继就仍被至少一个 Pending 前置阻塞。
     QList<TaskId> result;
     for (const TaskId &predecessorId : predecessorIds(taskId)) {
         const Task *predecessor = findTask(predecessorId);
@@ -223,6 +234,7 @@ TaskDependencyState TaskDependencyGraph::dependencyState(const TaskId &taskId) c
     state.unsatisfiedPredecessorIds = unsatisfiedPredecessorIds(taskId);
     state.cancelledPredecessorIds = cancelledPredecessorIds(taskId);
 
+    // 终态仍保留诊断列表，但只有 Todo/InProgress 会被标记为当前阻塞。
     const Task *task = findTask(taskId);
     const bool active = task != nullptr
         && (task->status() == TaskStatus::Todo
@@ -254,6 +266,7 @@ QHash<TaskId, int> TaskDependencyGraph::dependencyLevels() const
         return {};
     }
 
+    // levels 保存最长已知路径；indegrees 控制节点在全部前置完成后出队。
     QHash<TaskId, int> levels;
     QHash<TaskId, int> indegrees;
     QHash<TaskId, QList<TaskId>> successorsByTask;
@@ -303,6 +316,7 @@ namespace {
 QList<TaskId> directedClosure(const TaskId &taskId,
                               const QHash<TaskId, QList<TaskId>> &adjacency)
 {
+    // 使用可增长队列迭代遍历，visited 同时防重复并抵御异常回边。
     QList<TaskId> pending = adjacency.value(taskId);
     QSet<TaskId> visited;
     qsizetype index = 0;
@@ -352,6 +366,7 @@ QList<TaskId> TaskDependencyGraph::successorClosure(const TaskId &taskId) const
 QList<TaskId> TaskDependencyGraph::connectedTaskIds(
     const QList<TaskId> &seedTaskIds) const
 {
+    // 类别图需要连接上下文，因此这里临时忽略边方向，把关系视为无向邻接。
     QHash<TaskId, QList<TaskId>> neighborsByTask;
     for (const TaskDependency &dependency : m_dependencies) {
         if (!containsTask(dependency.predecessorId)
@@ -374,6 +389,7 @@ QList<TaskId> TaskDependencyGraph::connectedTaskIds(
     }
     normalizeIds(pendingTaskIds);
 
+    // 从所有合法种子同时进行广度遍历，最终仍按稳定 ID 返回。
     QSet<TaskId> visitedTaskIds;
     qsizetype nextPendingIndex = 0;
     while (nextPendingIndex < pendingTaskIds.size()) {
@@ -404,6 +420,7 @@ TaskDependencyResolution TaskDependencyGraph::dependencyResolution(
         return TaskDependencyResolution::Cancelled;
     }
     if (task.status() == TaskStatus::Archived) {
+        // 归档不删除关系；解析语义继续沿用归档前的 Done/Cancelled 终态。
         if (task.statusBeforeArchive()
             == std::optional<TaskStatus>{TaskStatus::Done}) {
             return TaskDependencyResolution::Satisfied;
@@ -423,6 +440,7 @@ bool TaskDependencyGraph::satisfiesDependency(const Task &task) noexcept
 
 const Task *TaskDependencyGraph::findTask(const TaskId &taskId) const
 {
+    // 指针只引用 m_tasks 内部元素，有效期不超过当前图快照。
     const auto iterator = m_taskIndexes.constFind(taskId);
     return iterator == m_taskIndexes.cend()
         ? nullptr

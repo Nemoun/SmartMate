@@ -13,6 +13,7 @@ namespace {
 
 [[nodiscard]] int statusGroup(const TaskStatus status) noexcept
 {
+    // 数字越小越靠前：进行中、待办、终态、归档。
     switch (status) {
     case TaskStatus::InProgress:
         return 0;
@@ -29,6 +30,7 @@ namespace {
 
 [[nodiscard]] int priorityRank(const TaskPriority priority) noexcept
 {
+    // 排序排名与枚举数值解耦，避免依赖展示索引的偶然顺序。
     switch (priority) {
     case TaskPriority::Urgent:
         return 0;
@@ -44,6 +46,7 @@ namespace {
 
 [[nodiscard]] QString stableId(const Task &task)
 {
+    // 所有业务字段相同时用稳定 ID 收尾，保证排序是确定且全序的。
     return task.id().toString(QUuid::WithoutBraces);
 }
 
@@ -51,6 +54,7 @@ namespace {
                                    const Task &right,
                                    const QDateTime &nowUtc)
 {
+    // Todo 依次比较：逾期、优先级、是否有截止时间、截止时间、创建时间、稳定 ID。
     const bool leftOverdue = TaskDeadlinePolicy::isOverdue(left, nowUtc);
     const bool rightOverdue = TaskDeadlinePolicy::isOverdue(right, nowUtc);
     if (leftOverdue != rightOverdue) {
@@ -81,6 +85,7 @@ namespace {
 [[nodiscard]] bool recentlyUpdatedComesBefore(const Task &left,
                                               const Task &right)
 {
+    // 已完成、已取消和已归档按最近变化优先，便于用户看到刚处理的结果。
     if (left.updatedAtUtc() != right.updatedAtUtc()) {
         return left.updatedAtUtc() > right.updatedAtUtc();
     }
@@ -108,6 +113,7 @@ namespace {
 [[nodiscard]] TaskOrderReason reasonFor(const Task &task,
                                         const QDateTime &nowUtc)
 {
+    // 理由只表达主导排序语义；blocked 和 overdue 仍作为独立派生字段保留。
     switch (task.status()) {
     case TaskStatus::InProgress:
         return TaskOrderReason::InProgress;
@@ -139,6 +145,7 @@ namespace {
 
 QList<PlannedTask> orderTasks(const QList<Task> &tasks, const QDateTime &nowUtc)
 {
+    // 无依赖重载复用统一算法，所有活动任务自然落入 Ready 分组。
     return orderTasks(tasks, {}, nowUtc);
 }
 
@@ -147,6 +154,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
                               const QDateTime &nowUtc)
 {
     const TaskDependencyGraph graph{tasks, dependencies};
+    // 分组指针只引用输入快照，排序不会复制或修改原始 Task 值。
     QList<const Task *> readyTasks;
     QList<const Task *> blockedTasks;
     QList<const Task *> terminalTasks;
@@ -171,6 +179,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
         }
     }
 
+    // Ready、终态和归档分别应用同一套确定性基础比较规则。
     const auto baseComparator = [&nowUtc](const Task *left, const Task *right) {
         return baseOrderComesBefore(*left, *right, nowUtc);
     };
@@ -193,6 +202,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
         }
     }
 
+    // 当前入度为零的 Blocked 节点可以进入稳定候选队列。
     QList<const Task *> availableBlocked;
     for (const Task *task : blockedTasks) {
         if (blockedIndegrees.value(task->id()) == 0) {
@@ -226,6 +236,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
         topologicalBlocked.append(cyclicRemainder);
     }
 
+    // 最终大组顺序固定：可执行、拓扑阻塞、完成/取消、归档。
     QList<const Task *> orderedTasks;
     orderedTasks.reserve(tasks.size());
     orderedTasks.append(readyTasks);
@@ -233,6 +244,7 @@ QList<PlannedTask> orderTasks(const QList<Task> &tasks,
     orderedTasks.append(terminalTasks);
     orderedTasks.append(archivedTasks);
 
+    // 规划策略填入顺序、理由和依赖状态；Service 随后补充命令资格。
     QList<PlannedTask> plan;
     plan.reserve(orderedTasks.size());
     for (const Task *task : orderedTasks) {

@@ -15,7 +15,7 @@
 namespace smartmate::model {
 namespace {
 
-// 字段上限只由公开的 validateDraft 解释和执行，所有写入路径必须复用它。
+/// 将 TaskId 转为无花括号文本，仅用于产生与容器/数据库顺序无关的稳定排序。
 [[nodiscard]] QString stableId(const TaskId &taskId)
 {
     return taskId.toString(QUuid::WithoutBraces);
@@ -23,6 +23,7 @@ namespace {
 
 void normalizeIds(QList<TaskId> &taskIds)
 {
+    // 批量命令先排序去重，确保验证、错误上下文和返回结果不受输入顺序影响。
     std::sort(taskIds.begin(), taskIds.end(), [](const TaskId &left,
                                                  const TaskId &right) {
         return stableId(left) < stableId(right);
@@ -34,6 +35,7 @@ void normalizeIds(QList<TaskId> &taskIds)
     const QList<Task> &tasks,
     const std::optional<TaskId> &excludedId)
 {
+    // excludedId 用于排除正在被转换的任务自身；无冲突时返回空列表。
     QList<TaskId> result;
     for (const Task &task : tasks) {
         if (task.status() == TaskStatus::InProgress
@@ -45,6 +47,8 @@ void normalizeIds(QList<TaskId> &taskIds)
     return result;
 }
 
+/// 将 RepositoryException 统一映射为稳定 ServiceResult，避免异常越过 Model 边界。
+/// 下列同类辅助函数分别保留不同用例的返回值类型。
 [[nodiscard]] TaskResult persistenceFailure(const RepositoryException &exception)
 {
     return TaskResult::failure(TaskError::PersistenceFailure,
@@ -145,6 +149,7 @@ void normalizeIds(QList<TaskId> &taskIds)
 
 [[nodiscard]] TaskError graphError(const DependencyGraphError error)
 {
+    // 对外只暴露 TaskError，隐藏依赖算法内部错误类型。
     switch (error) {
     case DependencyGraphError::None:
         return TaskError::None;
@@ -163,6 +168,7 @@ void normalizeIds(QList<TaskId> &taskIds)
 [[nodiscard]] TaskErrorContext graphContext(
     const DependencyGraphValidation &validation)
 {
+    // 冲突端点和完整环路径使用稳定 ID 返回，ViewModel 无需解析 detail。
     return {{}, validation.conflictingTaskIds, validation.cyclePath};
 }
 
@@ -176,6 +182,7 @@ template<typename T>
         graphContext(validation));
 }
 
+/// 在当前只读快照中查找任务；返回指针仅在 tasks 未修改且仍存活期间有效。
 [[nodiscard]] const Task *findTaskInList(const QList<Task> &tasks,
                                          const TaskId &taskId)
 {
@@ -186,7 +193,7 @@ template<typename T>
     return iterator == tasks.cend() ? nullptr : &*iterator;
 }
 
-/// 批量命令一次建立稳定TaskId到快照行的索引，避免任务较多时逐个线性查找退化为O(N²)。
+/// 批量命令一次建立稳定 TaskId 到快照行的索引，避免逐个线性查找退化为 O(N²)。
 [[nodiscard]] QHash<TaskId, qsizetype> taskIndexesById(
     const QList<Task> &tasks)
 {
@@ -201,6 +208,7 @@ template<typename T>
 [[nodiscard]] TaskResult singleTaskResult(TaskBatchResult batchResult,
                                           const TaskId &taskId)
 {
+    // 单项归档/恢复/删除复用批量事务路径，再把批量结果收窄为单任务结果。
     if (!batchResult.ok()) {
         return TaskResult::failure(batchResult.error,
                                    std::move(batchResult.detail),
@@ -217,6 +225,7 @@ template<typename T>
 
 void replaceTaskSnapshot(QList<Task> &tasks, const Task &replacement)
 {
+    // 只修改内存中的假想快照；全部领域不变量通过后才允许调用写端口。
     const auto iterator = std::find_if(tasks.begin(), tasks.end(),
                                        [&replacement](const Task &task) {
                                            return task.id() == replacement.id();
@@ -228,6 +237,7 @@ void replaceTaskSnapshot(QList<Task> &tasks, const Task &replacement)
 
 [[nodiscard]] TaskStatus effectiveStatus(const Task &task) noexcept
 {
+    // 归档任务仍需按归档前状态参与依赖保护；旧数据缺失恢复点时安全视为 Todo。
     if (task.status() == TaskStatus::Archived) {
         return task.statusBeforeArchive().value_or(TaskStatus::Todo);
     }
@@ -241,7 +251,9 @@ void replaceTaskSnapshot(QList<Task> &tasks, const Task &replacement)
 }
 
 struct ProtectedDependencyViolation final {
+    /// 因前置未解析而处于非法受保护状态的后继任务。
     TaskId successorId;
+    /// 该后继当前未满足的直接前置任务。
     QList<TaskId> blockingTaskIds;
 };
 
@@ -266,6 +278,7 @@ struct ProtectedDependencyViolation final {
 [[nodiscard]] TaskErrorContext stateViolationContext(
     const QList<ProtectedDependencyViolation> &violations)
 {
+    // 聚合并规范化全部冲突，保证批量错误一次给出完整且稳定的定位信息。
     QList<TaskId> blockingTaskIds;
     QList<TaskId> conflictingTaskIds;
     for (const ProtectedDependencyViolation &violation : violations) {
@@ -357,6 +370,7 @@ struct ProtectedDependencyViolation final {
     const QList<TaskDependency> &dependencies,
     const TaskId &successorId)
 {
+    // 编辑器只需要目标任务的入边；按前置稳定 ID 排序保证展示可复现。
     QList<TaskDependency> result;
     for (const TaskDependency &dependency : dependencies) {
         if (dependency.successorId == successorId) {
@@ -415,6 +429,7 @@ struct ProtectedDependencyViolation final {
                                const TaskDraft &draft,
                                const QDateTime &nowUtc)
 {
+    // Service 统一将时间写成 UTC，Persistence 不负责猜测输入时区。
     const std::optional<QDateTime> deadline = draft.deadline.has_value()
         ? std::optional<QDateTime>{draft.deadline->toUTC()}
         : std::nullopt;

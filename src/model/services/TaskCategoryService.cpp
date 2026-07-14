@@ -11,6 +11,7 @@
 namespace smartmate::model {
 namespace {
 
+/// 类别名长度按 Unicode code point 计算，而不是 UTF-16 code unit。
 constexpr qsizetype maximumCategoryNameLength = 50;
 
 [[nodiscard]] QString stableCategoryId(const TaskCategoryId &id)
@@ -54,6 +55,7 @@ constexpr qsizetype maximumCategoryNameLength = 50;
                                     const QString &nameKey,
                                     const std::optional<TaskCategoryId> &excludedId)
 {
+    // 更新时排除自身；名称比较统一使用领域规范化键，保证大小写规则一致。
     return std::any_of(categories.cbegin(), categories.cend(),
                        [&nameKey, &excludedId](const TaskCategory &category) {
         return (!excludedId.has_value() || category.id != *excludedId)
@@ -63,6 +65,7 @@ constexpr qsizetype maximumCategoryNameLength = 50;
 
 void sortCategories(QList<TaskCategory> &categories)
 {
+    // 稳定 ID 作为同名键的次级排序，避免 Repository 返回顺序影响界面。
     std::sort(categories.begin(), categories.end(),
               [](const TaskCategory &left, const TaskCategory &right) {
         const QString leftKey = taskCategoryNameKey(left.name);
@@ -127,6 +130,7 @@ TaskCategoryResult TaskCategoryService::createCategory(
         }
 
         TaskCategoryId id;
+        // UUID 理论上极少冲突，但 Service 仍以当前快照复核，确保领域 ID 唯一。
         do {
             id = QUuid::createUuid();
         } while (std::any_of(categories.cbegin(), categories.cend(),
@@ -170,6 +174,7 @@ TaskCategoryResult TaskCategoryService::updateCategory(
                 QStringLiteral("Task category name already exists."));
         }
         if (current->name == name && current->color == draft.color) {
+            // 幂等保存不写 Repository，也不触发无意义的投影刷新。
             return TaskCategoryResult::success(*current);
         }
 
@@ -205,6 +210,7 @@ TaskCategoryDeletionResult TaskCategoryService::deleteCategory(
         }
 
         const CategoryDeletionWriteResult writeResult =
+            // “删除类别 + 清空任务归属”必须由 Repository 端口在同一事务中完成。
             m_repository.deleteCategoryAndUnassignTasks(
                 id, QDateTime::currentDateTimeUtc());
         if (!writeResult.categoryDeleted) {

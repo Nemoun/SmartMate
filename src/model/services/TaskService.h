@@ -19,6 +19,7 @@ class TaskService final : public QObject {
     Q_OBJECT
 
 public:
+    /// 注入查询端口及跨表原子命令端口；QObject 仅用于发布强类型变化信号。
     TaskService(ITaskRepository &repository,
                 ITaskDependencyRepository &dependencyRepository,
                 ITaskCreationRepository &creationRepository,
@@ -31,11 +32,13 @@ public:
     [[nodiscard]] TaskValidationResult validateDraft(const TaskDraft &draft) const;
     /// 单独校验类型化选择器产生的总分钟数，规则与完整草稿校验一致。
     [[nodiscard]] TaskValidationResult validateEstimatedMinutes(int minutes) const;
+    /// 读取全部任务领域快照；不在 Service 中附加展示筛选。
     [[nodiscard]] TaskListResult listTasks() const;
     /// 返回新建关系可选的前置任务，排序稳定且不包含归档或取消任务。
     [[nodiscard]] TaskListResult listEligibleCreationPredecessors() const;
     /// 读取任务快照并应用 Model 排序策略，不持久化随时间变化的推荐排名。
     [[nodiscard]] TaskPlanResult listRecommendedTasks() const;
+    /// 读取全部 Finish-to-Start 依赖边。
     [[nodiscard]] TaskDependencyListResult listDependencies() const;
     /// 读取依赖编辑器的完整业务上下文；候选范围与选择资格全部由 Model 判定。
     [[nodiscard]] TaskDependencyEditContextResult taskDependencyEditContext(
@@ -49,6 +52,7 @@ public:
     [[nodiscard]] TaskDependencyListResult replaceTaskPredecessors(
         const TaskId &taskId,
         const QList<TaskId> &predecessorIds);
+    /// 按稳定 TaskId 查找任务；不存在时返回结构化 NotFound。
     [[nodiscard]] TaskResult findTask(const TaskId &id) const;
     /// 加载可编辑任务；非 Todo 返回 TaskDetailsNotEditable，调用方不得建立编辑草稿。
     [[nodiscard]] TaskResult findEditableTask(const TaskId &id) const;
@@ -95,16 +99,18 @@ private:
         const QList<TaskId> &taskIds,
         TaskTransition transition);
 
-    // 非拥有引用，其生命周期必须长于 TaskService。
+    // 以下均为非拥有端口引用，其生命周期必须长于 TaskService。
+    /// 任务快照的基础查询与单项条件更新端口。
     ITaskRepository &m_repository;
+    /// 依赖边查询与“替换全部前置”的原子写入端口。
     ITaskDependencyRepository &m_dependencyRepository;
     /// 独立命令端口保证跨 tasks 与 task_dependencies 的写入具有事务边界。
     ITaskCreationRepository &m_creationRepository;
-    /// 批量状态端口以条件更新防御Service预检后的并发变化，并保证整批原子发布。
+    /// 批量状态端口以条件更新防御 Service 预检后的并发变化，并保证整批原子发布。
     ITaskBatchTransitionRepository &m_batchTransitionRepository;
     /// 永久删除端口保证任务与全部入边、出边在同一事务内移除。
     ITaskDeletionRepository &m_deletionRepository;
-    /// 仅用于验证任务草稿中的稳定类别ID和分类图查询，不承担类别生命周期命令。
+    /// 仅用于验证任务草稿中的稳定类别 ID 和分类图查询，不承担类别生命周期命令。
     ITaskCategoryRepository &m_categoryRepository;
 };
 

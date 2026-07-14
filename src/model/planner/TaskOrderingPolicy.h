@@ -11,24 +11,37 @@ namespace smartmate::model {
 
 /// 解释任务出现在推荐位置的主导语义；ViewModel 仅负责将其映射为展示文案。
 enum class TaskOrderReason {
+    /// 当前正在执行，优先保持焦点。
     InProgress,
+    /// 活动任务已超过截止时间。
     Overdue,
+    /// 待办任务具有紧急优先级。
     UrgentPriority,
+    /// 待办任务具有高优先级。
     HighPriority,
+    /// 待办任务设置了尚未逾期的截止时间。
     UpcomingDeadline,
+    /// 普通待办任务，没有更高主导理由。
     Todo,
+    /// 已完成任务。
     Completed,
+    /// 已取消任务。
     Cancelled,
+    /// 已归档任务。
     Archived,
 };
 
 /// 推荐顺序中的领域快照及其理由，不保存列表行号或持久化排名。
 struct PlannedTask final {
+    /// 排序时使用的不可变任务快照。
     Task task;
+    /// 当前排序位置的主导领域语义，不是界面文案。
     TaskOrderReason reason;
     /// 当前时刻下的逾期派生标记，与主导排序理由相互独立。
     bool overdue{false};
+    /// 同一快照下计算的阻塞、前置和解锁信息。
     TaskDependencyState dependencyState;
+    /// Service 可在返回计划前填入的完整命令资格。
     TaskCommandAvailability availability;
 
     friend bool operator==(const PlannedTask &, const PlannedTask &) = default;

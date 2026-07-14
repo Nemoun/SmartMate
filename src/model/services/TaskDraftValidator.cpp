@@ -5,6 +5,7 @@
 namespace smartmate::model {
 namespace {
 
+/// 文本长度上限属于 Model 业务规则，Widget 只能据此展示校验结果。
 constexpr int maximumTitleLength = 200;
 constexpr int maximumDescriptionLength = 5000;
 
@@ -35,6 +36,7 @@ TaskValidationResult validateTaskEstimatedMinutes(const int minutes)
 
 TaskValidationResult validateTaskDraft(const TaskDraft &draft)
 {
+    // 标题持久化前统一去除首尾空白；描述保留用户输入的原始排版。
     const QString normalizedTitle = draft.title.trimmed();
     if (normalizedTitle.isEmpty()) {
         return TaskValidationResult::failure(

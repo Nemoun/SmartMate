@@ -34,6 +34,7 @@ AppearanceSettingsResult AppearanceSettingsService::load() const
 {
     try {
         const AppearanceSettings settings = m_repository.load();
+        // 持久化的旧值可能来自更早版本；读取时安全回退默认值，避免无效偏好阻断启动。
         return isValid(settings)
             ? AppearanceSettingsResult::success(settings)
             : AppearanceSettingsResult::success(AppearanceSettings{});
@@ -51,6 +52,7 @@ AppearanceSettingsResult AppearanceSettingsService::load() const
 AppearanceSettingsResult AppearanceSettingsService::save(
     const AppearanceSettings &settings)
 {
+    // Service 在写入端再次校验，不能信任 ViewModel 或 Widget 已做过的输入限制。
     if (!isValid(settings)) {
         return AppearanceSettingsResult::failure(
             AppearanceSettingsError::InvalidValue,

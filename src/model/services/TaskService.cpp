@@ -58,6 +58,7 @@ TaskListResult TaskService::listEligibleCreationPredecessors() const
 {
     try {
         const QList<Task> tasks = m_repository.findAll();
+        // 候选沿用 Model 推荐顺序，ViewModel 只做文案投影，不得自行重排。
         const QList<PlannedTask> recommended = orderTasks(
             tasks, QDateTime::currentDateTimeUtc());
         QList<Task> eligibleTasks;
@@ -84,6 +85,7 @@ TaskPlanResult TaskService::listRecommendedTasks() const
             m_dependencyRepository.findAllDependencies();
         const TaskDependencyGraph graph{tasks, dependencies};
         const DependencyGraphValidation validation = graph.validation();
+        // 推荐排序依赖一张有效 DAG；损坏的持久化图不能被静默投影为可信计划。
         if (!validation.ok()) {
             return graphFailure<QList<PlannedTask>>(validation);
         }
@@ -97,6 +99,7 @@ TaskPlanResult TaskService::listRecommendedTasks() const
         }
         QList<PlannedTask> plan = orderTasks(
             tasks, dependencies, QDateTime::currentDateTimeUtc());
+        // 命令资格与排序理由均由同一份 Model 快照计算，避免界面显示与执行条件分裂。
         const auto availabilities = taskCommandAvailabilities(tasks, dependencies);
         for (PlannedTask &planned : plan) {
             planned.availability = availabilities.value(planned.task.id());
@@ -154,6 +157,7 @@ TaskDependencyEditContextResult TaskService::taskDependencyEditContext(
         TaskDependencyEditContext context{*target, {}, {}};
         context.taskTitles.reserve(tasks.size());
         for (const Task &task : tasks) {
+            // 完整标题映射用于显示循环路径，不把领域对象直接暴露给 ViewModel Contract。
             context.taskTitles.insert(task.id(), task.title());
         }
 
@@ -168,6 +172,7 @@ TaskDependencyEditContextResult TaskService::taskDependencyEditContext(
             const bool alreadySelected = selected.contains(candidate.id());
             const bool eligible = candidate.status() != TaskStatus::Archived
                 && candidate.status() != TaskStatus::Cancelled;
+            // 已存在的取消/归档关系必须保留显示且可移除，只禁止把它们作为新关系加入。
             if (eligible || alreadySelected) {
                 context.candidates.append(
                     {candidate, alreadySelected, eligible || alreadySelected});
@@ -226,6 +231,7 @@ TaskGraphResult TaskService::taskGraphSnapshot(const TaskGraphQuery &query) cons
             }
         }
         const QList<TaskId> connectedIds = graph.connectedTaskIds(activeTaskIds);
+        // 归档节点仅在与活动任务连通时作为依赖上下文保留，孤立历史节点不进入图快照。
         const QSet<TaskId> baseVisibleIds(connectedIds.cbegin(), connectedIds.cend());
 
         QSet<TaskId> coreIds;
@@ -277,11 +283,13 @@ TaskGraphResult TaskService::taskGraphSnapshot(const TaskGraphQuery &query) cons
             }
         }
         const QHash<TaskId, int> levels =
+            // 层级按裁剪后的可见图重算，避免隐藏节点在画布上制造无意义空层。
             TaskDependencyGraph{visibleTasks, visibleDependencies}.dependencyLevels();
 
         TaskGraphSnapshot snapshot;
         const QList<PlannedTask> recommended = orderTasks(
             tasks, dependencies, QDateTime::currentDateTimeUtc());
+        // 排名、闭包和命令资格仍基于完整业务图；类别裁剪只影响展示范围。
         const auto availabilities = taskCommandAvailabilities(tasks, dependencies);
         snapshot.nodes.reserve(visibleIds.size());
         for (const PlannedTask &plannedTask : recommended) {
@@ -347,6 +355,7 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
 
         QList<TaskId> normalizedPredecessors = predecessorIds;
         normalizeIds(normalizedPredecessors);
+        // 去重后的数量变化用于拒绝重复输入，不能悄悄吞掉错误关系。
         if (normalizedPredecessors.size() != predecessorIds.size()) {
             QList<TaskId> duplicateIds;
             QSet<TaskId> seenIds;
@@ -404,6 +413,7 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
                 ineligibleIds.append(predecessorId);
             }
         }
+        // 资格仅约束“新增”关系；历史取消关系保留后仍允许用户通过本次保存移除。
         normalizeIds(ineligibleIds);
         if (!ineligibleIds.isEmpty()) {
             return TaskDependencyListResult::failure(
@@ -426,15 +436,18 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
         }
 
         const DependencyGraphValidation validation =
+            // 先在内存中验证替换后的完整图，确认无缺失端点、重复边与环后再写入。
             TaskDependencyGraph{tasks, replacementDependencies}.validation();
         if (!validation.ok()) {
             return graphFailure<QList<TaskDependency>>(validation);
         }
 
         if (currentPredecessors == normalizedPredecessors) {
+            // 幂等保存不触发事务和 dependenciesChanged，避免所有依赖投影无效刷新。
             return TaskDependencyListResult::success(currentIncoming);
         }
 
+        // Repository 端口负责“删除旧入边 + 插入新入边”的单事务原子替换。
         m_dependencyRepository.replacePredecessors(taskId, normalizedPredecessors);
         QList<TaskDependency> replacedIncoming;
         replacedIncoming.reserve(normalizedPredecessors.size());
@@ -545,6 +558,7 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
         }
 
         TaskId taskId;
+        // 生成 ID 后仍对当前快照复核，确保创建请求中的关系始终引用唯一稳定端点。
         do {
             taskId = QUuid::createUuid();
         } while (findTaskInList(tasks, taskId) != nullptr);
@@ -561,6 +575,7 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
         }
         const TaskDependencyGraph graph{hypotheticalTasks,
                                         hypotheticalDependencies};
+        // 新任务和全部前置先组成最终假想快照，所有图规则通过后才进入事务端口。
         const DependencyGraphValidation graphValidation = graph.validation();
         if (!graphValidation.ok()) {
             return graphFailure<Task>(graphValidation);
@@ -575,6 +590,7 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
         }
 
         try {
+            // 任务与全部依赖边必须一次提交；Service 不循环调用两个 Repository 制造部分成功。
             m_creationRepository.insertTaskWithPredecessors(
                 task, normalizedPredecessors);
         } catch (const RepositoryException &exception) {
@@ -682,6 +698,7 @@ TaskResult TaskService::deleteArchivedTask(const TaskId &id)
 TaskBatchResult TaskService::deleteArchivedTasks(const QList<TaskId> &taskIds)
 {
     QList<TaskId> normalizedTaskIds = taskIds;
+    // 批量选择以稳定 ID 表示；排序去重使事务输入与错误结果具有确定性。
     normalizeIds(normalizedTaskIds);
     if (normalizedTaskIds.isEmpty()) {
         return TaskBatchResult::failure(
@@ -729,6 +746,7 @@ TaskBatchResult TaskService::deleteArchivedTasks(const QList<TaskId> &taskIds)
         }
 
         const TaskDeletionWriteResult writeResult =
+            // 端口在同一事务中条件删除任务及其全部入边、出边，并报告并发冲突。
             m_deletionRepository.deleteArchivedTasksWithDependencies(
                 normalizedTaskIds);
         if (!writeResult.conflictingTaskIds.isEmpty()) {
@@ -767,6 +785,7 @@ TaskBatchResult TaskService::deleteArchivedTasks(const QList<TaskId> &taskIds)
                 TaskErrorContext{{}, std::move(conflicts), {}});
         }
         if (writeResult.deletedTaskCount != normalizedTaskIds.size()) {
+            // 原子端口必须满足“全有或全无”；数量不匹配视为端口契约被破坏。
             return TaskBatchResult::failure(
                 TaskError::PersistenceFailure,
                 QStringLiteral("Deletion repository did not delete the complete batch."));
@@ -799,6 +818,7 @@ TaskBatchResult TaskService::applyBatchTransition(
     }
 
     try {
+        // tasks 会被逐项替换为转换后的最终假想快照，尚未触碰持久化状态。
         QList<Task> tasks = m_repository.findAll();
         const QHash<TaskId, qsizetype> taskIndexes = taskIndexesById(tasks);
         const QList<TaskDependency> dependencies =
@@ -832,6 +852,7 @@ TaskBatchResult TaskService::applyBatchTransition(
             Task transitioned = makeTaskWithStatus(
                 current, *targetStatus, statusBeforeArchive, nowUtc);
             changes.append({taskId,
+                            // 携带期望旧状态，让 Repository 用条件更新防御预检后的并发变化。
                             current.status(),
                             *targetStatus,
                             statusBeforeArchive,
@@ -858,6 +879,7 @@ TaskBatchResult TaskService::applyBatchTransition(
             return *dependencyFailure;
         }
 
+        // 所有目标和最终图一次验证完成后，才通过批量端口原子写入整组状态变化。
         const TaskBatchWriteResult writeResult =
             m_batchTransitionRepository.updateTaskStatesAtomically(changes);
         if (!writeResult.conflictingTaskIds.isEmpty()) {
@@ -896,6 +918,7 @@ TaskResult TaskService::applyTransition(const TaskId &id,
         }
 
         const std::optional<TaskStatus> targetStatus =
+            // Service 始终询问唯一领域状态机，不能由调用者直接指定任意目标状态。
             TaskStateMachine::targetStatus(*current, transition);
         if (!targetStatus.has_value()) {
             return TaskResult::failure(
@@ -905,6 +928,7 @@ TaskResult TaskService::applyTransition(const TaskId &id,
         }
 
         if (*targetStatus == TaskStatus::InProgress) {
+            // 先提供清晰业务错误；数据库唯一约束仍负责封堵多进程并发竞争。
             const QList<TaskId> conflictingIds = otherInProgressTaskIds(tasks, id);
             if (!conflictingIds.isEmpty()) {
                 return TaskResult::failure(
