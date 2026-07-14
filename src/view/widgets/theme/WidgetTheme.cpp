@@ -62,6 +62,8 @@ QPalette WidgetTheme::palette() const
     result.setColor(QPalette::Dark, borderStrong);
     result.setColor(QPalette::PlaceholderText, textMuted);
     result.setColor(QPalette::Link, primary);
+    result.setColor(QPalette::BrightText, danger);
+    result.setColor(QPalette::LinkVisited, warning);
     result.setColor(QPalette::Highlight, primary);
     result.setColor(QPalette::HighlightedText, QColor{"#ffffff"});
     return result;
@@ -86,17 +88,57 @@ QString WidgetTheme::styleSheet() const
             color: %10; background: %11;
         }
         QComboBox { padding: 6px 10px; border: 1px solid %7; border-radius: 6px; background: %5; }
+        QDialog#taskEditorDialog { background: %14; color: %2; }
+        QFrame#taskEditorHeader, QFrame#taskEditorFooter {
+            background: %6; border: none;
+        }
+        QFrame#taskEditorHeader { border-bottom: 1px solid %4; }
+        QFrame#taskEditorFooter { border-top: 1px solid %4; }
+        QScrollArea#taskEditorScrollView, QWidget#taskEditorContent {
+            background: %14; border: none;
+        }
+        QFrame#taskEditorBasicSection, QFrame#taskEditorPlanningSection,
+        QFrame#taskEditorScheduleSection {
+            background: %5; border: 1px solid %4; border-radius: 11px;
+        }
+        QLabel#taskEditorHeaderTitle { color: %2; font-size: 21px; font-weight: 700; }
+        QLabel#taskEditorHeaderSubtitle { color: %12; font-size: 12px; }
+        QLabel#taskEditorSectionTitle { color: %10; font-size: 16px; font-weight: 700; }
+        QLabel#taskEditorFieldLabel { color: %15; font-weight: 600; }
+        QDialog#taskEditorDialog QLineEdit, QDialog#taskEditorDialog QPlainTextEdit {
+            color: %15; background: %5; border: 1px solid %7;
+            border-radius: 8px; padding: 8px 10px;
+        }
+        QDialog#taskEditorDialog QLineEdit:focus,
+        QDialog#taskEditorDialog QPlainTextEdit:focus { border: 2px solid %10; }
+        QFrame#taskEditorReadOnlyField {
+            background: %6; border: 1px solid %7; border-radius: 8px;
+        }
+        QLabel#taskEditorValidation { color: %16; border: none; background: transparent; }
+        QPushButton#saveTaskButton {
+            color: white; background: %10; border-color: %10; font-weight: 700;
+        }
+        QPushButton#clearCreationPredecessorButton, QPushButton#clearDeadlineButton,
+        QPushButton#clearDurationButton { min-width: 20px; padding: 7px 8px; }
         QLabel#pageTitle { color: %2; font-size: 24px; font-weight: 700; }
         QLabel#sectionTitle { color: %2; font-size: 17px; font-weight: 700; }
+        QLabel#settingsPreviewTitle { color: %2; font-size: 17px; font-weight: 700; }
+        QLabel#settingsPreviewDescription { color: %12; font-size: 14px; }
         QLabel#secondaryText { color: %12; }
-        QLabel#previewStatus { color: %13; }
+        QLabel#previewStatus { color: %13; font-size: 13px; }
+        QLabel#focusEyebrow { color: %10; font-size: 13px; font-weight: 700; }
+        QLabel#focusTaskTitle { color: %2; font-size: 20px; font-weight: 700; }
+        QLabel#focusTaskDescription { color: %12; font-size: 13px; }
+        QLabel#focusTaskMeta { color: %12; font-size: 12px; }
+        QLabel#focusOverdueReminder { color: %16; font-size: 12px; font-weight: 600; }
         QStatusBar { background: %5; color: %12; border-top: 1px solid %4; }
     )")
         .arg(background.name(), textPrimary.name(), navigation.name(),
              borderSoft.name(), surface.name(), surfaceSubtle.name(),
              border.name(), surfaceStrong.name(), borderStrong.name(),
              primary.name(), primarySoft.name(), textSecondary.name(),
-             inProgress.name());
+             inProgress.name(), surfaceElevated.name(), textBody.name(),
+             danger.name());
 }
 
 QFont appearanceFont(const QFont &baseline,

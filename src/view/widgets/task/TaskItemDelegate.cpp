@@ -1,5 +1,6 @@
 #include "TaskItemDelegate.h"
 
+#include "TaskPage.h"
 #include "viewmodel/contracts/TaskListContract.h"
 
 #include <QApplication>
@@ -53,7 +54,14 @@ void TaskItemDelegate::paint(QPainter *painter,
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(selected ? option.palette.highlight().color()
                                   : option.palette.mid().color(), selected ? 2 : 1));
-    painter->setBrush(option.palette.base());
+    const auto *taskList = qobject_cast<const TaskListView *>(option.widget);
+    if (!taskList) {
+        taskList = qobject_cast<const TaskListView *>(parent());
+    }
+    const QColor cardSurface = taskList
+        ? taskList->cardSurfaceColor()
+        : QApplication::palette().color(QPalette::Base);
+    painter->setBrush(cardSurface);
     painter->drawRoundedRect(card, 10, 10);
 
     const bool blocked = index.data(Role::BlockedRole).toBool();

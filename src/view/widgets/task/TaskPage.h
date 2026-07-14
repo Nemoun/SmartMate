@@ -6,6 +6,8 @@
 #include <QWidget>
 
 class QComboBox;
+class QColor;
+class QEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -43,6 +45,8 @@ class TaskListView final : public QListView {
     Q_OBJECT
 public:
     explicit TaskListView(QWidget *parent = nullptr);
+    /// 返回未受透明 viewport 样式覆盖的主题卡片表面色。
+    [[nodiscard]] QColor cardSurfaceColor() const;
 signals:
     /// 仅表示 View 已建立原生拖拽会话，供展示反馈和手势回归测试使用。
     void taskDragStarted(const QString &taskId);
@@ -71,16 +75,25 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void changeEvent(QEvent *event) override;
 private:
     void setDragActive(bool active);
     void synchronize();
+    void applyPresentationStyle();
     viewmodel::TaskFocusContract &m_focus;
     viewmodel::TaskListContract &m_tasks;
+    QFrame *m_iconFrame;
+    QLabel *m_icon;
+    QLabel *m_eyebrow;
     QLabel *m_title;
     QLabel *m_description;
     QLabel *m_meta;
+    QLabel *m_categoryBadge;
+    QLabel *m_overdueBadge;
+    QLabel *m_overdueReminder;
     QPushButton *m_details;
     QPushButton *m_primary;
+    bool m_applyingStyle{false};
     bool m_dragActive{false};
 };
 

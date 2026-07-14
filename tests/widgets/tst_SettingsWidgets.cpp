@@ -4,6 +4,7 @@
 
 #include <QComboBox>
 #include <QFrame>
+#include <QLabel>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -120,6 +121,7 @@ private slots:
     void userEventsInvokeStronglyTypedCommands();
     void contractNotificationUpdatesControlsWithoutWriteBack();
     void themeAndUiNotificationArePresentedByMainWindow();
+    void previewRemainsReadableAtNarrowWidthAndLargeFont();
 };
 
 void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
@@ -211,6 +213,39 @@ void SettingsWidgetsTest::themeAndUiNotificationArePresentedByMainWindow()
              QStringLiteral("外观设置失败：无法保存外观设置"));
     QCOMPARE(window.statusBar()->palette().color(QPalette::WindowText),
              blueTheme.danger);
+}
+
+void SettingsWidgetsTest::previewRemainsReadableAtNarrowWidthAndLargeFont()
+{
+    FakeAppearanceSettingsContract settings;
+    SettingsPage page{settings};
+    QFont enlarged = page.font();
+    enlarged.setPointSizeF(enlarged.pointSizeF() * 1.1);
+    page.setFont(enlarged);
+    page.resize(350, 620);
+    page.show();
+    QCoreApplication::processEvents();
+
+    auto *preview = requiredChild<QFrame>(page, "previewCard");
+    auto *title = requiredChild<QLabel>(page, "settingsPreviewTitle");
+    auto *description = requiredChild<QLabel>(page, "settingsPreviewDescription");
+    auto *status = requiredChild<QLabel>(page, "previewStatus");
+    const auto inPreview = [preview](QWidget *child) {
+        return QRect{child->mapTo(preview, QPoint{}), child->size()};
+    };
+    const QRect titleRect = inPreview(title);
+    const QRect descriptionRect = inPreview(description);
+    const QRect statusRect = inPreview(status);
+    QVERIFY(preview->height() >= preview->minimumHeight());
+    QVERIFY(preview->rect().contains(titleRect));
+    QVERIFY(preview->rect().contains(descriptionRect));
+    QVERIFY(preview->rect().contains(statusRect));
+    QVERIFY(titleRect.bottom() < descriptionRect.top());
+    QVERIFY(descriptionRect.bottom() < statusRect.top());
+
+    QCOMPARE(settings.accentSetCount, 0);
+    QCOMPARE(settings.familySetCount, 0);
+    QCOMPARE(settings.scaleSetCount, 0);
 }
 
 QTEST_MAIN(SettingsWidgetsTest)

@@ -20,6 +20,7 @@
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDropEvent>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -40,6 +41,12 @@ using ListRole = viewmodel::TaskListContract::Role;
 TaskListView::TaskListView(QWidget *parent) : QListView(parent)
 {
     setObjectName(QStringLiteral("taskListView"));
+    setFrameShape(QFrame::NoFrame);
+    setAutoFillBackground(false);
+    viewport()->setAutoFillBackground(false);
+    viewport()->setAttribute(Qt::WA_TranslucentBackground);
+    setStyleSheet(QStringLiteral(
+        "QListView#taskListView { background: transparent; border: none; outline: none; }"));
     setSelectionMode(QAbstractItemView::SingleSelection);
     // 原生 item drag 依赖模型 flags，且会把整张卡片变为拖拽源；这里由 View
     // 显式识别专用拖拽柄，资格仍只读取 Contract 的 CanStartRole。
@@ -47,6 +54,20 @@ TaskListView::TaskListView(QWidget *parent) : QListView(parent)
     setMouseTracking(true);
     setSpacing(2);
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+}
+
+QColor TaskListView::cardSurfaceColor() const
+{
+    // QListView 的透明 QSS 会在部分平台把自身 Base role 改写为黑色；窗口根节点
+    // 仍持有 WidgetTheme 注入的真实表面色，因此卡片与拖拽预览统一从这里读取。
+    const QWidget *themeRoot = window();
+    QColor surface = themeRoot && themeRoot != this
+        ? themeRoot->palette().color(QPalette::Base)
+        : QApplication::palette().color(QPalette::Base);
+    if (!surface.isValid() || surface.alpha() == 0) {
+        surface = QColor(QStringLiteral("#ffffff"));
+    }
+    return surface;
 }
 
 void TaskListView::startDrag(Qt::DropActions)
@@ -65,7 +86,7 @@ void TaskListView::startDrag(Qt::DropActions)
     QPainter painter(&preview);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setPen(QPen(palette().highlight().color(), 2));
-    painter.setBrush(palette().base());
+    painter.setBrush(cardSurfaceColor());
     painter.drawRoundedRect(preview.rect().adjusted(1, 1, -2, -2), 11, 11);
     QFont handleFont = font();
     handleFont.setPointSizeF(handleFont.pointSizeF() + 4);
@@ -150,26 +171,63 @@ TaskFocusPanel::TaskFocusPanel(viewmodel::TaskFocusContract &focus,
                                viewmodel::TaskListContract &tasks,
                                QWidget *parent)
     : QFrame(parent), m_focus(focus), m_tasks(tasks)
-    , m_title(new QLabel(this)), m_description(new QLabel(this))
-    , m_meta(new QLabel(this)), m_details(new QPushButton(tr("查看详情"), this))
+    , m_iconFrame(new QFrame(this)), m_icon(new QLabel(m_iconFrame))
+    , m_eyebrow(new QLabel(this)), m_title(new QLabel(this))
+    , m_description(new QLabel(this)), m_meta(new QLabel(this))
+    , m_categoryBadge(new QLabel(this)), m_overdueBadge(new QLabel(this))
+    , m_overdueReminder(new QLabel(this))
+    , m_details(new QPushButton(tr("查看详情"), this))
     , m_primary(new QPushButton(this))
 {
     setObjectName(QStringLiteral("focusTaskSlot"));
     setFrameShape(QFrame::StyledPanel);
-    setMinimumHeight(148);
+    setMinimumHeight(158);
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     setAcceptDrops(true);
     auto *layout = new QHBoxLayout(this);
+    layout->setContentsMargins(18, 16, 18, 16);
+    layout->setSpacing(16);
+
+    m_iconFrame->setObjectName(QStringLiteral("focusStateIcon"));
+    m_iconFrame->setFixedSize(48, 48);
+    auto *iconLayout = new QVBoxLayout(m_iconFrame);
+    iconLayout->setContentsMargins(0, 0, 0, 0);
+    m_icon->setObjectName(QStringLiteral("focusStateIconText"));
+    m_icon->setAlignment(Qt::AlignCenter);
+    iconLayout->addWidget(m_icon);
+    layout->addWidget(m_iconFrame, 0, Qt::AlignTop);
+
     auto *text = new QVBoxLayout;
-    m_title->setObjectName(QStringLiteral("sectionTitle"));
+    text->setSpacing(5);
+    auto *heading = new QHBoxLayout;
+    heading->setSpacing(7);
+    m_eyebrow->setObjectName(QStringLiteral("focusEyebrow"));
+    m_categoryBadge->setObjectName(QStringLiteral("focusCategoryBadge"));
+    m_overdueBadge->setObjectName(QStringLiteral("focusOverdueBadge"));
+    m_overdueBadge->setText(tr("已逾期"));
+    heading->addWidget(m_eyebrow);
+    heading->addWidget(m_categoryBadge);
+    heading->addWidget(m_overdueBadge);
+    heading->addStretch();
+    m_title->setObjectName(QStringLiteral("focusTaskTitle"));
     m_description->setWordWrap(true);
-    m_description->setObjectName(QStringLiteral("secondaryText"));
-    m_meta->setObjectName(QStringLiteral("secondaryText"));
-    text->addWidget(m_title); text->addWidget(m_description); text->addWidget(m_meta);
+    m_description->setObjectName(QStringLiteral("focusTaskDescription"));
+    m_meta->setObjectName(QStringLiteral("focusTaskMeta"));
+    m_overdueReminder->setObjectName(QStringLiteral("focusOverdueReminder"));
+    m_overdueReminder->setText(tr("请尽快处理，避免计划继续延误。"));
+    text->addLayout(heading);
+    text->addWidget(m_title);
+    text->addWidget(m_description);
+    text->addWidget(m_meta);
+    text->addWidget(m_overdueReminder);
     layout->addLayout(text, 1);
     auto *actions = new QVBoxLayout;
+    actions->setSpacing(8);
+    actions->addStretch();
+    m_details->setObjectName(QStringLiteral("focusDetailsButton"));
     m_primary->setObjectName(QStringLiteral("focusPrimaryActionButton"));
     actions->addWidget(m_details); actions->addWidget(m_primary);
+    actions->addStretch();
     layout->addLayout(actions);
     connect(&m_focus, &viewmodel::TaskFocusContract::focusTaskChanged,
             this, &TaskFocusPanel::synchronize);
@@ -195,35 +253,102 @@ void TaskFocusPanel::synchronize()
 {
     const auto state = m_focus.focusState();
     if (m_dragActive) {
+        m_icon->setText(QStringLiteral("↓"));
+        m_eyebrow->setText(tr("现在做 · 拖放开始"));
         m_title->setText(tr("释放以开始任务"));
         m_description->setText(tr("任务资格和依赖约束将由任务服务最终校验。"));
         m_meta->clear();
+        m_categoryBadge->hide();
+        m_overdueBadge->hide();
+        m_overdueReminder->hide();
         m_details->hide();
         m_primary->hide();
+        applyPresentationStyle();
         return;
     }
     m_primary->show();
     if (state == viewmodel::TaskFocusContract::FocusState::AllBlocked) {
+        m_icon->setText(QStringLiteral("!"));
+        m_eyebrow->setText(tr("现在做 · 等待解锁"));
         m_title->setText(tr("当前任务都被前置条件阻塞"));
         m_description->setText(tr("打开依赖图查看阻塞关系。"));
         m_primary->setText(tr("查看依赖图"));
     } else if (state == viewmodel::TaskFocusContract::FocusState::NoTasks) {
+        m_icon->setText(QStringLiteral("+"));
+        m_eyebrow->setText(tr("现在做"));
         m_title->setText(tr("还没有待办任务"));
         m_description->setText(tr("新建一项任务开始规划。"));
         m_primary->setText(tr("新建任务"));
     } else {
+        const bool inProgress = state == viewmodel::TaskFocusContract::FocusState::InProgress;
+        m_icon->setText(QStringLiteral("▶"));
+        m_eyebrow->setText(inProgress ? tr("现在做 · 正在进行") : tr("现在做 · 推荐任务"));
         m_title->setText(m_focus.focusTitle());
-        m_description->setText(state == viewmodel::TaskFocusContract::FocusState::Suggested
-            ? tr("推荐：%1").arg(m_focus.focusReasonText()) : m_focus.focusDescription());
-        m_primary->setText(state == viewmodel::TaskFocusContract::FocusState::InProgress
+        m_description->setText(inProgress
+            ? m_focus.focusDescription()
+            : tr("推荐：%1 · 也可拖入任意可执行任务").arg(m_focus.focusReasonText()));
+        m_primary->setText(inProgress
             ? tr("完成任务") : tr("开始推荐任务"));
     }
     QStringList meta{m_focus.focusStatusText(), m_focus.focusPriorityText()};
     if (!m_focus.focusDeadlineText().isEmpty()) meta << tr("截止 %1").arg(m_focus.focusDeadlineText());
-    if (m_focus.focusOverdue()) meta << tr("已逾期");
-    if (m_focus.focusHasCategory()) meta << m_focus.focusCategoryName();
     m_meta->setText(meta.join(QStringLiteral(" · ")));
-    m_details->setVisible(!m_focus.focusTaskId().isEmpty());
+    const bool hasTask = !m_focus.focusTaskId().isEmpty();
+    m_meta->setVisible(hasTask);
+    m_categoryBadge->setText(m_focus.focusCategoryName());
+    m_categoryBadge->setVisible(hasTask && m_focus.focusHasCategory());
+    m_overdueBadge->setVisible(hasTask && m_focus.focusOverdue());
+    m_overdueReminder->setVisible(hasTask && m_focus.focusOverdue());
+    m_details->setVisible(hasTask);
+    applyPresentationStyle();
+}
+
+void TaskFocusPanel::changeEvent(QEvent *event)
+{
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::FontChange) {
+        applyPresentationStyle();
+    }
+}
+
+void TaskFocusPanel::applyPresentationStyle()
+{
+    // setStyleSheet 会触发 PaletteChange；用重入保护避免主题刷新形成递归事件链。
+    if (m_applyingStyle) return;
+    m_applyingStyle = true;
+    const QColor primary = palette().color(QPalette::Highlight);
+    const QColor background = palette().color(QPalette::Base);
+    const QColor border = m_dragActive ? primary : palette().color(QPalette::Midlight);
+    const bool emphasized = m_dragActive
+        || m_focus.focusState() == viewmodel::TaskFocusContract::FocusState::InProgress;
+    const QColor panelBackground = emphasized
+        ? QColor(primary.red(), primary.green(), primary.blue(), 25) : background;
+    setStyleSheet(QStringLiteral(
+        "QFrame#focusTaskSlot { background: rgba(%1,%2,%3,%4); border: %5px solid %6; "
+        "border-radius: 14px; }"
+        "QFrame#focusStateIcon { background: %7; border: none; border-radius: 14px; }"
+        "QLabel#focusStateIconText { color: white; border: none; background: transparent; "
+        "font-size: 19px; font-weight: 700; }"
+        "QLabel#focusCategoryBadge { color: %8; background: %9; border: 1px solid %8; "
+        "border-radius: 8px; padding: 2px 7px; font-size: 11px; font-weight: 600; }"
+        "QLabel#focusOverdueBadge { color: %10; background: transparent; border: 1px solid %10; "
+        "border-radius: 8px; padding: 2px 7px; font-size: 11px; font-weight: 700; }")
+        .arg(panelBackground.red()).arg(panelBackground.green())
+        .arg(panelBackground.blue()).arg(panelBackground.alpha())
+        .arg(m_dragActive ? 2 : 1).arg(border.name())
+        .arg(primary.name())
+        .arg([this] {
+            const QColor accent(m_focus.focusCategoryAccent());
+            return accent.isValid() ? accent.name() : palette().color(QPalette::Highlight).name();
+        }())
+        .arg([this] {
+            QColor accent(m_focus.focusCategoryAccent());
+            if (!accent.isValid()) accent = palette().color(QPalette::Highlight);
+            return QStringLiteral("rgba(%1,%2,%3,28)")
+                .arg(accent.red()).arg(accent.green()).arg(accent.blue());
+        }())
+        .arg(palette().color(QPalette::BrightText).name()));
+    m_applyingStyle = false;
 }
 
 void TaskFocusPanel::dragEnterEvent(QDragEnterEvent *event)
@@ -266,18 +391,8 @@ void TaskFocusPanel::setDragActive(const bool active)
 {
     if (m_dragActive == active) return;
     m_dragActive = active;
-    if (active) {
-        const QColor primary = palette().highlight().color();
-        setStyleSheet(QStringLiteral(
-            "QFrame#focusTaskSlot { background: rgba(%1, %2, %3, 32); "
-            "border: 2px solid %4; border-radius: 12px; }")
-            .arg(primary.red()).arg(primary.green()).arg(primary.blue())
-            .arg(primary.name()));
-    } else {
-        setStyleSheet({});
-    }
-    update();
     synchronize();
+    update();
 }
 
 TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
@@ -347,6 +462,10 @@ TaskPage::TaskPage(TaskPageDependencies dependencies, QWidget *parent)
     m_empty->setAlignment(Qt::AlignCenter);
     m_content->setObjectName(QStringLiteral("taskContentStack"));
     m_content->setFrameShape(QFrame::NoFrame);
+    m_content->setAutoFillBackground(false);
+    m_content->setAttribute(Qt::WA_TranslucentBackground);
+    m_content->setStyleSheet(QStringLiteral(
+        "QStackedWidget#taskContentStack { background: transparent; border: none; }"));
     m_content->addWidget(m_empty);
     m_content->addWidget(m_list);
     root->addWidget(m_content, 1);

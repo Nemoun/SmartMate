@@ -196,6 +196,9 @@ void MainWindow::applyAppearance()
     const auto &settings = m_appearanceSettings;
     const WidgetTheme theme = WidgetTheme::fromAccentIndex(
         settings.accentThemeIndex());
+    // 旧 QSS 可能继续覆盖 Base 等 Palette role；先解除旧样式，再注入完整新主题，
+    // 让自绘卡片与普通控件在强调色切换后读取同一套颜色。
+    setStyleSheet({});
     setPalette(theme.palette());
     setFont(appearanceFont(m_baselineFont, settings));
     setStyleSheet(theme.styleSheet());
