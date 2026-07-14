@@ -6,6 +6,7 @@
 #include "view/widgets/task/TaskDependencyDialog.h"
 #include "view/widgets/task/TaskEditorDialog.h"
 #include "view/widgets/task/TaskItemDelegate.h"
+#include "view/widgets/theme/WidgetTheme.h"
 #include "viewmodel/contracts/TaskCategoryContract.h"
 #include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskDetailsContract.h"
@@ -19,17 +20,22 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QLabel>
+#include <QImage>
 #include <QLineEdit>
 #include <QListView>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QPainter>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QSignalBlocker>
 #include <QStackedWidget>
+#include <QStyleOptionViewItem>
 #include <QTest>
 #include <QTimer>
 
@@ -65,12 +71,21 @@ public:
         case TaskIdRole: return QString::fromLatin1(taskId);
         case TitleRole: return QStringLiteral("契约任务");
         case DescriptionRole: return QStringLiteral("仅由 Fake Contract 提供");
-        case StatusTextRole: return QStringLiteral("待办");
+        case StatusRole: return taskStatus;
+        case StatusTextRole: return statusTexts.value(taskStatus, QStringLiteral("待办"));
+        case PriorityRole: return taskPriority;
         case PriorityTextRole: return QStringLiteral("高");
+        case DeadlineTextRole: return deadlineText;
+        case EstimatedMinutesRole: return estimatedMinutes;
         case OrderReasonTextRole: return QStringLiteral("高优先");
         case OverdueRole: return overdue;
         case BlockedRole: return blocked;
         case BlockingReasonTextRole: return blocked ? QStringLiteral("等待前置任务") : QString{};
+        case PredecessorCountRole: return predecessorCount;
+        case UnlockCountRole: return unlockCount;
+        case HasCategoryRole: return hasCategory;
+        case CategoryNameRole: return QStringLiteral("学习");
+        case CategoryAccentRole: return QStringLiteral("#7c3aed");
         case CanStartRole: return canStart;
         case CanEditTaskRole: case CanEditDependenciesRole: case CanCancelRole:
         case BulkSelectableRole: return true;
@@ -122,6 +137,13 @@ public:
     int rows{1};
     bool archived{false}, bulk{false}, selected{false}, overdue{false}, blocked{false};
     bool canStart{true};
+    bool hasCategory{false};
+    int taskStatus{0}, taskPriority{2}, estimatedMinutes{0};
+    int predecessorCount{0}, unlockCount{0};
+    QString deadlineText;
+    QStringList statusTexts{QStringLiteral("待办"), QStringLiteral("进行中"),
+                            QStringLiteral("已完成"), QStringLiteral("已取消"),
+                            QStringLiteral("已归档")};
     QString search, lastId, category; int priority{0}, categoryMode{0};
     int searchCalls{0}, priorityCalls{0}, categoryCalls{0}, showArchivedCalls{0}, startCalls{0};
     int cancelCalls{0}, completeCalls{0}, redoCalls{0}, archiveCalls{0}, restoreCalls{0}, deleteCalls{0};
@@ -141,14 +163,18 @@ public:
     QString focusDeadlineText() const override { return {}; }
     int focusEstimatedMinutes() const noexcept override { return 30; }
     QString focusReasonText() const override { return QStringLiteral("高优先"); }
-    bool focusOverdue() const noexcept override { return false; }
+    bool focusOverdue() const noexcept override { return overdue; }
     bool focusCanStart() const noexcept override { return true; }
     bool focusCanComplete() const noexcept override { return false; }
-    QString focusCategoryName() const override { return {}; }
-    QString focusCategoryAccent() const override { return QStringLiteral("#94a3b8"); }
-    bool focusHasCategory() const noexcept override { return false; }
+    QString focusCategoryName() const override { return categoryName; }
+    QString focusCategoryAccent() const override { return categoryAccent; }
+    bool focusHasCategory() const noexcept override { return hasCategory; }
     FocusState state{FocusState::Suggested};
     QString id{QString::fromLatin1(taskId)};
+    bool overdue{false};
+    bool hasCategory{false};
+    QString categoryName{QStringLiteral("学习")};
+    QString categoryAccent{QStringLiteral("#2563eb")};
 };
 
 class FakeDetails final : public viewmodel::TaskDetailsContract {
@@ -343,6 +369,9 @@ private slots:
     void filtersDetailsDragAndConfirmationsPreserveStableCommands();
     void emptyLayoutAndDedicatedDragHandleRemainStable();
     void editorPickersCommitOnceAndFitMinimumWindow();
+    void themedHierarchyAndResponsiveEditorRemainStable();
+    void pickerPresentationAndResponsiveLayoutRemainTyped();
+    void taskCardRendersSemanticColorsAndTimeProjection();
 };
 
 void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
@@ -757,6 +786,269 @@ void TaskWidgetsTest::editorPickersCommitOnceAndFitMinimumWindow()
                           QStringLiteral("openDurationPickerButton")),
                       Qt::LeftButton);
     QCOMPARE(editor.durationWrites, 1);
+}
+
+void TaskWidgetsTest::themedHierarchyAndResponsiveEditorRemainStable()
+{
+    FakeTaskList tasks; FakeFocus focus; FakeDetails details; FakeEditor editor;
+    FakeCategory categories; FakeDependency dependencies;
+    focus.hasCategory = true;
+    focus.overdue = true;
+    view::widgets::TaskPage page{{tasks, focus, details, editor,
+                                  categories, dependencies}};
+    page.resize(900, 650);
+    page.show();
+    QCoreApplication::processEvents();
+
+    auto *list = page.findChild<view::widgets::TaskListView *>(
+        QStringLiteral("taskListView"));
+    auto *content = page.findChild<QStackedWidget *>(QStringLiteral("taskContentStack"));
+    QVERIFY(list && content);
+    QCOMPARE(list->frameShape(), QFrame::NoFrame);
+    QVERIFY(list->viewport()->testAttribute(Qt::WA_TranslucentBackground));
+    QVERIFY(content->testAttribute(Qt::WA_TranslucentBackground));
+    QVERIFY(list->styleSheet().contains(QStringLiteral("background: transparent")));
+
+    auto *delegate = qobject_cast<view::widgets::TaskItemDelegate *>(list->itemDelegate());
+    QVERIFY(delegate);
+    const auto renderedCardSurface = [&page, list, delegate, &tasks](const int accentIndex) {
+        const view::widgets::WidgetTheme theme =
+            view::widgets::WidgetTheme::fromAccentIndex(accentIndex);
+        page.setStyleSheet({});
+        page.setPalette(theme.palette());
+        page.setStyleSheet(theme.styleSheet());
+        QCoreApplication::processEvents();
+
+        QImage image(QSize{520, 112}, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        QStyleOptionViewItem option;
+        option.rect = image.rect();
+        option.palette = list->palette();
+        option.font = list->font();
+        option.widget = list;
+        delegate->paint(&painter, option, tasks.index(0));
+        painter.end();
+        return image.pixelColor(500, 95);
+    };
+    const auto greenTheme = view::widgets::WidgetTheme::fromAccentIndex(0);
+    const auto blueTheme = view::widgets::WidgetTheme::fromAccentIndex(1);
+    QCOMPARE(renderedCardSurface(0), greenTheme.surface);
+    QCOMPARE(renderedCardSurface(1), blueTheme.surface);
+    QVERIFY(renderedCardSurface(0) != QColor(Qt::black));
+
+    auto *icon = page.findChild<QLabel *>(QStringLiteral("focusStateIconText"));
+    auto *eyebrow = page.findChild<QLabel *>(QStringLiteral("focusEyebrow"));
+    auto *title = page.findChild<QLabel *>(QStringLiteral("focusTaskTitle"));
+    auto *category = page.findChild<QLabel *>(QStringLiteral("focusCategoryBadge"));
+    auto *overdue = page.findChild<QLabel *>(QStringLiteral("focusOverdueBadge"));
+    auto *reminder = page.findChild<QLabel *>(QStringLiteral("focusOverdueReminder"));
+    QVERIFY(icon && eyebrow && title && category && overdue && reminder);
+    QCOMPARE(icon->text(), QStringLiteral("▶"));
+    QVERIFY(eyebrow->text().contains(QStringLiteral("推荐任务")));
+    QCOMPARE(title->text(), QStringLiteral("契约任务"));
+    QCOMPARE(category->text(), QStringLiteral("学习"));
+    QVERIFY(category->isVisible());
+    QVERIFY(overdue->isVisible());
+    QVERIFY(reminder->isVisible());
+
+    focus.state = viewmodel::TaskFocusContract::FocusState::InProgress;
+    emit focus.focusTaskChanged();
+    QVERIFY(eyebrow->text().contains(QStringLiteral("正在进行")));
+    QCOMPARE(page.findChild<QPushButton *>(QStringLiteral("focusPrimaryActionButton"))->text(),
+             QStringLiteral("完成任务"));
+    focus.state = viewmodel::TaskFocusContract::FocusState::AllBlocked;
+    focus.id.clear();
+    focus.hasCategory = false;
+    focus.overdue = false;
+    emit focus.focusTaskChanged();
+    QCOMPARE(icon->text(), QStringLiteral("!"));
+    QVERIFY(!category->isVisible());
+    QVERIFY(!overdue->isVisible());
+    focus.state = viewmodel::TaskFocusContract::FocusState::NoTasks;
+    emit focus.focusTaskChanged();
+    QCOMPARE(icon->text(), QStringLiteral("+"));
+
+    QVERIFY(editor.beginCreate());
+    auto *dialog = page.findChild<view::widgets::TaskEditorDialog *>(
+        QStringLiteral("taskEditorDialog"));
+    QTRY_VERIFY(dialog && dialog->isVisible());
+    QVERIFY(dialog->findChild<QFrame *>(QStringLiteral("taskEditorHeader")));
+    QVERIFY(dialog->findChild<QFrame *>(QStringLiteral("taskEditorBasicSection")));
+    QVERIFY(dialog->findChild<QFrame *>(QStringLiteral("taskEditorPlanningSection")));
+    QVERIFY(dialog->findChild<QFrame *>(QStringLiteral("taskEditorScheduleSection")));
+    QVERIFY(dialog->findChild<QFrame *>(QStringLiteral("taskEditorFooter")));
+    auto *scroll = dialog->findChild<QScrollArea *>(QStringLiteral("taskEditorScrollView"));
+    QVERIFY(scroll);
+    QCOMPARE(scroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    QVERIFY(dialog->findChild<QLabel *>(QStringLiteral("taskEditorHeaderTitle"))
+                ->text().contains(QStringLiteral("新建")));
+
+    auto *statusField = dialog->findChild<QWidget *>(QStringLiteral("taskEditorStatusField"));
+    auto *priorityField = dialog->findChild<QWidget *>(QStringLiteral("taskEditorPriorityField"));
+    auto *categoryField = dialog->findChild<QWidget *>(QStringLiteral("taskEditorCategoryField"));
+    QVERIFY(statusField && priorityField && categoryField);
+    dialog->resize(700, 650);
+    QCoreApplication::processEvents();
+    QCOMPARE(statusField->geometry().top(), priorityField->geometry().top());
+    QVERIFY(categoryField->geometry().top() > statusField->geometry().top());
+    dialog->resize(560, 600);
+    QCoreApplication::processEvents();
+    QVERIFY(priorityField->geometry().top() > statusField->geometry().top());
+    QVERIFY(categoryField->geometry().top() > priorityField->geometry().top());
+    editor.cancel();
+    QTRY_VERIFY(!dialog->isVisible());
+
+    const int startCalls = tasks.startCalls;
+    focus.state = viewmodel::TaskFocusContract::FocusState::Suggested;
+    focus.id = QString::fromLatin1(taskId);
+    emit focus.focusTaskChanged();
+    QTest::mouseClick(page.findChild<QPushButton *>(
+                          QStringLiteral("focusPrimaryActionButton")),
+                      Qt::LeftButton);
+    QCOMPARE(tasks.startCalls, startCalls + 1);
+    QCOMPARE(tasks.lastId, QString::fromLatin1(taskId));
+}
+
+void TaskWidgetsTest::pickerPresentationAndResponsiveLayoutRemainTyped()
+{
+    const view::widgets::WidgetTheme theme =
+        view::widgets::WidgetTheme::fromAccentIndex(0);
+    view::widgets::DeadlinePickerDialog deadline;
+    deadline.setPalette(theme.palette());
+    deadline.setStyleSheet(theme.styleSheet());
+    deadline.setSelection(2028, 2, 29, 23, 45);
+    deadline.show();
+    QCoreApplication::processEvents();
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("pickerHeader")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("deadlineCalendarCard")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("deadlineTimeCard")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("pickerFooter")));
+    auto *monthTitle = deadline.findChild<QLabel *>(QStringLiteral("deadlineMonthTitle"));
+    QVERIFY(monthTitle && monthTitle->text().contains(QStringLiteral("2028"))
+            && monthTitle->text().contains(QStringLiteral("2")));
+    auto *deadlineScroll = deadline.findChild<QScrollArea *>(
+        QStringLiteral("deadlinePickerScrollView"));
+    QVERIFY(deadlineScroll);
+    QCOMPARE(deadlineScroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    QCOMPARE(deadline.findChild<QPushButton *>(
+                 QStringLiteral("confirmDeadlineSelectionButton"))->text(),
+             QStringLiteral("确定"));
+    QCOMPARE(deadline.findChild<QPushButton *>(
+                 QStringLiteral("cancelDeadlineSelectionButton"))->text(),
+             QStringLiteral("取消"));
+    QSignalSpy deadlineAccepted(&deadline, &QDialog::accepted);
+    QTest::mouseClick(deadline.findChild<QPushButton *>(
+                          QStringLiteral("confirmDeadlineSelectionButton")),
+                      Qt::LeftButton);
+    QCOMPARE(deadlineAccepted.count(), 1);
+    QCOMPARE(deadline.selectedYear(), 2028);
+    QCOMPARE(deadline.selectedMonth(), 2);
+    QCOMPARE(deadline.selectedDay(), 29);
+
+    view::widgets::DurationPickerDialog duration{1, 1500};
+    duration.setPalette(theme.palette());
+    duration.setStyleSheet(theme.styleSheet());
+    duration.setDuration(0, 2, 30);
+    duration.resize(520, 400);
+    duration.show();
+    QCoreApplication::processEvents();
+    auto fields = duration.findChildren<QFrame *>(QStringLiteral("durationValueCard"));
+    QCOMPARE(fields.size(), 3);
+    QCOMPARE(fields.at(0)->geometry().top(), fields.at(1)->geometry().top());
+    QCOMPARE(fields.at(1)->geometry().top(), fields.at(2)->geometry().top());
+    auto *summary = duration.findChild<QLabel *>(QStringLiteral("durationSummaryLabel"));
+    QVERIFY(summary && summary->text().contains(QStringLiteral("150")));
+    auto *durationScroll = duration.findChild<QScrollArea *>(
+        QStringLiteral("durationPickerScrollView"));
+    QVERIFY(durationScroll);
+    QCOMPARE(durationScroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    duration.resize(420, 400);
+    QCoreApplication::processEvents();
+    QVERIFY(fields.at(1)->geometry().top() > fields.at(0)->geometry().top());
+    QVERIFY(fields.at(2)->geometry().top() > fields.at(1)->geometry().top());
+    QSignalSpy durationRejected(&duration, &QDialog::rejected);
+    QTest::mouseClick(duration.findChild<QPushButton *>(
+                          QStringLiteral("cancelDurationSelectionButton")),
+                      Qt::LeftButton);
+    QCOMPARE(durationRejected.count(), 1);
+    QCOMPARE(duration.totalMinutes(), 150);
+}
+
+void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
+{
+    FakeTaskList tasks; FakeFocus focus; FakeDetails details; FakeEditor editor;
+    FakeCategory categories; FakeDependency dependencies;
+    tasks.deadlineText = QStringLiteral("2028-02-29 23:45");
+    tasks.estimatedMinutes = 90;
+    tasks.predecessorCount = 2;
+    tasks.unlockCount = 1;
+    tasks.hasCategory = true;
+    view::widgets::TaskPage page{{tasks, focus, details, editor,
+                                  categories, dependencies}};
+    const view::widgets::WidgetTheme theme =
+        view::widgets::WidgetTheme::fromAccentIndex(0);
+    page.setPalette(theme.palette());
+    page.setStyleSheet(theme.styleSheet());
+    page.resize(900, 650);
+    page.show();
+    QCoreApplication::processEvents();
+    auto *list = page.findChild<view::widgets::TaskListView *>(
+        QStringLiteral("taskListView"));
+    auto *delegate = qobject_cast<view::widgets::TaskItemDelegate *>(list->itemDelegate());
+    QVERIFY(list && delegate);
+    QCOMPARE(delegate->sizeHint({}, tasks.index(0)).height(), 138);
+
+    const auto render = [&] {
+        QImage image(QSize{600, 138}, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        QStyleOptionViewItem option;
+        option.rect = image.rect();
+        option.palette = list->palette();
+        option.font = list->font();
+        option.widget = list;
+        delegate->paint(&painter, option, tasks.index(0));
+        painter.end();
+        return image;
+    };
+    const auto containsColor = [](const QImage &image, const QRect &area,
+                                  const QColor &color) {
+        const QRect bounded = area.intersected(image.rect());
+        for (int y = bounded.top(); y <= bounded.bottom(); ++y) {
+            for (int x = bounded.left(); x <= bounded.right(); ++x) {
+                if (image.pixelColor(x, y) == color) return true;
+            }
+        }
+        return false;
+    };
+
+    for (int status = 0; status <= 4; ++status) {
+        tasks.taskStatus = status;
+        tasks.blocked = false;
+        const QImage image = render();
+        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(status));
+    }
+    tasks.blocked = true;
+    const QImage blockedImage = render();
+    QCOMPARE(blockedImage.pixelColor(4, 69), theme.warning);
+    QVERIFY(containsColor(blockedImage, QRect{60, 96, 380, 24}, theme.warning));
+
+    tasks.blocked = false;
+    tasks.taskPriority = 3;
+    tasks.overdue = true;
+    const QImage highlightedImage = render();
+    QVERIFY(containsColor(highlightedImage, QRect{60, 38, 380, 24}, theme.danger));
+    QVERIFY(containsColor(highlightedImage, QRect{60, 38, 380, 24},
+                          QColor(QStringLiteral("#7c3aed"))));
+
+    tasks.overdue = false;
+    tasks.estimatedMinutes = 0;
+    const QImage withoutEstimate = render();
+    tasks.estimatedMinutes = 90;
+    const QImage withEstimate = render();
+    QVERIFY(withoutEstimate.copy(QRect{60, 68, 380, 22})
+            != withEstimate.copy(QRect{60, 68, 380, 22}));
 }
 
 QTEST_MAIN(TaskWidgetsTest)

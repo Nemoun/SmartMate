@@ -1,15 +1,49 @@
 #include "TaskItemDelegate.h"
 
+#include "TaskPage.h"
+#include "view/widgets/theme/WidgetTheme.h"
 #include "viewmodel/contracts/TaskListContract.h"
 
 #include <QApplication>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QStringList>
 #include <QStyle>
+
+#include <algorithm>
 
 namespace smartmate::view::widgets {
 using Role = viewmodel::TaskListContract::Role;
+namespace {
+
+QColor translucent(QColor color, const int alpha = 24)
+{
+    color.setAlpha(alpha);
+    return color;
+}
+
+int drawBadge(QPainter &painter, const int left, const int top,
+              const QString &text, const QColor &color,
+              const QFont &font, const int maximumRight)
+{
+    painter.setFont(font);
+    const QFontMetrics metrics(font);
+    const int availableTextWidth = std::max(0, maximumRight - left - 14);
+    if (availableTextWidth <= 0) return left;
+    const QString shown = metrics.elidedText(text, Qt::ElideRight, availableTextWidth);
+    const int width = std::min(maximumRight - left,
+                               metrics.horizontalAdvance(shown) + 14);
+    const QRect badge{left, top, width, 22};
+    painter.setPen(QPen(color, 1));
+    painter.setBrush(translucent(color));
+    painter.drawRoundedRect(badge, 9, 9);
+    painter.setPen(color);
+    painter.drawText(badge.adjusted(7, 0, -7, 0), Qt::AlignCenter, shown);
+    return badge.right() + 7;
+}
+
+} // namespace
 
 TaskItemDelegate::TaskItemDelegate(viewmodel::TaskListContract &tasks,
                                    QObject *parent)
@@ -19,7 +53,7 @@ TaskItemDelegate::TaskItemDelegate(viewmodel::TaskListContract &tasks,
 
 QSize TaskItemDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const
 {
-    return {520, 112};
+    return {520, 138};
 }
 
 QRect TaskItemDelegate::primaryActionRect(const QRect &rect) const
@@ -53,15 +87,26 @@ void TaskItemDelegate::paint(QPainter *painter,
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(QPen(selected ? option.palette.highlight().color()
                                   : option.palette.mid().color(), selected ? 2 : 1));
-    painter->setBrush(option.palette.base());
+    const auto *taskList = qobject_cast<const TaskListView *>(option.widget);
+    if (!taskList) {
+        taskList = qobject_cast<const TaskListView *>(parent());
+    }
+    const QColor cardSurface = taskList
+        ? taskList->cardSurfaceColor()
+        : QApplication::palette().color(QPalette::Base);
+    const QPalette themePalette = taskList && taskList->window()
+        ? taskList->window()->palette() : option.palette;
+    const WidgetTheme theme = WidgetTheme::fromPalette(themePalette);
+    painter->setBrush(cardSurface);
     painter->drawRoundedRect(card, 10, 10);
 
     const bool blocked = index.data(Role::BlockedRole).toBool();
     const bool overdue = index.data(Role::OverdueRole).toBool();
+    const int status = index.data(Role::StatusRole).toInt();
+    const int priority = index.data(Role::PriorityRole).toInt();
+    const QColor statusColor = theme.statusColor(status);
     painter->setPen(Qt::NoPen);
-    painter->setBrush(blocked ? QColor(QStringLiteral("#d97706"))
-                              : overdue ? QColor(QStringLiteral("#dc2626"))
-                                        : option.palette.highlight());
+    painter->setBrush(blocked ? theme.warning : statusColor);
     painter->drawRoundedRect(QRect{card.left(), card.top(), 5, card.height()}, 2, 2);
 
     const QRect dragHandle = dragHandleRect(option.rect, index);
@@ -78,26 +123,67 @@ void TaskItemDelegate::paint(QPainter *painter,
     titleFont.setBold(true);
     titleFont.setPointSizeF(titleFont.pointSizeF() + 1.5);
     painter->setFont(titleFont);
-    painter->setPen(option.palette.text().color());
-    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignTop,
-                      index.data(Role::TitleRole).toString());
+    painter->setPen(theme.textPrimary);
+    painter->drawText(QRect{textRect.left(), card.top() + 10,
+                            textRect.width(), 22},
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      painter->fontMetrics().elidedText(
+                          index.data(Role::TitleRole).toString(),
+                          Qt::ElideRight, textRect.width()));
+
+    QFont badgeFont = option.font;
+    badgeFont.setPointSizeF(std::max(8.0, badgeFont.pointSizeF() - 0.5));
+    badgeFont.setBold(true);
+    int badgeLeft = textRect.left();
+    const int badgeTop = card.top() + 36;
+    badgeLeft = drawBadge(*painter, badgeLeft, badgeTop,
+                          index.data(Role::StatusTextRole).toString(),
+                          statusColor, badgeFont, textRect.right());
+    badgeLeft = drawBadge(*painter, badgeLeft, badgeTop,
+                          tr("%1优先级").arg(index.data(Role::PriorityTextRole).toString()),
+                          theme.priorityColor(priority), badgeFont, textRect.right());
+    if (overdue) {
+        badgeLeft = drawBadge(*painter, badgeLeft, badgeTop, tr("已逾期"),
+                              theme.danger, badgeFont, textRect.right());
+    }
+    if (index.data(Role::HasCategoryRole).toBool()) {
+        QColor categoryColor(index.data(Role::CategoryAccentRole).toString());
+        if (!categoryColor.isValid()) categoryColor = theme.primary;
+        drawBadge(*painter, badgeLeft, badgeTop,
+                  index.data(Role::CategoryNameRole).toString(),
+                  categoryColor, badgeFont, textRect.right());
+    }
 
     painter->setFont(option.font);
-    painter->setPen(option.palette.color(QPalette::PlaceholderText));
-    const QString meta = QStringLiteral("%1 · %2优先级%3%4")
-        .arg(index.data(Role::StatusTextRole).toString(),
-             index.data(Role::PriorityTextRole).toString(),
-             index.data(Role::DeadlineTextRole).toString().isEmpty()
-                 ? QString{} : QStringLiteral(" · 截止 %1").arg(index.data(Role::DeadlineTextRole).toString()),
-             overdue ? QStringLiteral(" · 已逾期") : QString{});
-    painter->drawText(textRect.adjusted(0, 30, 0, 0), Qt::AlignLeft | Qt::AlignTop, meta);
+    QStringList timeValues;
+    const QString deadline = index.data(Role::DeadlineTextRole).toString();
+    if (!deadline.isEmpty()) timeValues << tr("截止 %1").arg(deadline);
+    const int estimatedMinutes = index.data(Role::EstimatedMinutesRole).toInt();
+    if (estimatedMinutes > 0) timeValues << tr("预计 %1 分钟").arg(estimatedMinutes);
+    const int predecessorCount = index.data(Role::PredecessorCountRole).toInt();
+    if (predecessorCount > 0) timeValues << tr("前置 %1 项").arg(predecessorCount);
+    const QString timeText = timeValues.isEmpty()
+        ? tr("未设置时间与前置任务") : timeValues.join(QStringLiteral("  ·  "));
+    painter->setPen(overdue && !deadline.isEmpty() ? theme.danger : theme.textMuted);
+    painter->drawText(QRect{textRect.left(), card.top() + 66,
+                            textRect.width(), 20},
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      painter->fontMetrics().elidedText(
+                          timeText, Qt::ElideRight, textRect.width()));
+
     QString reason = blocked
-        ? QStringLiteral("阻塞：%1").arg(index.data(Role::BlockingReasonTextRole).toString())
-        : QStringLiteral("推荐：%1").arg(index.data(Role::OrderReasonTextRole).toString());
-    if (index.data(Role::HasCategoryRole).toBool()) {
-        reason.prepend(QStringLiteral("%1 · ").arg(index.data(Role::CategoryNameRole).toString()));
+        ? tr("阻塞：%1").arg(index.data(Role::BlockingReasonTextRole).toString())
+        : tr("推荐：%1").arg(index.data(Role::OrderReasonTextRole).toString());
+    const int unlockCount = index.data(Role::UnlockCountRole).toInt();
+    if (!blocked && unlockCount > 0) {
+        reason += tr(" · 可解锁 %1 项").arg(unlockCount);
     }
-    painter->drawText(textRect.adjusted(0, 56, 0, 0), Qt::AlignLeft | Qt::AlignTop, reason);
+    painter->setPen(blocked ? theme.warning : theme.primary);
+    painter->drawText(QRect{textRect.left(), card.top() + 94,
+                            textRect.width(), 20},
+                      Qt::AlignLeft | Qt::AlignVCenter,
+                      painter->fontMetrics().elidedText(
+                          reason, Qt::ElideRight, textRect.width()));
 
     if (!m_tasks.bulkSelectionMode()) {
         QString action;

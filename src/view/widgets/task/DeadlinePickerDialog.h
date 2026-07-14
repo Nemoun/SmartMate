@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class QCalendarWidget;
+class QLabel;
 class QTimeEdit;
 
 namespace smartmate::view::widgets {
@@ -21,8 +22,11 @@ public:
     [[nodiscard]] int selectedMinute() const;
 
 private:
+    void updateMonthTitle(int year, int month);
+
     QCalendarWidget *m_calendar;
     QTimeEdit *m_time;
+    QLabel *m_monthTitle;
 };
 
 } // namespace smartmate::view::widgets

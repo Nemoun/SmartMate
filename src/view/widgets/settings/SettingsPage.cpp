@@ -7,8 +7,10 @@
 #include <QComboBox>
 #include <QFrame>
 #include <QLabel>
+#include <QLayout>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSizePolicy>
 #include <QVBoxLayout>
 
 namespace smartmate::view::widgets {
@@ -74,6 +76,7 @@ SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
     auto *card = new QFrame;
     card->setObjectName(QStringLiteral("settingsCard"));
     card->setMaximumWidth(760);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(20, 20, 20, 20);
     cardLayout->setSpacing(12);
@@ -109,14 +112,25 @@ SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
     cardLayout->addWidget(createLabel(tr("预览")));
     auto *preview = new QFrame;
     preview->setObjectName(QStringLiteral("previewCard"));
+    preview->setMinimumHeight(116);
+    preview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto *previewLayout = new QVBoxLayout(preview);
     previewLayout->setContentsMargins(16, 14, 16, 14);
-    previewLayout->addWidget(createLabel(tr("完成 SmartMate 主窗口设计"),
-                                         "sectionTitle"));
-    previewLayout->addWidget(createLabel(
-        tr("保持界面清新、清晰，并突出当前最值得做的任务。"), "secondaryText"));
-    previewLayout->addWidget(createLabel(tr("进行中 · 今天 18:00"),
-                                         "previewStatus"));
+    previewLayout->setSpacing(6);
+    previewLayout->setSizeConstraint(QLayout::SetMinimumSize);
+    auto *previewTitle = createLabel(tr("完成 SmartMate 主窗口设计"),
+                                     "settingsPreviewTitle");
+    auto *previewDescription = createLabel(
+        tr("保持界面清新、清晰，并突出当前最值得做的任务。"),
+        "settingsPreviewDescription");
+    auto *previewStatus = createLabel(tr("进行中 · 今天 18:00"),
+                                      "previewStatus");
+    for (QLabel *label : {previewTitle, previewDescription, previewStatus}) {
+        label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    }
+    previewLayout->addWidget(previewTitle);
+    previewLayout->addWidget(previewDescription);
+    previewLayout->addWidget(previewStatus);
     cardLayout->addWidget(preview);
 
     auto *resetLayout = new QHBoxLayout;
