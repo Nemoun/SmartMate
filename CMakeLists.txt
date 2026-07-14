@@ -6,17 +6,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-<<<<<<< HEAD
-set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/qml")
-find_package(Qt6 6.10 REQUIRED COMPONENTS
-=======
 option(SMARTMATE_BUILD_QML_BASELINE
     "Build the temporary Qt Quick/QML behavior baseline before final cleanup"
     ON
 )
 
 set(smartmate_qt_components
->>>>>>> upstream/main
     Core
     Gui
     Sql
@@ -34,7 +29,7 @@ if(SMARTMATE_BUILD_QML_BASELINE)
     )
 endif()
 
-find_package(Qt6 6.10.2 EXACT REQUIRED COMPONENTS
+find_package(Qt6 6.10 REQUIRED COMPONENTS
     ${smartmate_qt_components}
 )
 
