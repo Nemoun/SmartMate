@@ -13,6 +13,7 @@ class AppearanceSettingsTest final : public QObject {
     Q_OBJECT
 private slots:
     void loadsAndPersistsValidatedSelections();
+    void mapsDocumentedFontScaleRatios();
     void saveFailureKeepsPreviousProjection();
     void resetRestoresDocumentedDefaults();
 };
@@ -26,12 +27,28 @@ void AppearanceSettingsTest::loadsAndPersistsValidatedSelections()
     AppearanceSettingsViewModel viewModel{service};
     QCOMPARE(viewModel.accentThemeIndex(), 1);
     QCOMPARE(viewModel.fontFamilyName(), QStringLiteral("Microsoft YaHei UI"));
-    QCOMPARE(viewModel.fontScale(), 1.1);
+    QCOMPARE(viewModel.fontScale(), 1.25);
     QSignalSpy changed{&viewModel, &AppearanceSettingsViewModel::appearanceChanged};
     viewModel.setAccentThemeIndex(0);
     QCOMPARE(repository.settings.accentTheme, AccentTheme::Green);
     QCOMPARE(repository.saveCount, 1);
     QCOMPARE(changed.count(), 1);
+}
+
+void AppearanceSettingsTest::mapsDocumentedFontScaleRatios()
+{
+    const QList<QPair<UiFontScale, qreal>> cases{
+        {UiFontScale::Small, 0.95},
+        {UiFontScale::Standard, 1.10},
+        {UiFontScale::Large, 1.25},
+    };
+    for (const auto &[scale, expected] : cases) {
+        FakeAppearanceSettingsRepository repository;
+        repository.settings.fontScale = scale;
+        AppearanceSettingsService service{repository};
+        AppearanceSettingsViewModel viewModel{service};
+        QCOMPARE(viewModel.fontScale(), expected);
+    }
 }
 
 void AppearanceSettingsTest::saveFailureKeepsPreviousProjection()

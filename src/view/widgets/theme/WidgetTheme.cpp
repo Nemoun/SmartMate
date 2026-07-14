@@ -35,6 +35,13 @@ WidgetTheme WidgetTheme::fromAccentIndex(const int accentThemeIndex)
     };
 }
 
+WidgetTheme WidgetTheme::fromPalette(const QPalette &palette)
+{
+    const WidgetTheme blue = fromAccentIndex(1);
+    return palette.color(QPalette::Highlight) == blue.primary
+        ? blue : fromAccentIndex(0);
+}
+
 QColor WidgetTheme::statusColor(const int statusIndex) const
 {
     switch (statusIndex) {
@@ -44,6 +51,14 @@ QColor WidgetTheme::statusColor(const int statusIndex) const
     case 3: return cancelled;
     default: return archived;
     }
+}
+
+QColor WidgetTheme::priorityColor(const int priorityIndex) const
+{
+    if (priorityIndex >= 3) return danger;
+    if (priorityIndex == 2) return warning;
+    if (priorityIndex == 1) return todo;
+    return textSecondary;
 }
 
 QPalette WidgetTheme::palette() const
@@ -120,6 +135,44 @@ QString WidgetTheme::styleSheet() const
         }
         QPushButton#clearCreationPredecessorButton, QPushButton#clearDeadlineButton,
         QPushButton#clearDurationButton { min-width: 20px; padding: 7px 8px; }
+        QDialog#deadlinePickerDialog, QDialog#durationPickerDialog {
+            background: %14; color: %2;
+        }
+        QFrame#pickerHeader, QFrame#pickerFooter {
+            background: %6; border: none;
+        }
+        QFrame#pickerHeader { border-bottom: 1px solid %4; }
+        QFrame#pickerFooter { border-top: 1px solid %4; }
+        QLabel#pickerHeaderTitle { color: %2; font-size: 20px; font-weight: 700; }
+        QLabel#pickerHeaderSubtitle { color: %12; font-size: 12px; }
+        QLabel#pickerSectionTitle, QLabel#deadlineMonthTitle {
+            color: %2; font-size: 15px; font-weight: 700;
+        }
+        QScrollArea#deadlinePickerScrollView, QScrollArea#durationPickerScrollView,
+        QWidget#pickerContent { background: %14; border: none; }
+        QFrame#deadlineCalendarCard, QFrame#deadlineTimeCard,
+        QFrame#durationValueCard {
+            background: %5; border: 1px solid %4; border-radius: 11px;
+        }
+        QCalendarWidget#deadlineCalendar { background: %5; border: none; }
+        QCalendarWidget#deadlineCalendar QAbstractItemView {
+            color: %15; background: %5; alternate-background-color: %6;
+            selection-color: %10; selection-background-color: %11; border: none;
+        }
+        QTimeEdit#deadlineTimeEdit, QSpinBox#durationDaysSpinBox,
+        QSpinBox#durationHoursSpinBox, QSpinBox#durationMinutesSpinBox {
+            color: %15; background: %14; border: 1px solid %7;
+            border-radius: 8px; padding: 8px 10px; font-size: 15px;
+        }
+        QLabel#durationValueLabel { color: %12; font-weight: 600; }
+        QLabel#durationSummaryLabel {
+            color: %10; background: %11; border: 1px solid %4;
+            border-radius: 9px; padding: 8px 12px; font-weight: 700;
+        }
+        QPushButton#confirmDeadlineSelectionButton,
+        QPushButton#confirmDurationSelectionButton {
+            color: white; background: %10; border-color: %10; font-weight: 700;
+        }
         QLabel#pageTitle { color: %2; font-size: 24px; font-weight: 700; }
         QLabel#sectionTitle { color: %2; font-size: 17px; font-weight: 700; }
         QLabel#settingsPreviewTitle { color: %2; font-size: 17px; font-weight: 700; }

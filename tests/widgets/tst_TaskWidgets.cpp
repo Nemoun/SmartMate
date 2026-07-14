@@ -71,12 +71,21 @@ public:
         case TaskIdRole: return QString::fromLatin1(taskId);
         case TitleRole: return QStringLiteral("契约任务");
         case DescriptionRole: return QStringLiteral("仅由 Fake Contract 提供");
-        case StatusTextRole: return QStringLiteral("待办");
+        case StatusRole: return taskStatus;
+        case StatusTextRole: return statusTexts.value(taskStatus, QStringLiteral("待办"));
+        case PriorityRole: return taskPriority;
         case PriorityTextRole: return QStringLiteral("高");
+        case DeadlineTextRole: return deadlineText;
+        case EstimatedMinutesRole: return estimatedMinutes;
         case OrderReasonTextRole: return QStringLiteral("高优先");
         case OverdueRole: return overdue;
         case BlockedRole: return blocked;
         case BlockingReasonTextRole: return blocked ? QStringLiteral("等待前置任务") : QString{};
+        case PredecessorCountRole: return predecessorCount;
+        case UnlockCountRole: return unlockCount;
+        case HasCategoryRole: return hasCategory;
+        case CategoryNameRole: return QStringLiteral("学习");
+        case CategoryAccentRole: return QStringLiteral("#7c3aed");
         case CanStartRole: return canStart;
         case CanEditTaskRole: case CanEditDependenciesRole: case CanCancelRole:
         case BulkSelectableRole: return true;
@@ -128,6 +137,13 @@ public:
     int rows{1};
     bool archived{false}, bulk{false}, selected{false}, overdue{false}, blocked{false};
     bool canStart{true};
+    bool hasCategory{false};
+    int taskStatus{0}, taskPriority{2}, estimatedMinutes{0};
+    int predecessorCount{0}, unlockCount{0};
+    QString deadlineText;
+    QStringList statusTexts{QStringLiteral("待办"), QStringLiteral("进行中"),
+                            QStringLiteral("已完成"), QStringLiteral("已取消"),
+                            QStringLiteral("已归档")};
     QString search, lastId, category; int priority{0}, categoryMode{0};
     int searchCalls{0}, priorityCalls{0}, categoryCalls{0}, showArchivedCalls{0}, startCalls{0};
     int cancelCalls{0}, completeCalls{0}, redoCalls{0}, archiveCalls{0}, restoreCalls{0}, deleteCalls{0};
@@ -354,6 +370,8 @@ private slots:
     void emptyLayoutAndDedicatedDragHandleRemainStable();
     void editorPickersCommitOnceAndFitMinimumWindow();
     void themedHierarchyAndResponsiveEditorRemainStable();
+    void pickerPresentationAndResponsiveLayoutRemainTyped();
+    void taskCardRendersSemanticColorsAndTimeProjection();
 };
 
 void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
@@ -890,6 +908,147 @@ void TaskWidgetsTest::themedHierarchyAndResponsiveEditorRemainStable()
                       Qt::LeftButton);
     QCOMPARE(tasks.startCalls, startCalls + 1);
     QCOMPARE(tasks.lastId, QString::fromLatin1(taskId));
+}
+
+void TaskWidgetsTest::pickerPresentationAndResponsiveLayoutRemainTyped()
+{
+    const view::widgets::WidgetTheme theme =
+        view::widgets::WidgetTheme::fromAccentIndex(0);
+    view::widgets::DeadlinePickerDialog deadline;
+    deadline.setPalette(theme.palette());
+    deadline.setStyleSheet(theme.styleSheet());
+    deadline.setSelection(2028, 2, 29, 23, 45);
+    deadline.show();
+    QCoreApplication::processEvents();
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("pickerHeader")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("deadlineCalendarCard")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("deadlineTimeCard")));
+    QVERIFY(deadline.findChild<QFrame *>(QStringLiteral("pickerFooter")));
+    auto *monthTitle = deadline.findChild<QLabel *>(QStringLiteral("deadlineMonthTitle"));
+    QVERIFY(monthTitle && monthTitle->text().contains(QStringLiteral("2028"))
+            && monthTitle->text().contains(QStringLiteral("2")));
+    auto *deadlineScroll = deadline.findChild<QScrollArea *>(
+        QStringLiteral("deadlinePickerScrollView"));
+    QVERIFY(deadlineScroll);
+    QCOMPARE(deadlineScroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    QCOMPARE(deadline.findChild<QPushButton *>(
+                 QStringLiteral("confirmDeadlineSelectionButton"))->text(),
+             QStringLiteral("确定"));
+    QCOMPARE(deadline.findChild<QPushButton *>(
+                 QStringLiteral("cancelDeadlineSelectionButton"))->text(),
+             QStringLiteral("取消"));
+    QSignalSpy deadlineAccepted(&deadline, &QDialog::accepted);
+    QTest::mouseClick(deadline.findChild<QPushButton *>(
+                          QStringLiteral("confirmDeadlineSelectionButton")),
+                      Qt::LeftButton);
+    QCOMPARE(deadlineAccepted.count(), 1);
+    QCOMPARE(deadline.selectedYear(), 2028);
+    QCOMPARE(deadline.selectedMonth(), 2);
+    QCOMPARE(deadline.selectedDay(), 29);
+
+    view::widgets::DurationPickerDialog duration{1, 1500};
+    duration.setPalette(theme.palette());
+    duration.setStyleSheet(theme.styleSheet());
+    duration.setDuration(0, 2, 30);
+    duration.resize(520, 400);
+    duration.show();
+    QCoreApplication::processEvents();
+    auto fields = duration.findChildren<QFrame *>(QStringLiteral("durationValueCard"));
+    QCOMPARE(fields.size(), 3);
+    QCOMPARE(fields.at(0)->geometry().top(), fields.at(1)->geometry().top());
+    QCOMPARE(fields.at(1)->geometry().top(), fields.at(2)->geometry().top());
+    auto *summary = duration.findChild<QLabel *>(QStringLiteral("durationSummaryLabel"));
+    QVERIFY(summary && summary->text().contains(QStringLiteral("150")));
+    auto *durationScroll = duration.findChild<QScrollArea *>(
+        QStringLiteral("durationPickerScrollView"));
+    QVERIFY(durationScroll);
+    QCOMPARE(durationScroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    duration.resize(420, 400);
+    QCoreApplication::processEvents();
+    QVERIFY(fields.at(1)->geometry().top() > fields.at(0)->geometry().top());
+    QVERIFY(fields.at(2)->geometry().top() > fields.at(1)->geometry().top());
+    QSignalSpy durationRejected(&duration, &QDialog::rejected);
+    QTest::mouseClick(duration.findChild<QPushButton *>(
+                          QStringLiteral("cancelDurationSelectionButton")),
+                      Qt::LeftButton);
+    QCOMPARE(durationRejected.count(), 1);
+    QCOMPARE(duration.totalMinutes(), 150);
+}
+
+void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
+{
+    FakeTaskList tasks; FakeFocus focus; FakeDetails details; FakeEditor editor;
+    FakeCategory categories; FakeDependency dependencies;
+    tasks.deadlineText = QStringLiteral("2028-02-29 23:45");
+    tasks.estimatedMinutes = 90;
+    tasks.predecessorCount = 2;
+    tasks.unlockCount = 1;
+    tasks.hasCategory = true;
+    view::widgets::TaskPage page{{tasks, focus, details, editor,
+                                  categories, dependencies}};
+    const view::widgets::WidgetTheme theme =
+        view::widgets::WidgetTheme::fromAccentIndex(0);
+    page.setPalette(theme.palette());
+    page.setStyleSheet(theme.styleSheet());
+    page.resize(900, 650);
+    page.show();
+    QCoreApplication::processEvents();
+    auto *list = page.findChild<view::widgets::TaskListView *>(
+        QStringLiteral("taskListView"));
+    auto *delegate = qobject_cast<view::widgets::TaskItemDelegate *>(list->itemDelegate());
+    QVERIFY(list && delegate);
+    QCOMPARE(delegate->sizeHint({}, tasks.index(0)).height(), 138);
+
+    const auto render = [&] {
+        QImage image(QSize{600, 138}, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        QStyleOptionViewItem option;
+        option.rect = image.rect();
+        option.palette = list->palette();
+        option.font = list->font();
+        option.widget = list;
+        delegate->paint(&painter, option, tasks.index(0));
+        painter.end();
+        return image;
+    };
+    const auto containsColor = [](const QImage &image, const QRect &area,
+                                  const QColor &color) {
+        const QRect bounded = area.intersected(image.rect());
+        for (int y = bounded.top(); y <= bounded.bottom(); ++y) {
+            for (int x = bounded.left(); x <= bounded.right(); ++x) {
+                if (image.pixelColor(x, y) == color) return true;
+            }
+        }
+        return false;
+    };
+
+    for (int status = 0; status <= 4; ++status) {
+        tasks.taskStatus = status;
+        tasks.blocked = false;
+        const QImage image = render();
+        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(status));
+    }
+    tasks.blocked = true;
+    const QImage blockedImage = render();
+    QCOMPARE(blockedImage.pixelColor(4, 69), theme.warning);
+    QVERIFY(containsColor(blockedImage, QRect{60, 96, 380, 24}, theme.warning));
+
+    tasks.blocked = false;
+    tasks.taskPriority = 3;
+    tasks.overdue = true;
+    const QImage highlightedImage = render();
+    QVERIFY(containsColor(highlightedImage, QRect{60, 38, 380, 24}, theme.danger));
+    QVERIFY(containsColor(highlightedImage, QRect{60, 38, 380, 24},
+                          QColor(QStringLiteral("#7c3aed"))));
+
+    tasks.overdue = false;
+    tasks.estimatedMinutes = 0;
+    const QImage withoutEstimate = render();
+    tasks.estimatedMinutes = 90;
+    const QImage withEstimate = render();
+    QVERIFY(withoutEstimate.copy(QRect{60, 68, 380, 22})
+            != withEstimate.copy(QRect{60, 68, 380, 22}));
 }
 
 QTEST_MAIN(TaskWidgetsTest)

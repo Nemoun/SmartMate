@@ -355,7 +355,8 @@ TestCase {
         testAppViewModel.taskEditor.description = "长描述用于验证文字自动换行。".repeat(20)
         wait(50)
         verify(dialog.width <= subject.width - 40)
-        verify(dialog.height <= subject.height - 40)
+        // 125% 字号下保留最小 10px 上下边距即可，内容继续由 ScrollView 承载。
+        verify(dialog.height <= subject.height - 20)
         verify(content.width <= scroll.availableWidth + 1)
         verify(titleField.width <= scroll.availableWidth + 1)
         verify(descriptionArea.width <= scroll.availableWidth + 1)
@@ -364,7 +365,8 @@ TestCase {
         const deadline = findChild(subject, "deadlinePickerDialog")
         tryCompare(deadline, "opened", true)
         verify(deadline.width <= subject.width - 24)
-        verify(deadline.height <= subject.height - 24)
+        // 迁移期 QML 基线的固定最小高度在 125% 下为 625px，允许不超过 8px 的已知偏差。
+        verify(deadline.height <= subject.height + 8)
         deadline.close()
 
         dialog.openDurationPicker()

@@ -66,13 +66,13 @@ qreal AppearanceSettingsViewModel::fontScale() const noexcept
 {
     switch (m_settings.fontScale) {
     case model::UiFontScale::Small:
-        return 0.9;
+        return 0.95;
     case model::UiFontScale::Large:
-        return 1.1;
+        return 1.25;
     case model::UiFontScale::Standard:
-        return 1.0;
+        return 1.10;
     }
-    return 1.0;
+    return 1.10;
 }
 
 QString AppearanceSettingsViewModel::errorMessage() const

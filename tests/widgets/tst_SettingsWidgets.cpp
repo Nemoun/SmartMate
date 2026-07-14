@@ -2,6 +2,7 @@
 #include "view/widgets/settings/SettingsPage.h"
 #include "view/widgets/theme/WidgetTheme.h"
 
+#include <QApplication>
 #include <QComboBox>
 #include <QFrame>
 #include <QLabel>
@@ -51,7 +52,7 @@ public:
     }
     qreal fontScale() const noexcept override
     {
-        return scaleIndex == 0 ? 0.9 : scaleIndex == 2 ? 1.1 : 1.0;
+        return scaleIndex == 0 ? 0.95 : scaleIndex == 2 ? 1.25 : 1.10;
     }
 
     void setAccentThemeIndex(const int index) override
@@ -122,6 +123,7 @@ private slots:
     void contractNotificationUpdatesControlsWithoutWriteBack();
     void themeAndUiNotificationArePresentedByMainWindow();
     void previewRemainsReadableAtNarrowWidthAndLargeFont();
+    void fontScaleOptionsApplyDistinctNonAccumulatingSizes();
 };
 
 void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
@@ -199,12 +201,12 @@ void SettingsWidgetsTest::themeAndUiNotificationArePresentedByMainWindow()
 {
     FakeAppearanceSettingsContract settings;
     MainWindow window{settings};
-    const qreal baselineSize = window.font().pointSizeF();
+    const qreal baselineSize = QApplication::font().pointSizeF();
 
     settings.replaceProjection(1, 0, 2);
     const WidgetTheme blueTheme = WidgetTheme::fromAccentIndex(1);
     QCOMPARE(window.palette().color(QPalette::Window), blueTheme.background);
-    QCOMPARE(window.font().pointSizeF(), baselineSize * 1.1);
+    QCOMPARE(window.font().pointSizeF(), baselineSize * 1.25);
 
     settings.raiseNotification({UiSeverity::Error,
                                 QStringLiteral("外观设置失败"),
@@ -220,7 +222,7 @@ void SettingsWidgetsTest::previewRemainsReadableAtNarrowWidthAndLargeFont()
     FakeAppearanceSettingsContract settings;
     SettingsPage page{settings};
     QFont enlarged = page.font();
-    enlarged.setPointSizeF(enlarged.pointSizeF() * 1.1);
+    enlarged.setPointSizeF(enlarged.pointSizeF() * 1.25);
     page.setFont(enlarged);
     page.resize(350, 620);
     page.show();
@@ -245,6 +247,22 @@ void SettingsWidgetsTest::previewRemainsReadableAtNarrowWidthAndLargeFont()
 
     QCOMPARE(settings.accentSetCount, 0);
     QCOMPARE(settings.familySetCount, 0);
+    QCOMPARE(settings.scaleSetCount, 0);
+}
+
+void SettingsWidgetsTest::fontScaleOptionsApplyDistinctNonAccumulatingSizes()
+{
+    FakeAppearanceSettingsContract settings;
+    MainWindow window{settings};
+    const qreal baseline = QApplication::font().pointSizeF();
+    settings.replaceProjection(0, 0, 0);
+    QCOMPARE(window.font().pointSizeF(), baseline * 0.95);
+    settings.replaceProjection(0, 0, 1);
+    QCOMPARE(window.font().pointSizeF(), baseline * 1.10);
+    settings.replaceProjection(0, 0, 2);
+    QCOMPARE(window.font().pointSizeF(), baseline * 1.25);
+    settings.replaceProjection(0, 0, 1);
+    QCOMPARE(window.font().pointSizeF(), baseline * 1.10);
     QCOMPARE(settings.scaleSetCount, 0);
 }
 

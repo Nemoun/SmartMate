@@ -41,8 +41,10 @@ struct WidgetTheme {
     QColor danger;
 
     [[nodiscard]] QColor statusColor(int statusIndex) const;
+    [[nodiscard]] QColor priorityColor(int priorityIndex) const;
 
     [[nodiscard]] static WidgetTheme fromAccentIndex(int accentThemeIndex);
+    [[nodiscard]] static WidgetTheme fromPalette(const QPalette &palette);
     [[nodiscard]] QPalette palette() const;
     [[nodiscard]] QString styleSheet() const;
 };
