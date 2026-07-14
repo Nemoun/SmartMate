@@ -20,6 +20,10 @@ namespace smartmate::viewmodel {
 class AppViewModel;
 }
 
+namespace smartmate::view::widgets {
+struct MainWindowDependencies;
+}
+
 namespace smartmate::app {
 
 /// 应用层唯一的组合根：在这里选择具体持久化实现，并按
@@ -31,6 +35,9 @@ public:
 
     /// 将 C++ 管理的根 ViewModel 注入 QML 引擎的必需根属性。
     void configure(QQmlApplicationEngine &engine);
+
+    /// 将具体 ViewModel 向上转换为 Widgets 当前切片所需的抽象契约。
+    [[nodiscard]] view::widgets::MainWindowDependencies widgetDependencies() noexcept;
 
 private:
     // 成员按依赖顺序声明。C++ 会逆序析构，因此 ViewModel 和 Service

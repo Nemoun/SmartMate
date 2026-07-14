@@ -1,0 +1,159 @@
+#include "view/widgets/settings/SettingsPage.h"
+
+#include "view/widgets/binding/WidgetBinding.h"
+#include "viewmodel/contracts/AppearanceSettingsContract.h"
+
+#include <QButtonGroup>
+#include <QComboBox>
+#include <QFrame>
+#include <QLabel>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QVBoxLayout>
+
+namespace smartmate::view::widgets {
+namespace {
+
+QLabel *createLabel(const QString &text, const char *objectName = nullptr)
+{
+    auto *label = new QLabel{text};
+    if (objectName != nullptr) {
+        label->setObjectName(QString::fromLatin1(objectName));
+    }
+    label->setWordWrap(true);
+    return label;
+}
+
+QPushButton *addIndexedButton(QButtonGroup &group,
+                              QHBoxLayout &layout,
+                              const QString &text,
+                              const QString &objectName,
+                              const int index)
+{
+    auto *button = new QPushButton{text};
+    button->setObjectName(objectName);
+    button->setCheckable(true);
+    group.addButton(button, index);
+    layout.addWidget(button);
+    return button;
+}
+
+} // namespace
+
+SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
+                           QWidget *parent)
+    : QWidget(parent)
+    , m_settings(settings)
+    , m_accentButtons(new QButtonGroup(this))
+    , m_fontFamilyComboBox(new QComboBox(this))
+    , m_fontScaleButtons(new QButtonGroup(this))
+{
+    setObjectName(QStringLiteral("settingsPage"));
+    m_accentButtons->setExclusive(true);
+    m_fontScaleButtons->setExclusive(true);
+
+    auto *pageLayout = new QVBoxLayout(this);
+    pageLayout->setContentsMargins(24, 24, 24, 24);
+
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    pageLayout->addWidget(scrollArea);
+
+    auto *content = new QWidget;
+    content->setObjectName(QStringLiteral("pageSurface"));
+    auto *contentLayout = new QVBoxLayout(content);
+    contentLayout->setContentsMargins(8, 4, 8, 24);
+    contentLayout->setSpacing(14);
+    scrollArea->setWidget(content);
+
+    contentLayout->addWidget(createLabel(tr("设置"), "pageTitle"));
+    contentLayout->addWidget(
+        createLabel(tr("调整 SmartMate 的强调色和界面字体。"), "secondaryText"));
+
+    auto *card = new QFrame;
+    card->setObjectName(QStringLiteral("settingsCard"));
+    card->setMaximumWidth(760);
+    auto *cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(20, 20, 20, 20);
+    cardLayout->setSpacing(12);
+    contentLayout->addWidget(card, 0, Qt::AlignLeft);
+
+    cardLayout->addWidget(createLabel(tr("外观"), "sectionTitle"));
+    cardLayout->addWidget(createLabel(tr("强调颜色")));
+    auto *accentLayout = new QHBoxLayout;
+    const QStringList accentOptions = settings.accentThemeOptions();
+    for (int index = 0; index < accentOptions.size(); ++index) {
+        addIndexedButton(*m_accentButtons, *accentLayout, accentOptions.at(index),
+                         QStringLiteral("accentThemeButton_%1").arg(index), index);
+    }
+    accentLayout->addStretch();
+    cardLayout->addLayout(accentLayout);
+
+    cardLayout->addWidget(createLabel(tr("界面字体")));
+    m_fontFamilyComboBox->setObjectName(QStringLiteral("fontFamilyComboBox"));
+    m_fontFamilyComboBox->addItems(settings.fontFamilyOptions());
+    m_fontFamilyComboBox->setMaximumWidth(280);
+    cardLayout->addWidget(m_fontFamilyComboBox);
+
+    cardLayout->addWidget(createLabel(tr("字体大小")));
+    auto *scaleLayout = new QHBoxLayout;
+    const QStringList scaleOptions = settings.fontScaleOptions();
+    for (int index = 0; index < scaleOptions.size(); ++index) {
+        addIndexedButton(*m_fontScaleButtons, *scaleLayout, scaleOptions.at(index),
+                         QStringLiteral("fontScaleButton_%1").arg(index), index);
+    }
+    scaleLayout->addStretch();
+    cardLayout->addLayout(scaleLayout);
+
+    cardLayout->addWidget(createLabel(tr("预览")));
+    auto *preview = new QFrame;
+    preview->setObjectName(QStringLiteral("previewCard"));
+    auto *previewLayout = new QVBoxLayout(preview);
+    previewLayout->setContentsMargins(16, 14, 16, 14);
+    previewLayout->addWidget(createLabel(tr("完成 SmartMate 主窗口设计"),
+                                         "sectionTitle"));
+    previewLayout->addWidget(createLabel(
+        tr("保持界面清新、清晰，并突出当前最值得做的任务。"), "secondaryText"));
+    previewLayout->addWidget(createLabel(tr("进行中 · 今天 18:00"),
+                                         "previewStatus"));
+    cardLayout->addWidget(preview);
+
+    auto *resetLayout = new QHBoxLayout;
+    resetLayout->addStretch();
+    auto *resetButton = new QPushButton{tr("恢复默认")};
+    resetButton->setObjectName(QStringLiteral("resetAppearanceButton"));
+    resetLayout->addWidget(resetButton);
+    cardLayout->addLayout(resetLayout);
+    contentLayout->addStretch();
+
+    binding::bindOneWay(settings,
+                        &viewmodel::AppearanceSettingsContract::appearanceChanged,
+                        *this,
+                        [&settings] { return settings.accentThemeIndex(); },
+                        [this](const int index) {
+                            binding::setCheckedButton(*m_accentButtons, index);
+                        });
+    connect(m_accentButtons, &QButtonGroup::idClicked, this,
+            [&settings](const int index) { settings.setAccentThemeIndex(index); });
+
+    binding::bindComboBoxIndex(
+        settings, &viewmodel::AppearanceSettingsContract::appearanceChanged,
+        *m_fontFamilyComboBox,
+        [&settings] { return settings.fontFamilyIndex(); },
+        [&settings](const int index) { settings.setFontFamilyIndex(index); });
+
+    binding::bindOneWay(settings,
+                        &viewmodel::AppearanceSettingsContract::appearanceChanged,
+                        *this,
+                        [&settings] { return settings.fontScaleIndex(); },
+                        [this](const int index) {
+                            binding::setCheckedButton(*m_fontScaleButtons, index);
+                        });
+    connect(m_fontScaleButtons, &QButtonGroup::idClicked, this,
+            [&settings](const int index) { settings.setFontScaleIndex(index); });
+    connect(resetButton, &QPushButton::clicked, this,
+            [&settings] { settings.resetDefaults(); });
+}
+
+} // namespace smartmate::view::widgets

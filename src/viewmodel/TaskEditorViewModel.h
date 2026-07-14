@@ -1,15 +1,14 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "viewmodel/contracts/TaskEditorContract.h"
 
-#include <QAbstractListModel>
 #include <QDateTime>
 #include <QHash>
 #include <QSet>
 #include <QStringList>
 #include <QTimeZone>
 #include <QVariantList>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 #include <optional>
 
@@ -24,66 +23,10 @@ namespace smartmate::viewmodel {
 ///
 /// 表单字段与候选勾选都只存在于 ViewModel；只有 save() 成功调用 Service 后
 /// 才会改变 Model，因此取消任一弹窗都不会污染已经保存的任务或依赖关系。
-class TaskEditorViewModel final : public QAbstractListModel {
+class TaskEditorViewModel final : public TaskEditorContract {
     Q_OBJECT
-    Q_PROPERTY(QString taskId READ taskId NOTIFY modeChanged)
-    Q_PROPERTY(bool editMode READ editMode NOTIFY modeChanged)
-    Q_PROPERTY(QString title READ title WRITE setTitle NOTIFY titleChanged)
-    Q_PROPERTY(QString description READ description WRITE setDescription NOTIFY descriptionChanged)
-    Q_PROPERTY(QString currentStatusText READ currentStatusText NOTIFY currentStatusTextChanged)
-    Q_PROPERTY(int priorityIndex READ priorityIndex WRITE setPriorityIndex NOTIFY priorityIndexChanged)
-    Q_PROPERTY(bool hasDeadline READ hasDeadline NOTIFY deadlineChanged)
-    Q_PROPERTY(QString deadlineDisplayText READ deadlineDisplayText NOTIFY deadlineChanged)
-    Q_PROPERTY(int deadlineYear READ deadlineYear NOTIFY deadlineChanged)
-    Q_PROPERTY(int deadlineMonth READ deadlineMonth NOTIFY deadlineChanged)
-    Q_PROPERTY(int deadlineDay READ deadlineDay NOTIFY deadlineChanged)
-    Q_PROPERTY(int deadlineHour READ deadlineHour NOTIFY deadlineChanged)
-    Q_PROPERTY(int deadlineMinute READ deadlineMinute NOTIFY deadlineChanged)
-    Q_PROPERTY(bool hasEstimatedDuration READ hasEstimatedDuration NOTIFY estimatedDurationChanged)
-    Q_PROPERTY(QString estimatedDurationDisplayText READ estimatedDurationDisplayText
-                   NOTIFY estimatedDurationChanged)
-    Q_PROPERTY(int estimatedDays READ estimatedDays NOTIFY estimatedDurationChanged)
-    Q_PROPERTY(int estimatedHours READ estimatedHours NOTIFY estimatedDurationChanged)
-    Q_PROPERTY(int estimatedMinutePart READ estimatedMinutePart NOTIFY estimatedDurationChanged)
-    Q_PROPERTY(int minimumEstimatedMinutes READ minimumEstimatedMinutes CONSTANT)
-    Q_PROPERTY(int maximumEstimatedMinutes READ maximumEstimatedMinutes CONSTANT)
-    Q_PROPERTY(QStringList priorityOptions READ priorityOptions CONSTANT)
-    Q_PROPERTY(QVariantList categoryOptions READ categoryOptions NOTIFY categoryOptionsChanged)
-    Q_PROPERTY(QString selectedCategoryId READ selectedCategoryId WRITE setSelectedCategoryId
-                   NOTIFY categoryChanged)
-    Q_PROPERTY(QString selectedCategoryName READ selectedCategoryName NOTIFY categoryChanged)
-    Q_PROPERTY(QString selectedCategoryAccent READ selectedCategoryAccent NOTIFY categoryChanged)
-    Q_PROPERTY(bool hasCategory READ hasCategory NOTIFY categoryChanged)
-    Q_PROPERTY(bool dirty READ dirty NOTIFY formStateChanged)
-    Q_PROPERTY(bool canSave READ canSave NOTIFY formStateChanged)
-    Q_PROPERTY(QString validationMessage READ validationMessage NOTIFY formStateChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    Q_PROPERTY(int predecessorCandidateCount READ predecessorCandidateCount
-                   NOTIFY predecessorCandidatesChanged)
-    Q_PROPERTY(int selectedPredecessorCount READ selectedPredecessorCount
-                   NOTIFY predecessorSelectionChanged)
-    Q_PROPERTY(QString predecessorSummaryText READ predecessorSummaryText
-                   NOTIFY predecessorSelectionChanged)
-    Q_PROPERTY(bool canConfigurePredecessors READ canConfigurePredecessors
-                   NOTIFY modeChanged)
-    QML_NAMED_ELEMENT(TaskEditorViewModel)
-    QML_UNCREATABLE("TaskEditorViewModel is owned by AppViewModel")
-
 public:
-    /// 候选行只用于展示；所有选择命令必须继续使用 candidateTaskId，而非行号。
-    enum Role {
-        CandidateTaskIdRole = Qt::UserRole + 1,
-        CandidateShortIdRole,
-        CandidateTitleRole,
-        CandidateStatusTextRole,
-        CandidatePriorityTextRole,
-        CandidateCategoryNameRole,
-        CandidateCategoryAccentRole,
-        CandidateHasCategoryRole,
-        CandidateSelectedRole,
-    };
-    Q_ENUM(Role)
-
     explicit TaskEditorViewModel(model::TaskService &taskService, QObject *parent = nullptr);
     TaskEditorViewModel(model::TaskService &taskService,
                         model::TaskCategoryService &categoryService,
@@ -101,89 +44,76 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
-    [[nodiscard]] QString taskId() const;
-    [[nodiscard]] bool editMode() const noexcept;
-    [[nodiscard]] QString title() const;
-    void setTitle(const QString &title);
-    [[nodiscard]] QString description() const;
-    void setDescription(const QString &description);
+    [[nodiscard]] QString taskId() const override;
+    [[nodiscard]] bool editMode() const noexcept override;
+    [[nodiscard]] bool sessionActive() const noexcept override;
+    [[nodiscard]] QString title() const override;
+    void setTitle(const QString &title) override;
+    [[nodiscard]] QString description() const override;
+    void setDescription(const QString &description) override;
     /// 状态是领域状态机的只读投影；编辑器不得直接修改任务状态。
-    [[nodiscard]] QString currentStatusText() const;
-    [[nodiscard]] int priorityIndex() const noexcept;
-    void setPriorityIndex(int priorityIndex);
-    [[nodiscard]] bool hasDeadline() const noexcept;
-    [[nodiscard]] QString deadlineDisplayText() const;
-    [[nodiscard]] int deadlineYear() const;
-    [[nodiscard]] int deadlineMonth() const;
-    [[nodiscard]] int deadlineDay() const;
-    [[nodiscard]] int deadlineHour() const;
-    [[nodiscard]] int deadlineMinute() const;
-    [[nodiscard]] bool hasEstimatedDuration() const noexcept;
-    [[nodiscard]] QString estimatedDurationDisplayText() const;
-    [[nodiscard]] int estimatedDays() const noexcept;
-    [[nodiscard]] int estimatedHours() const noexcept;
-    [[nodiscard]] int estimatedMinutePart() const noexcept;
-    [[nodiscard]] int minimumEstimatedMinutes() const noexcept;
-    [[nodiscard]] int maximumEstimatedMinutes() const noexcept;
+    [[nodiscard]] QString currentStatusText() const override;
+    [[nodiscard]] int priorityIndex() const noexcept override;
+    void setPriorityIndex(int priorityIndex) override;
+    [[nodiscard]] bool hasDeadline() const noexcept override;
+    [[nodiscard]] QString deadlineDisplayText() const override;
+    [[nodiscard]] int deadlineYear() const override;
+    [[nodiscard]] int deadlineMonth() const override;
+    [[nodiscard]] int deadlineDay() const override;
+    [[nodiscard]] int deadlineHour() const override;
+    [[nodiscard]] int deadlineMinute() const override;
+    [[nodiscard]] bool hasEstimatedDuration() const noexcept override;
+    [[nodiscard]] QString estimatedDurationDisplayText() const override;
+    [[nodiscard]] int estimatedDays() const noexcept override;
+    [[nodiscard]] int estimatedHours() const noexcept override;
+    [[nodiscard]] int estimatedMinutePart() const noexcept override;
+    [[nodiscard]] int minimumEstimatedMinutes() const noexcept override;
+    [[nodiscard]] int maximumEstimatedMinutes() const noexcept override;
 
-    [[nodiscard]] QStringList priorityOptions() const;
-    [[nodiscard]] QVariantList categoryOptions() const;
-    [[nodiscard]] QString selectedCategoryId() const;
-    void setSelectedCategoryId(const QString &categoryId);
-    [[nodiscard]] QString selectedCategoryName() const;
-    [[nodiscard]] QString selectedCategoryAccent() const;
-    [[nodiscard]] bool hasCategory() const noexcept;
-    [[nodiscard]] bool dirty() const noexcept;
-    [[nodiscard]] bool canSave() const noexcept;
-    [[nodiscard]] QString validationMessage() const;
+    [[nodiscard]] QStringList priorityOptions() const override;
+    [[nodiscard]] QVariantList categoryOptions() const override;
+    [[nodiscard]] QString selectedCategoryId() const override;
+    void setSelectedCategoryId(const QString &categoryId) override;
+    [[nodiscard]] QString selectedCategoryName() const override;
+    [[nodiscard]] QString selectedCategoryAccent() const override;
+    [[nodiscard]] bool hasCategory() const noexcept override;
+    [[nodiscard]] bool dirty() const noexcept override;
+    [[nodiscard]] bool canSave() const noexcept override;
+    [[nodiscard]] QString validationMessage() const override;
     [[nodiscard]] QString errorMessage() const;
-    [[nodiscard]] int predecessorCandidateCount() const noexcept;
-    [[nodiscard]] int selectedPredecessorCount() const noexcept;
-    [[nodiscard]] QString predecessorSummaryText() const;
-    [[nodiscard]] bool canConfigurePredecessors() const noexcept;
+    [[nodiscard]] int predecessorCandidateCount() const noexcept override;
+    [[nodiscard]] int selectedPredecessorCount() const noexcept override;
+    [[nodiscard]] QString predecessorSummaryText() const override;
+    [[nodiscard]] bool canConfigurePredecessors() const noexcept override;
 
     /// 读取活动候选并进入新建模式；读取失败时保持原草稿并返回 false。
-    Q_INVOKABLE bool beginCreate();
+    bool beginCreate() override;
     /// 根据稳定 TaskId 载入独立草稿；任务不存在或读取失败时返回 false。
-    Q_INVOKABLE bool beginEdit(const QString &taskId);
+    bool beginEdit(const QString &taskId) override;
     /// 以注入时区组合本地日期时间；DST 缺口、重叠或非法日期不会修改草稿。
-    Q_INVOKABLE bool setDeadlineSelection(int year, int month, int day,
-                                          int hour, int minute);
-    Q_INVOKABLE void clearDeadline();
+    bool setDeadlineSelection(int year, int month, int day,
+                              int hour, int minute) override;
+    void clearDeadline() override;
     /// 将天、小时、分钟换算为领域使用的总分钟；非法分量不会修改草稿。
-    Q_INVOKABLE bool setEstimatedDuration(int days, int hours, int minutes);
-    Q_INVOKABLE void clearEstimatedDuration();
+    bool setEstimatedDuration(int days, int hours, int minutes) override;
+    void clearEstimatedDuration() override;
     /// 以当前已接受选择建立弹窗检查点，后续勾选仍只修改本地工作副本。
-    Q_INVOKABLE void beginPredecessorSelection();
+    void beginPredecessorSelection() override;
     /// 按稳定 TaskId 修改弹窗工作副本，不接受经过重排后不稳定的列表行号。
-    Q_INVOKABLE bool setCreationPredecessorSelected(const QString &taskId,
-                                                    bool selected);
+    bool setCreationPredecessorSelected(const QString &taskId,
+                                        bool selected) override;
     /// 将弹窗工作副本合并进主创建草稿。
-    Q_INVOKABLE void acceptPredecessorSelection();
+    void acceptPredecessorSelection() override;
     /// 放弃本次弹窗内勾选并恢复打开前的选择。
-    Q_INVOKABLE void cancelPredecessorSelection();
-    Q_INVOKABLE void clearCreationPredecessors();
+    void cancelPredecessorSelection() override;
+    void clearCreationPredecessors() override;
     /// 将有效且已修改的草稿交给 Service；只有持久化成功才返回 true。
-    Q_INVOKABLE bool save();
+    bool save() override;
     /// 放弃保存当前草稿并通知 View 关闭编辑流程。
-    Q_INVOKABLE void cancel();
+    void cancel() override;
 
 signals:
-    void modeChanged();
-    void titleChanged();
-    void descriptionChanged();
-    void currentStatusTextChanged();
-    void priorityIndexChanged();
-    void deadlineChanged();
-    void estimatedDurationChanged();
-    void formStateChanged();
     void errorMessageChanged();
-    void predecessorCandidatesChanged();
-    void predecessorSelectionChanged();
-    void categoryOptionsChanged();
-    void categoryChanged();
-    void saved(const QString &taskId);
-    void cancelled();
 
 private:
     /// 记录打开编辑器时的草稿，仅用于计算 dirty/canSave，不是第二份领域模型。
@@ -209,6 +139,7 @@ private:
     void rememberCurrentDraft();
     void updateFormState();
     void setErrorMessage(const QString &message);
+    void setSessionActive(bool active);
     [[nodiscard]] std::optional<model::TaskDraft> buildTaskDraft();
     [[nodiscard]] std::optional<QDateTime> displayedDeadline() const;
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
@@ -229,6 +160,8 @@ private:
     // 当前可编辑草稿采用表单友好形态，便于与 QML 双向绑定。
     QString m_taskId;
     bool m_editMode{false};
+    /// 只表达编辑会话是否打开，不持有或控制任何具体 Dialog。
+    bool m_sessionActive{false};
     QString m_title;
     QString m_description;
     /// 仅用于展示当前持久化状态；所有改变都必须通过任务列表的显式状态命令。

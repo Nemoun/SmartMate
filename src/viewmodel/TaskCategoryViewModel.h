@@ -1,10 +1,8 @@
 #pragma once
 
 #include "domain/TaskCategory.h"
+#include "viewmodel/contracts/TaskCategoryContract.h"
 
-#include <QAbstractListModel>
-#include <QStringList>
-#include <QtQmlIntegration/qqmlintegration.h>
 
 namespace smartmate::model {
 class TaskService;
@@ -17,33 +15,10 @@ namespace smartmate::viewmodel {
 ///
 /// 名称唯一性、颜色有效性和原子删除均由 TaskCategoryService 判定；本类型
 /// 只把结构化结果映射为 QML 可观察状态。
-class TaskCategoryViewModel final : public QAbstractListModel {
+class TaskCategoryViewModel final : public TaskCategoryContract {
     Q_OBJECT
-    Q_PROPERTY(int count READ count NOTIFY countChanged)
-    Q_PROPERTY(bool empty READ empty NOTIFY countChanged)
-    Q_PROPERTY(bool editMode READ editMode NOTIFY draftChanged)
-    Q_PROPERTY(QString editingCategoryId READ editingCategoryId NOTIFY draftChanged)
-    Q_PROPERTY(QString draftName READ draftName WRITE setDraftName NOTIFY draftChanged)
-    Q_PROPERTY(int draftColorIndex READ draftColorIndex WRITE setDraftColorIndex
-                   NOTIFY draftChanged)
-    Q_PROPERTY(QStringList colorOptions READ colorOptions CONSTANT)
-    Q_PROPERTY(QStringList colorAccents READ colorAccents CONSTANT)
-    Q_PROPERTY(bool dirty READ dirty NOTIFY draftChanged)
-    Q_PROPERTY(bool canSave READ canSave NOTIFY draftChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    QML_NAMED_ELEMENT(TaskCategoryViewModel)
-    QML_UNCREATABLE("TaskCategoryViewModel is owned by AppViewModel")
-
 public:
-    enum Role {
-        CategoryIdRole = Qt::UserRole + 1,
-        NameRole,
-        ColorIndexRole,
-        AccentRole,
-        TaskCountRole,
-    };
-    Q_ENUM(Role)
-
     /// categoryService 可为空以兼容不加载类别功能的隔离测试；生产组合根必须注入。
     explicit TaskCategoryViewModel(model::TaskService &taskService,
                                    model::TaskCategoryService *categoryService = nullptr,
@@ -53,35 +28,30 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex &index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
-    [[nodiscard]] int count() const noexcept;
-    [[nodiscard]] bool empty() const noexcept;
-    [[nodiscard]] bool editMode() const noexcept;
-    [[nodiscard]] QString editingCategoryId() const;
-    [[nodiscard]] QString draftName() const;
-    void setDraftName(const QString &name);
-    [[nodiscard]] int draftColorIndex() const noexcept;
-    void setDraftColorIndex(int index);
-    [[nodiscard]] QStringList colorOptions() const;
-    [[nodiscard]] QStringList colorAccents() const;
-    [[nodiscard]] bool dirty() const noexcept;
-    [[nodiscard]] bool canSave() const noexcept;
+    [[nodiscard]] int count() const noexcept override;
+    [[nodiscard]] bool empty() const noexcept override;
+    [[nodiscard]] bool editMode() const noexcept override;
+    [[nodiscard]] QString editingCategoryId() const override;
+    [[nodiscard]] QString draftName() const override;
+    void setDraftName(const QString &name) override;
+    [[nodiscard]] int draftColorIndex() const noexcept override;
+    void setDraftColorIndex(int index) override;
+    [[nodiscard]] QStringList colorOptions() const override;
+    [[nodiscard]] QStringList colorAccents() const override;
+    [[nodiscard]] bool dirty() const noexcept override;
+    [[nodiscard]] bool canSave() const noexcept override;
     [[nodiscard]] QString errorMessage() const;
 
-    Q_INVOKABLE void reload();
-    Q_INVOKABLE void beginCreate();
-    Q_INVOKABLE bool beginEdit(const QString &categoryId);
-    Q_INVOKABLE bool save();
-    Q_INVOKABLE bool deleteCategory(const QString &categoryId);
-    Q_INVOKABLE void cancel();
+    void reload() override;
+    void beginCreate() override;
+    bool beginEdit(const QString &categoryId) override;
+    bool save() override;
+    bool deleteCategory(const QString &categoryId) override;
+    void cancel() override;
     Q_INVOKABLE void clearError();
 
 signals:
-    void countChanged();
-    void draftChanged();
     void errorMessageChanged();
-    void saved(const QString &categoryId);
-    void deleted(const QString &categoryId, int unassignedTaskCount);
-    void cancelled();
 
 private:
     [[nodiscard]] int rowForCategory(const model::TaskCategoryId &id) const;

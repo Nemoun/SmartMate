@@ -315,6 +315,7 @@ void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
                         batchTransitionsFor(repository), deletionRepository,
                         categoryRepository};
     TaskListViewModel viewModel{service};
+    TaskFocusViewModel focusViewModel{service};
 
     const auto timers = viewModel.findChildren<QTimer *>(
         QString{}, Qt::FindDirectChildrenOnly);
@@ -327,15 +328,20 @@ void TaskViewModelsTest::listSchedulesMinuteRefreshForTimeSensitiveReasons()
                               TaskListViewModel::OverdueRole).toBool();
     };
     QVERIFY(!projectedOverdue());
-    QVERIFY(!viewModel.focusOverdue());
+    QVERIFY(!focusViewModel.focusOverdue());
 
     // 不必真实等待一分钟：跨过截止时刻后直接触发同一 timeout 通道，
     // 验证定时刷新会重新请求 Model 计划并更新列表与焦点投影。
     QTRY_VERIFY_WITH_TIMEOUT(QDateTime::currentDateTimeUtc() > deadline, 3'000);
     QVERIFY(QMetaObject::invokeMethod(timers.constFirst(), "timeout",
                                       Qt::DirectConnection));
+    const auto focusTimers = focusViewModel.findChildren<QTimer *>(
+        QString{}, Qt::FindDirectChildrenOnly);
+    QCOMPARE(focusTimers.size(), 1);
+    QVERIFY(QMetaObject::invokeMethod(focusTimers.constFirst(), "timeout",
+                                      Qt::DirectConnection));
     QVERIFY(projectedOverdue());
-    QVERIFY(viewModel.focusOverdue());
+    QVERIFY(focusViewModel.focusOverdue());
 }
 
 
@@ -366,6 +372,7 @@ void TaskViewModelsTest::listProjectsOverdueStateIndependentlyFromOrderReason()
                         batchTransitionsFor(repository), deletionRepository,
                         categoryRepository};
     TaskListViewModel viewModel{service};
+    TaskFocusViewModel focusViewModel{service};
 
     const auto overdueFor = [&viewModel](const Task &stored) {
         const int row = rowForId(
@@ -378,10 +385,10 @@ void TaskViewModelsTest::listProjectsOverdueStateIndependentlyFromOrderReason()
     QVERIFY(overdueFor(overdueInProgress));
     QVERIFY(!overdueFor(completed));
     QVERIFY(!overdueFor(upcoming));
-    QCOMPARE(viewModel.focusTaskId(),
+    QCOMPARE(focusViewModel.focusTaskId(),
              overdueInProgress.id().toString(QUuid::WithoutBraces));
-    QVERIFY(viewModel.focusOverdue());
-    QCOMPARE(viewModel.focusReasonText(), QStringLiteral("正在进行"));
+    QVERIFY(focusViewModel.focusOverdue());
+    QCOMPARE(focusViewModel.focusReasonText(), QStringLiteral("正在进行"));
 
     const QString inProgressId =
         overdueInProgress.id().toString(QUuid::WithoutBraces);
@@ -552,6 +559,7 @@ void TaskViewModelsTest::listProjectsAndForwardsPermanentDeletionByStableTaskId(
                         batchTransitionsFor(repository), localDeletionRepository,
                         categoryRepository};
     TaskListViewModel viewModel{service};
+    TaskDetailsViewModel detailsViewModel{service};
 
     const int todoRow = rowForId(
         viewModel, todo.id().toString(QUuid::WithoutBraces));
@@ -564,11 +572,11 @@ void TaskViewModelsTest::listProjectsAndForwardsPermanentDeletionByStableTaskId(
     QVERIFY(viewModel.data(viewModel.index(0),
                            TaskListViewModel::CanDeletePermanentlyRole).toBool());
     const QString archivedId = archived.id().toString(QUuid::WithoutBraces);
-    QVERIFY(viewModel.selectTask(archivedId));
-    QCOMPARE(viewModel.selectedTaskId(), archivedId);
+    QVERIFY(detailsViewModel.selectTask(archivedId));
+    QCOMPARE(detailsViewModel.selectedTaskId(), archivedId);
     QVERIFY(viewModel.deleteArchivedTask(archivedId));
     QCOMPARE(viewModel.count(), 0);
-    QVERIFY(viewModel.selectedTaskId().isEmpty());
+    QVERIFY(detailsViewModel.selectedTaskId().isEmpty());
     QCOMPARE(localDeletionRepository.deletedTaskIds().size(), 1);
     QCOMPARE(localDeletionRepository.deletedTaskIds().constFirst(), archived.id());
 
@@ -845,19 +853,20 @@ void TaskViewModelsTest::listFocusProjectionIgnoresFiltersAndTracksInProgress()
                         batchTransitionsFor(repository), deletionRepository,
                         categoryRepository};
     TaskListViewModel viewModel{service};
+    TaskFocusViewModel focusViewModel{service};
 
-    QCOMPARE(viewModel.focusState(), TaskListViewModel::FocusState::Suggested);
-    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
-    QVERIFY(viewModel.focusCanStart());
+    QCOMPARE(focusViewModel.focusState(), TaskFocusViewModel::FocusState::Suggested);
+    QCOMPARE(focusViewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+    QVERIFY(focusViewModel.focusCanStart());
 
     viewModel.setSearchText(QStringLiteral("普通"));
     QCOMPARE(viewModel.count(), 1);
-    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+    QCOMPARE(focusViewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
 
     QVERIFY(viewModel.startTask(urgent.id().toString(QUuid::WithoutBraces)));
-    QCOMPARE(viewModel.focusState(), TaskListViewModel::FocusState::InProgress);
-    QCOMPARE(viewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
-    QVERIFY(viewModel.focusCanComplete());
+    QCOMPARE(focusViewModel.focusState(), TaskFocusViewModel::FocusState::InProgress);
+    QCOMPARE(focusViewModel.focusTaskId(), urgent.id().toString(QUuid::WithoutBraces));
+    QVERIFY(focusViewModel.focusCanComplete());
     const int normalRow = rowForId(viewModel, normal.id().toString(QUuid::WithoutBraces));
     QVERIFY(normalRow >= 0);
     QVERIFY(!viewModel.data(viewModel.index(normalRow),
@@ -877,7 +886,7 @@ void TaskViewModelsTest::listSelectsStableTaskDetails()
     TaskService service{repository, dependencyRepository, creationRepository,
                         batchTransitionsFor(repository), deletionRepository,
                         categoryRepository};
-    TaskListViewModel viewModel{service};
+    TaskDetailsViewModel viewModel{service};
 
     QVERIFY(viewModel.selectTask(stored.id().toString(QUuid::WithoutBraces)));
     QCOMPARE(viewModel.selectedTitle(), QStringLiteral("详情任务"));

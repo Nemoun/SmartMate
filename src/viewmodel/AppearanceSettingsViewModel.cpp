@@ -5,13 +5,13 @@
 namespace smartmate::viewmodel {
 
 AppearanceSettingsViewModel::AppearanceSettingsViewModel(QObject *parent)
-    : QObject(parent)
+    : AppearanceSettingsContract(parent)
 {
 }
 
 AppearanceSettingsViewModel::AppearanceSettingsViewModel(
     model::AppearanceSettingsService &service, QObject *parent)
-    : QObject(parent)
+    : AppearanceSettingsContract(parent)
     , m_service(&service)
 {
     load();
@@ -159,6 +159,11 @@ void AppearanceSettingsViewModel::saveCandidate(
 
 void AppearanceSettingsViewModel::setError(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("外观设置失败"),
+                                 message});
+    }
     if (m_errorMessage == message) {
         return;
     }

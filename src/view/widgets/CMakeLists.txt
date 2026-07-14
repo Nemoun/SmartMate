@@ -1,0 +1,46 @@
+add_library(smartmate_widgets STATIC
+    MainWindowDependencies.h
+    MainWindow.h
+    MainWindow.cpp
+    binding/WidgetBinding.h
+    settings/SettingsPage.h
+    settings/SettingsPage.cpp
+    task/TaskPage.h
+    task/TaskPage.cpp
+    task/TaskItemDelegate.h
+    task/TaskItemDelegate.cpp
+    task/TaskEditorDialog.h
+    task/TaskEditorDialog.cpp
+    task/TaskDetailsDialog.h
+    task/TaskDetailsDialog.cpp
+    task/TaskCategoryDialog.h
+    task/TaskCategoryDialog.cpp
+    task/TaskCreationPredecessorDialog.h
+    task/TaskCreationPredecessorDialog.cpp
+    task/TaskDependencyDialog.h
+    task/TaskDependencyDialog.cpp
+    task/DeadlinePickerDialog.h
+    task/DeadlinePickerDialog.cpp
+    task/DurationPickerDialog.h
+    task/DurationPickerDialog.cpp
+    graph/DependencyGraphPage.h
+    graph/DependencyGraphPage.cpp
+    graph/DependencyGraphView.h
+    graph/DependencyGraphView.cpp
+    graph/TaskGraphItems.h
+    graph/TaskGraphItems.cpp
+    theme/WidgetTheme.h
+    theme/WidgetTheme.cpp
+)
+
+target_include_directories(smartmate_widgets
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/src
+)
+
+target_link_libraries(smartmate_widgets
+    PUBLIC
+        smartmate_common
+        smartmate_viewmodel_contracts
+        Qt6::Widgets
+)

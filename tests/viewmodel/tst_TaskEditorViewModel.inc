@@ -11,7 +11,11 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
     const QTimeZone timeZone = QTimeZone::fromSecondsAheadOfUtc(8 * 60 * 60);
     TaskEditorViewModel editor{service, timeZone};
 
+    QVERIFY(!editor.sessionActive());
+    QSignalSpy sessionSpy{&editor, &TaskEditorViewModel::sessionActiveChanged};
     editor.beginCreate();
+    QVERIFY(editor.sessionActive());
+    QCOMPARE(sessionSpy.count(), 1);
     QCOMPARE(editor.currentStatusText(), QStringLiteral("待办"));
     QCOMPARE(editor.priorityOptions().size(), 4);
     QCOMPARE(editor.metaObject()->indexOfProperty("statusIndex"), -1);
@@ -38,6 +42,8 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
 
     QSignalSpy savedSpy{&editor, &TaskEditorViewModel::saved};
     QVERIFY(editor.save());
+    QVERIFY(!editor.sessionActive());
+    QCOMPARE(sessionSpy.count(), 2);
 
     QCOMPARE(savedSpy.count(), 1);
     QCOMPARE(repository.tasks().size(), 1);
@@ -70,6 +76,7 @@ void TaskViewModelsTest::editorCancelLeavesTheStoredTaskUnchanged()
     TaskEditorViewModel editor{service};
 
     QVERIFY(editor.beginEdit(stored.id().toString(QUuid::WithoutBraces)));
+    QVERIFY(editor.sessionActive());
     editor.setTitle(QStringLiteral("unsaved change"));
     QVERIFY(editor.dirty());
     QSignalSpy cancelledSpy{&editor, &TaskEditorViewModel::cancelled};
@@ -77,6 +84,7 @@ void TaskViewModelsTest::editorCancelLeavesTheStoredTaskUnchanged()
     editor.cancel();
 
     QCOMPARE(cancelledSpy.count(), 1);
+    QVERIFY(!editor.sessionActive());
     QCOMPARE(repository.findById(stored.id())->title(), QStringLiteral("original"));
 }
 
@@ -109,6 +117,7 @@ void TaskViewModelsTest::editorRejectsInvalidSelectionsAndMapsServiceErrors()
     QVERIFY(editor.canSave());
     creationRepository.setWriteFailure(true);
     QVERIFY(!editor.save());
+    QVERIFY(editor.sessionActive());
     QVERIFY(editor.errorMessage().contains(QStringLiteral("数据")));
     QVERIFY(editor.dirty());
 

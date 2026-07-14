@@ -72,7 +72,7 @@ TaskEditorViewModel::TaskEditorViewModel(
     model::TaskCategoryService *categoryService,
     QTimeZone timeZone,
     QObject *parent)
-    : QAbstractListModel(parent)
+    : TaskEditorContract(parent)
     , m_taskService(taskService)
     , m_categoryService(categoryService)
     , m_timeZone(std::move(timeZone))
@@ -166,6 +166,11 @@ QString TaskEditorViewModel::taskId() const
 bool TaskEditorViewModel::editMode() const noexcept
 {
     return m_editMode;
+}
+
+bool TaskEditorViewModel::sessionActive() const noexcept
+{
+    return m_sessionActive;
 }
 
 QString TaskEditorViewModel::title() const
@@ -454,6 +459,7 @@ bool TaskEditorViewModel::beginCreate()
 
     replaceCandidates(*candidates.value);
     replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
+    setSessionActive(true);
     return true;
 }
 
@@ -484,6 +490,7 @@ bool TaskEditorViewModel::beginEdit(const QString &taskId)
     replaceCandidates({});
     replaceDraft(draft, task.id().toString(QUuid::WithoutBraces), true,
                  task.status());
+    setSessionActive(true);
     return true;
 }
 
@@ -706,6 +713,7 @@ bool TaskEditorViewModel::save()
     rememberCurrentDraft();
     updateFormState();
     setErrorMessage({});
+    setSessionActive(false);
     emit saved(m_taskId);
     return true;
 }
@@ -716,7 +724,17 @@ void TaskEditorViewModel::cancel()
     // 主表单取消后立即丢弃字段、候选与已接受依赖，下一次打开不会继承旧草稿。
     replaceCandidates({});
     replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
+    setSessionActive(false);
     emit cancelled();
+}
+
+void TaskEditorViewModel::setSessionActive(const bool active)
+{
+    if (m_sessionActive == active) {
+        return;
+    }
+    m_sessionActive = active;
+    emit sessionActiveChanged();
 }
 
 TaskEditorViewModel::Snapshot TaskEditorViewModel::currentSnapshot() const
@@ -811,6 +829,11 @@ void TaskEditorViewModel::updateFormState()
 
 void TaskEditorViewModel::setErrorMessage(const QString &message)
 {
+    if (!message.isEmpty()) {
+        emit notificationRaised({smartmate::common::UiSeverity::Error,
+                                 QStringLiteral("任务编辑失败"),
+                                 message});
+    }
     if (m_errorMessage == message) {
         return;
     }

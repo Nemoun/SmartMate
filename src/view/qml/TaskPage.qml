@@ -24,7 +24,7 @@ Page {
     }
 
     function openDetails(taskId) {
-        if (root.appViewModel.taskList.selectTask(taskId))
+        if (root.appViewModel.taskDetails.selectTask(taskId))
             detailsDialog.open()
     }
 
@@ -64,7 +64,7 @@ Page {
         TaskFocusCard {
             Layout.fillWidth: true
             visible: !root.appViewModel.taskList.bulkSelectionMode
-            taskList: root.appViewModel.taskList
+            taskFocus: root.appViewModel.taskFocus
             theme: root.theme
             dragPreview: dragPreview
             onDetailsRequested: taskId => root.openDetails(taskId)
@@ -231,7 +231,7 @@ Page {
     TaskDetailsDialog {
         id: detailsDialog
         anchors.centerIn: Overlay.overlay
-        taskList: root.appViewModel.taskList
+        taskDetails: root.appViewModel.taskDetails
         theme: root.theme
         onEditRequested: taskId => { close(); root.openEditor(taskId) }
         onEditDependenciesRequested: taskId => { close(); root.editDependenciesRequested(taskId) }
