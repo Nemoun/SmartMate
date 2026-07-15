@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/presentation/UiNotification.h"
+#include "viewmodel/contracts/TaskPresentationTypes.h"
 
 #include <QObject>
 #include <QString>
@@ -17,7 +18,9 @@ class TaskDetailsContract : public QObject {
     Q_PROPERTY(QString selectedTitle READ selectedTitle NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedDescription READ selectedDescription NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedStatusText READ selectedStatusText NOTIFY selectionChanged)
+    Q_PROPERTY(TaskStatusVisual selectedStatusVisual READ selectedStatusVisual NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedPriorityText READ selectedPriorityText NOTIFY selectionChanged)
+    Q_PROPERTY(TaskPriorityVisual selectedPriorityVisual READ selectedPriorityVisual NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedDeadlineText READ selectedDeadlineText NOTIFY selectionChanged)
     Q_PROPERTY(int selectedEstimatedMinutes READ selectedEstimatedMinutes NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedCreatedAtText READ selectedCreatedAtText NOTIFY selectionChanged)
@@ -31,6 +34,7 @@ class TaskDetailsContract : public QObject {
     Q_PROPERTY(QString selectedCategoryName READ selectedCategoryName NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedCategoryAccent READ selectedCategoryAccent NOTIFY selectionChanged)
     Q_PROPERTY(bool selectedHasCategory READ selectedHasCategory NOTIFY selectionChanged)
+    Q_PROPERTY(bool selectedOverdue READ selectedOverdue NOTIFY selectionChanged)
 
 public:
     ~TaskDetailsContract() override = default;
@@ -40,7 +44,9 @@ public:
     [[nodiscard]] virtual QString selectedTitle() const = 0;
     [[nodiscard]] virtual QString selectedDescription() const = 0;
     [[nodiscard]] virtual QString selectedStatusText() const = 0;
+    [[nodiscard]] virtual TaskStatusVisual selectedStatusVisual() const noexcept = 0;
     [[nodiscard]] virtual QString selectedPriorityText() const = 0;
+    [[nodiscard]] virtual TaskPriorityVisual selectedPriorityVisual() const noexcept = 0;
     [[nodiscard]] virtual QString selectedDeadlineText() const = 0;
     [[nodiscard]] virtual int selectedEstimatedMinutes() const noexcept = 0;
     [[nodiscard]] virtual QString selectedCreatedAtText() const = 0;
@@ -54,6 +60,7 @@ public:
     [[nodiscard]] virtual QString selectedCategoryName() const = 0;
     [[nodiscard]] virtual QString selectedCategoryAccent() const = 0;
     [[nodiscard]] virtual bool selectedHasCategory() const noexcept = 0;
+    [[nodiscard]] virtual bool selectedOverdue() const noexcept = 0;
 
 public slots:
     /// 选择稳定 TaskId；格式无效或当前投影不存在时返回 false。

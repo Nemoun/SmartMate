@@ -141,6 +141,42 @@ QString WidgetTheme::styleSheet() const
         }
         QPushButton#clearCreationPredecessorButton, QPushButton#clearDeadlineButton,
         QPushButton#clearDurationButton { min-width: 20px; padding: 7px 8px; }
+        QDialog#taskDetailsDialog { background: %14; color: %2; }
+        QFrame#taskDetailsHeader, QFrame#taskDetailsFooter {
+            background: %6; border: none;
+        }
+        QFrame#taskDetailsHeader { border-bottom: 1px solid %4; }
+        QFrame#taskDetailsFooter { border-top: 1px solid %4; }
+        QScrollArea#taskDetailsScrollView, QWidget#taskDetailsContent {
+            background: %14; border: none;
+        }
+        QLabel#taskDetailsEyebrow { color: %10; font-size: 12px; font-weight: 700; }
+        QLabel#taskDetailsTitle { color: %2; font-size: 21px; font-weight: 700; }
+        QFrame#taskDetailsDescriptionSection, QFrame#taskDetailsScheduleSection,
+        QFrame#taskDetailsInsightSection {
+            background: %5; border: 1px solid %4; border-radius: 11px;
+        }
+        QLabel#taskDetailsSectionTitle { color: %10; font-size: 15px; font-weight: 700; }
+        QLabel#taskDetailsDescription { color: %15; background: transparent; border: none; }
+        QFrame#taskDetailsMetadataItem, QFrame#taskDetailsMetric {
+            background: %6; border: 1px solid %4; border-radius: 8px;
+        }
+        QLabel#taskDetailsMetadataCaption, QLabel#taskDetailsMetricCaption,
+        QLabel#taskDetailsInsightCaption {
+            color: %12; font-size: 11px; font-weight: 600;
+            background: transparent; border: none;
+        }
+        QLabel#taskDetailsDeadlineValue, QLabel#taskDetailsEstimateValue,
+        QLabel#taskDetailsCreatedValue, QLabel#taskDetailsUpdatedValue {
+            color: %15; background: transparent; border: none;
+        }
+        QLabel#taskDetailsPredecessorCount, QLabel#taskDetailsUnlockCount {
+            color: %10; font-size: 18px; font-weight: 700;
+            background: transparent; border: none;
+        }
+        QPushButton#editSelectedTaskButton {
+            color: white; background: %10; border-color: %10; font-weight: 700;
+        }
         QDialog#deadlinePickerDialog, QDialog#durationPickerDialog {
             background: %14; color: %2;
         }

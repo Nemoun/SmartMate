@@ -197,6 +197,9 @@ void ViewModelContractsTest::concreteMetaObjectsExposeInheritedQmlApi()
     QVERIFY(focusMeta.indexOfEnumerator("FocusState") >= 0);
     const QMetaObject &detailsMeta = viewmodel::TaskDetailsViewModel::staticMetaObject;
     QVERIFY(detailsMeta.indexOfProperty("selectedTaskId") >= 0);
+    QVERIFY(detailsMeta.indexOfProperty("selectedStatusVisual") >= 0);
+    QVERIFY(detailsMeta.indexOfProperty("selectedPriorityVisual") >= 0);
+    QVERIFY(detailsMeta.indexOfProperty("selectedOverdue") >= 0);
     QVERIFY(hasMetaMethod(detailsMeta, QByteArrayLiteral("selectTask")));
 
     const QMetaObject &graphMeta = viewmodel::TaskGraphViewModel::staticMetaObject;

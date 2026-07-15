@@ -897,7 +897,8 @@ void TaskViewModelsTest::listSelectsStableTaskDetails()
     const Task stored = task(
         QStringLiteral("{11111111-1111-1111-1111-111111111111}"),
         QStringLiteral("详情任务"), TaskStatus::Todo, 1700000001000,
-        TaskPriority::High, QStringLiteral("详情描述"));
+        TaskPriority::High, QStringLiteral("详情描述"),
+        utcTime(1600000000000));
     FakeTaskRepository repository{{stored}};
     FakeTaskDependencyRepository dependencyRepository;
     FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
@@ -911,8 +912,14 @@ void TaskViewModelsTest::listSelectsStableTaskDetails()
     QCOMPARE(viewModel.selectedTitle(), QStringLiteral("详情任务"));
     QCOMPARE(viewModel.selectedDescription(), QStringLiteral("详情描述"));
     QCOMPARE(viewModel.selectedPriorityText(), QStringLiteral("高"));
+    QCOMPARE(viewModel.selectedStatusVisual(), TaskStatusVisual::Todo);
+    QCOMPARE(viewModel.selectedPriorityVisual(), TaskPriorityVisual::High);
+    QVERIFY(viewModel.selectedOverdue());
     QVERIFY(!viewModel.selectedCreatedAtText().isEmpty());
     QVERIFY(viewModel.selectedCanEditTask());
     viewModel.clearSelection();
     QVERIFY(viewModel.selectedTaskId().isEmpty());
+    QCOMPARE(viewModel.selectedStatusVisual(), TaskStatusVisual::Todo);
+    QCOMPARE(viewModel.selectedPriorityVisual(), TaskPriorityVisual::Normal);
+    QVERIFY(!viewModel.selectedOverdue());
 }

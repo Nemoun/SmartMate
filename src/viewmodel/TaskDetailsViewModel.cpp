@@ -25,7 +25,9 @@ QString TaskDetailsViewModel::selectedTaskId() const { return m_selectedTaskId.i
 QString TaskDetailsViewModel::selectedTitle() const { const auto *task = selectedTask(); return task ? task->title() : QString{}; }
 QString TaskDetailsViewModel::selectedDescription() const { const auto *task = selectedTask(); return task ? task->description() : QString{}; }
 QString TaskDetailsViewModel::selectedStatusText() const { const auto *task = selectedTask(); return task ? taskStatusText(task->status()) : QString{}; }
+TaskStatusVisual TaskDetailsViewModel::selectedStatusVisual() const noexcept { const auto *task = selectedTask(); return task ? taskStatusVisual(task->status()) : TaskStatusVisual::Todo; }
 QString TaskDetailsViewModel::selectedPriorityText() const { const auto *task = selectedTask(); return task ? taskPriorityText(task->priority()) : QString{}; }
+TaskPriorityVisual TaskDetailsViewModel::selectedPriorityVisual() const noexcept { const auto *task = selectedTask(); return task ? taskPriorityVisual(task->priority()) : TaskPriorityVisual::Normal; }
 QString TaskDetailsViewModel::selectedDeadlineText() const { const auto *task = selectedTask(); return task ? taskDeadlineText(*task, {}) : QString{}; }
 int TaskDetailsViewModel::selectedEstimatedMinutes() const noexcept { const auto *task = selectedTask(); return task && task->estimatedMinutes() ? *task->estimatedMinutes() : 0; }
 QString TaskDetailsViewModel::selectedCreatedAtText() const { const auto *task = selectedTask(); return task ? taskDateTimeText(task->createdAtUtc().toLocalTime()) : QString{}; }
@@ -39,6 +41,7 @@ bool TaskDetailsViewModel::selectedCanEditDependencies() const noexcept { return
 QString TaskDetailsViewModel::selectedCategoryName() const { const auto *category = selectedCategory(); return category ? category->name : QString{}; }
 QString TaskDetailsViewModel::selectedCategoryAccent() const { const auto *category = selectedCategory(); return category ? taskCategoryAccent(category->color) : taskUncategorizedAccent(); }
 bool TaskDetailsViewModel::selectedHasCategory() const noexcept { return selectedCategory() != nullptr; }
+bool TaskDetailsViewModel::selectedOverdue() const noexcept { return m_planSource.projection().overdueStates.value(m_selectedTaskId, false); }
 
 bool TaskDetailsViewModel::selectTask(const QString &taskId)
 {

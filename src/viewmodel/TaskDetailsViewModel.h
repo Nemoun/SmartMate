@@ -17,7 +17,9 @@ public:
     [[nodiscard]] QString selectedTitle() const override;
     [[nodiscard]] QString selectedDescription() const override;
     [[nodiscard]] QString selectedStatusText() const override;
+    [[nodiscard]] TaskStatusVisual selectedStatusVisual() const noexcept override;
     [[nodiscard]] QString selectedPriorityText() const override;
+    [[nodiscard]] TaskPriorityVisual selectedPriorityVisual() const noexcept override;
     [[nodiscard]] QString selectedDeadlineText() const override;
     [[nodiscard]] int selectedEstimatedMinutes() const noexcept override;
     [[nodiscard]] QString selectedCreatedAtText() const override;
@@ -31,6 +33,7 @@ public:
     [[nodiscard]] QString selectedCategoryName() const override;
     [[nodiscard]] QString selectedCategoryAccent() const override;
     [[nodiscard]] bool selectedHasCategory() const noexcept override;
+    [[nodiscard]] bool selectedOverdue() const noexcept override;
 
     bool selectTask(const QString &taskId) override;
     void clearSelection() override;
