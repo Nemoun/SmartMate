@@ -77,6 +77,7 @@ TaskEditorViewModel::TaskEditorViewModel(
     , m_categoryService(categoryService)
     , m_timeZone(std::move(timeZone))
 {
+    // 类别目录变化只刷新类别选项和相关候选 Role，不让编辑器直接调用类别 ViewModel。
     if (m_categoryService) {
         connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
                 this, &TaskEditorViewModel::reloadCategories);
@@ -184,6 +185,7 @@ void TaskEditorViewModel::setTitle(const QString &title)
         return;
     }
     m_title = title;
+    // 字段通知先让 Widget 同步文本，随后 formStateChanged 更新校验和保存资格。
     emit titleChanged();
     setErrorMessage({});
     updateFormState();
@@ -575,6 +577,7 @@ void TaskEditorViewModel::beginPredecessorSelection()
     if (!canConfigurePredecessors()) {
         return;
     }
+    // 复制检查点形成可撤销子会话；弹窗取消不会污染主创建草稿。
     m_pickerPredecessors = m_selectedCreationPredecessors;
     m_predecessorPickerActive = true;
     notifyCandidateSelectionChanged();
@@ -661,7 +664,7 @@ void TaskEditorViewModel::clearCreationPredecessors()
 
 bool TaskEditorViewModel::save()
 {
-    // 命令入口自身也必须守住状态，不能只依赖 QML 将保存按钮设为不可用。
+    // 命令入口自身也必须守住状态，不能只依赖 Widget 将保存按钮设为不可用。
     updateFormState();
     if (!m_dirty) {
         setErrorMessage(QStringLiteral("没有需要保存的更改。"));
@@ -686,6 +689,7 @@ bool TaskEditorViewModel::save()
         }
         result = m_taskService.updateTask(id, *draft);
     } else {
+        // 创建草稿与全部前置稳定 ID 一次交给 Service，禁止逐边保存产生部分成功。
         QList<model::TaskId> predecessorIds = m_selectedCreationPredecessors.values();
         std::sort(predecessorIds.begin(), predecessorIds.end(),
                   [](const model::TaskId &left, const model::TaskId &right) {
@@ -703,6 +707,7 @@ bool TaskEditorViewModel::save()
         return false;
     }
 
+    // 成功后以 Service 返回快照建立新检查点；先关闭会话状态，再发送 saved 流程信号。
     m_taskId = result.value->id().toString(QUuid::WithoutBraces);
     m_editMode = true;
     if (m_currentStatus != result.value->status()) {
@@ -754,6 +759,7 @@ void TaskEditorViewModel::replaceDraft(const Snapshot &draft, const QString &tas
                                        const bool editMode,
                                        const model::TaskStatus currentStatus)
 {
+    // 一次替换全部字段后集中通知，Widget 可用 QSignalBlocker 做程序性回填。
     m_taskId = taskId;
     m_editMode = editMode;
     m_title = draft.title;
@@ -784,6 +790,7 @@ void TaskEditorViewModel::replaceDraft(const Snapshot &draft, const QString &tas
 
 void TaskEditorViewModel::replaceCandidates(QList<model::Task> candidates)
 {
+    // 候选集合整体变化使用 reset；单项勾选只用 dataChanged。
     beginResetModel();
     m_predecessorCandidates = std::move(candidates);
     endResetModel();
@@ -824,11 +831,13 @@ void TaskEditorViewModel::updateFormState()
     m_dirty = dirty;
     m_canSave = canSave;
     m_validationMessage = validationMessage;
+    // 一个聚合通知覆盖三个派生 getter，保证 dirty/canSave/文案来自同一次计算。
     emit formStateChanged();
 }
 
 void TaskEditorViewModel::setErrorMessage(const QString &message)
 {
+    // 一次性错误通知与 errorMessage 可观察属性分开，重复属性值不重复通知绑定。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("任务编辑失败"),

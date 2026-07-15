@@ -19,8 +19,9 @@ class TaskCategoryService;
 
 namespace smartmate::viewmodel {
 
-/// 将领域任务集合投影成 QML 可绑定的列表；它负责展示格式与命令转发，
+/// 将领域任务集合投影成 Qt Widgets 可绑定的列表；它负责展示格式与命令转发，
 /// 不拥有任务真相，也不直接访问 Repository。
+/// Service 通知触发全量计划重载；搜索、筛选和批量选择只改变会话级可见投影。
 class TaskListViewModel final : public TaskListContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
@@ -98,7 +99,7 @@ signals:
     void errorOccurred(const QString &message);
 
 private:
-    /// Model 依赖状态的界面投影；中文原因在 reload() 时一次生成，QML 不拼接图数据。
+    /// Model 依赖状态的界面投影；中文原因在 reload() 时一次生成，Widget 不拼接图数据。
     [[nodiscard]] static QString statusText(model::TaskStatus status);
     [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] static model::TaskId parseTaskId(const QString &taskId);
@@ -108,11 +109,17 @@ private:
     [[nodiscard]] bool isBulkSelectable(const model::TaskId &taskId) const;
     [[nodiscard]] QList<model::TaskId> sortedBulkSelection() const;
     [[nodiscard]] QString taskIdsContext(const QList<model::TaskId> &taskIds) const;
+    /// 删除刷新后已不存在、不可见或不再具备批量资格的稳定 ID。
     void pruneBulkSelection();
+    /// 原子替换批量选择并只通知相关 Role/属性。
     void setBulkSelection(QSet<model::TaskId> selection);
+    /// 将状态转换枚举映射到对应 Service 强类型命令并统一处理错误。
     bool performTransition(const QString &taskId, model::TaskTransition transition);
+    /// 保留 Model 顺序应用会话筛选，并用模型重置协议替换可见行。
     void rebuildVisibleTasks();
+    /// 去重错误属性与流程通知。
     void setError(const QString &message);
+    /// 刷新类别选项；失效的指定类别筛选安全回退为全部。
     void reloadCategories();
     [[nodiscard]] const model::TaskCategory *categoryForTask(
         const model::Task *task) const;
@@ -123,22 +130,26 @@ private:
 
     // Service 由组合根拥有；列表只保留非拥有引用并监听其变化通知。
     model::TaskService &m_taskService;
+    /// 非拥有可选类别 Service；nullptr 仅用于隔离测试。
     model::TaskCategoryService *m_categoryService{nullptr};
     // 每分钟重新请求Model计划，使“已逾期”等随时间变化的推荐理由及时刷新。
     QTimer m_reloadTimer;
     // 全量计划顺序与当前可见投影分离，搜索和筛选不会修改领域数据。
     QList<model::Task> m_allTasks;
+    /// 当前筛选后、仍保持 Model 推荐相对顺序的行快照。
     QList<model::Task> m_visibleTasks;
     // 当前搜索、筛选与活动/归档范围内的稳定ID集合，用于O(1)批量资格检查。
     QSet<model::TaskId> m_visibleTaskIds;
     QHash<model::TaskId, QString> m_orderReasonTexts;
     // 逾期随当前时间变化，是 Model 计算后交给 ViewModel 的会话级投影。
     QHash<model::TaskId, bool> m_overdueStates;
+    /// 按稳定 ID 索引的依赖文案与命令资格展示缓存。
     QHash<model::TaskId, TaskDependencyProjection> m_dependencyProjections;
     QHash<model::TaskId, model::TaskCommandAvailability> m_availabilities;
     // 批量选择只保存稳定 TaskId，且绝不写入持久化层。
     QSet<model::TaskId> m_bulkSelectedTaskIds;
     bool m_bulkSelectionMode{false};
+    // 以下筛选字段只属于当前 ViewModel 会话，不写入 SQLite 或 QSettings。
     bool m_showArchived{false};
     QString m_searchText;
     // 0表示全部，1～4分别映射Low～Urgent；非法索引不会替换当前条件。

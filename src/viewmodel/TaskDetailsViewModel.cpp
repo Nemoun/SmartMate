@@ -32,6 +32,7 @@ TaskDetailsViewModel::TaskDetailsViewModel(
     , m_taskService(taskService)
     , m_categoryService(categoryService)
 {
+    // 详情不调用列表 ViewModel；共享 Service 的粗粒度失效通知触发本投影独立重建。
     connect(&m_taskService, &model::TaskService::tasksChanged,
             this, &TaskDetailsViewModel::reload);
     connect(&m_taskService, &model::TaskService::dependenciesChanged,
@@ -90,6 +91,7 @@ void TaskDetailsViewModel::reload()
     TaskPlanProjection projection = makeTaskPlanProjection(*result.value);
     const bool selectionRemoved = !m_selectedTaskId.isNull()
         && !projection.taskForId(m_selectedTaskId);
+    // 计划和选择均未变化时不通知，避免详情控件重复回填产生双向绑定回路。
     if (m_projection == projection && !selectionRemoved) return;
     m_projection = std::move(projection);
     if (selectionRemoved) m_selectedTaskId = model::TaskId{};
@@ -100,6 +102,7 @@ void TaskDetailsViewModel::reloadCategories()
 {
     if (!m_categoryService) return;
     const auto result = m_categoryService->listCategories();
+    // 类别颜色或名称会改变详情 getter，因此复用 selectionChanged 统一要求绑定重读。
     if (!result.ok() || m_categories == *result.value) return;
     m_categories = *result.value;
     emit selectionChanged();

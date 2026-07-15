@@ -14,7 +14,7 @@ namespace smartmate::viewmodel {
 /// 投影类别目录并维护单个类别的创建/编辑草稿。
 ///
 /// 名称唯一性、颜色有效性和原子删除均由 TaskCategoryService 判定；本类型
-/// 只把结构化结果映射为 QML 可观察状态。
+/// 只把结构化结果映射为 Qt Widgets 可观察状态。
 class TaskCategoryViewModel final : public TaskCategoryContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
@@ -54,21 +54,30 @@ signals:
     void errorMessageChanged();
 
 private:
+    /// 按稳定 ID 查找当前投影行；不存在返回 -1，绝不把行号当类别身份。
     [[nodiscard]] int rowForCategory(const model::TaskCategoryId &id) const;
+    /// 将类别业务错误枚举转换为中文展示文案。
     [[nodiscard]] QString categoryErrorText(int error) const;
+    /// 去重错误属性通知，并为非空错误发布 UiNotification。
     void setErrorMessage(const QString &message);
 
+    /// 非拥有任务 Service 引用，用于统计各类别关联任务数。
     model::TaskService &m_taskService;
     /// 非拥有指针；nullptr 仅用于旧的隔离测试构造路径。
     model::TaskCategoryService *m_categoryService{nullptr};
+    /// 当前类别列表快照，是 QAbstractListModel Role 的数据源。
     QList<model::TaskCategory> m_categories;
+    /// 按稳定类别 ID 缓存派生任务数量，不写回 Model。
     QHash<model::TaskCategoryId, int> m_taskCounts;
+    /// 编辑模式目标；创建模式为空 ID。
     model::TaskCategoryId m_editingCategoryId;
+    // 当前表单草稿与打开编辑时原值分离，用于计算 dirty/canSave。
     QString m_draftName;
     model::TaskCategoryColor m_draftColor{model::TaskCategoryColor::Blue};
     QString m_originalName;
     model::TaskCategoryColor m_originalColor{model::TaskCategoryColor::Blue};
     bool m_editMode{false};
+    /// 最近一次命令错误；空字符串表示无错误。
     QString m_errorMessage;
 };
 

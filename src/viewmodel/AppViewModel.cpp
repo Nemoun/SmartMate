@@ -61,6 +61,7 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
     , m_taskGraph(taskService, categoryService)
     , m_appearanceSettings(appearanceService)
 {
+    // 子 ViewModel 共享 Service，但没有相互引用；跨投影同步完全依靠 Service 失效通知。
 }
 
 TaskListViewModel *AppViewModel::taskList() noexcept
@@ -85,6 +86,7 @@ TaskEditorViewModel *AppViewModel::taskEditor() noexcept
 
 TaskDependencyViewModel *AppViewModel::taskDependencies() noexcept
 {
+    // 指针由 QObject 父子关系管理；返回仅用于向 Widget 注入 TaskDependencyContract。
     return m_taskDependencies;
 }
 

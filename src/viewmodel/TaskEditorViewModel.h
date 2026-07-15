@@ -129,22 +129,33 @@ private:
         bool operator==(const Snapshot &) const = default;
     };
 
+    /// 捕获当前表单字段与已接受前置，用于 dirty 比较。
     [[nodiscard]] Snapshot currentSnapshot() const;
+    /// 原子替换整个草稿并统一发布所有相关 Contract 通知。
     void replaceDraft(const Snapshot &draft,
                       const QString &taskId,
                       bool editMode,
                       model::TaskStatus currentStatus = model::TaskStatus::Todo);
+    /// 使用模型重置协议替换创建前置候选。
     void replaceCandidates(QList<model::Task> candidates);
+    /// 只通知候选选中 Role，避免因选择变化重建列表。
     void notifyCandidateSelectionChanged();
+    /// 将当前草稿记录为已确认检查点，使 dirty 归零。
     void rememberCurrentDraft();
+    /// 复用 Model 校验计算 dirty/canSave/validationMessage 并按需通知。
     void updateFormState();
+    /// 去重错误属性通知并发布 UiNotification。
     void setErrorMessage(const QString &message);
+    /// 切换编辑会话可见状态，不持有或操纵具体 Dialog。
     void setSessionActive(bool active);
+    /// 将表单友好字段转换为完整 TaskDraft；校验失败返回空值。
     [[nodiscard]] std::optional<model::TaskDraft> buildTaskDraft();
+    /// 将内部截止时间投影到注入时区，供类型化控件显示。
     [[nodiscard]] std::optional<QDateTime> displayedDeadline() const;
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
     [[nodiscard]] static QString statusText(model::TaskStatus status);
     [[nodiscard]] static QString priorityText(model::TaskPriority priority);
+    /// 刷新类别选项，并安全处理编辑期间类别被外部删除的情况。
     void reloadCategories();
     [[nodiscard]] const model::TaskCategory *selectedCategory() const;
 
@@ -157,7 +168,7 @@ private:
     model::TaskService &m_taskService;
     /// 非拥有指针；生产组合根注入，nullptr仅供旧隔离测试维持无类别模式。
     model::TaskCategoryService *m_categoryService{nullptr};
-    // 当前可编辑草稿采用表单友好形态，便于与 QML 双向绑定。
+    // 当前可编辑草稿采用表单友好形态，便于与 Qt Widgets 显式双向绑定。
     QString m_taskId;
     bool m_editMode{false};
     /// 只表达编辑会话是否打开，不持有或控制任何具体 Dialog。

@@ -32,6 +32,7 @@ TaskFocusViewModel::TaskFocusViewModel(
     , m_categoryService(categoryService)
     , m_reloadTimer(this)
 {
+    // 焦点、列表和详情共享 Service 但各自订阅重载，避免 ViewModel 之间直接调用。
     connect(&m_taskService, &model::TaskService::tasksChanged,
             this, &TaskFocusViewModel::reload);
     connect(&m_taskService, &model::TaskService::dependenciesChanged,
@@ -74,6 +75,7 @@ void TaskFocusViewModel::reload()
     model::TaskId focusId;
     FocusState state = FocusState::NoTasks;
     bool hasTodo = false;
+    // 唯一进行中任务优先于推荐；没有进行中任务时选择首个 Model 判定可开始的任务。
     for (const model::Task &task : projection.tasks) {
         if (task.status() == model::TaskStatus::InProgress) {
             focusId = task.id();
@@ -93,6 +95,7 @@ void TaskFocusViewModel::reload()
     }
     if (focusId.isNull()) state = hasTodo ? FocusState::AllBlocked : FocusState::NoTasks;
 
+    // 完整焦点快照幂等时不通知，避免“现在做”区域每分钟无意义刷新。
     if (m_projection == projection && m_focusTaskId == focusId && m_focusState == state) return;
     m_projection = std::move(projection);
     m_focusTaskId = focusId;

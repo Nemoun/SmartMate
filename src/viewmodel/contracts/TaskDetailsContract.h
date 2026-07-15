@@ -8,6 +8,9 @@
 namespace smartmate::viewmodel {
 
 /// 稳定 TaskId 驱动的只读详情会话契约。
+///
+/// 详情属性是具体 ViewModel 对 Model 计划的只读投影；Widget 通过选择命令提交稳定 ID，
+/// 收到 selectionChanged() 后统一重读 getter，不得持有或修改领域 Task。
 class TaskDetailsContract : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString selectedTaskId READ selectedTaskId NOTIFY selectionChanged)
@@ -32,6 +35,7 @@ class TaskDetailsContract : public QObject {
 public:
     ~TaskDetailsContract() override = default;
 
+    // getter 共同描述当前选择；空选择时具体实现返回安全空值和 false/0。
     [[nodiscard]] virtual QString selectedTaskId() const = 0;
     [[nodiscard]] virtual QString selectedTitle() const = 0;
     [[nodiscard]] virtual QString selectedDescription() const = 0;
@@ -52,14 +56,19 @@ public:
     [[nodiscard]] virtual bool selectedHasCategory() const noexcept = 0;
 
 public slots:
+    /// 选择稳定 TaskId；格式无效或当前投影不存在时返回 false。
     virtual bool selectTask(const QString &taskId) = 0;
+    /// 清除详情会话选择，不改变 Model 中的任务。
     virtual void clearSelection() = 0;
 
 signals:
+    /// 选择或所选任务的任一详情投影变化后发送；绑定方应重新读取全部 getter。
     void selectionChanged();
+    /// 一次性展示通知；只描述 UI 消息，不允许 ViewModel 直接弹窗。
     void notificationRaised(const smartmate::common::UiNotification &notification);
 
 protected:
+    /// 仅允许具体详情 ViewModel 派生构造。
     explicit TaskDetailsContract(QObject *parent = nullptr) : QObject(parent) {}
 };
 

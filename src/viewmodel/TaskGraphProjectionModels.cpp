@@ -70,6 +70,7 @@ QHash<int, QByteArray> TaskGraphEdgeListModel::roleNames() const
 
 void TaskGraphEdgeListModel::replaceRows(QList<EdgeProjection> rows)
 {
+    // 边几何属于一个整体布局快照，reset 可避免 Widget 绘制新旧坐标混合状态。
     beginResetModel();
     m_rows = std::move(rows);
     endResetModel();
@@ -84,6 +85,7 @@ void TaskGraphEdgeListModel::setInteraction(
     m_hoveredTaskId = hoveredTaskId;
     m_relatedTaskIds = std::move(relatedTaskIds);
     if (!m_rows.isEmpty()) {
+        // 几何和依赖满足状态未变，只通知三个会话交互 Role。
         emit dataChanged(index(0), index(m_rows.size() - 1),
                          {HighlightedRole, DimmedRole, HoveredRole});
     }
@@ -123,6 +125,7 @@ QHash<int, QByteArray> TaskGraphRelationListModel::roleNames() const
 
 void TaskGraphRelationListModel::replaceRows(QList<RelationProjection> rows)
 {
+    // 选择切换会改变整个直接关系集合，使用 reset 发布原子详情快照。
     beginResetModel();
     m_rows = std::move(rows);
     endResetModel();

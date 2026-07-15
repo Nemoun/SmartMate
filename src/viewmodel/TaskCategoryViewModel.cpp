@@ -40,6 +40,7 @@ TaskCategoryViewModel::TaskCategoryViewModel(
     , m_taskService(taskService)
     , m_categoryService(categoryService)
 {
+    // 类别目录、任务计数和任务归属任一变化都会使聚合列表失效；ViewModel 独立重查。
     if (m_categoryService) {
         connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
                 this, &TaskCategoryViewModel::reload);
@@ -153,6 +154,7 @@ void TaskCategoryViewModel::reload()
     }
 
     setErrorMessage({});
+    // 类别行和聚合计数必须在同一次模型重置中发布，Widget 不会观察到错配状态。
     beginResetModel();
     m_categories = std::move(categories);
     m_taskCounts = std::move(counts);
@@ -215,6 +217,7 @@ bool TaskCategoryViewModel::save()
         setErrorMessage(categoryErrorMessage(result.error));
         return false;
     }
+    // 只有 Service 命令成功才更新原值检查点并发送 saved；实际列表刷新由 Service 通知触发。
     const QString id = result.value->id.toString(QUuid::WithoutBraces);
     m_editMode = true;
     m_editingCategoryId = result.value->id;
@@ -245,6 +248,7 @@ bool TaskCategoryViewModel::deleteCategory(const QString &categoryId)
         return false;
     }
     const int unassigned = result.value->unassignedTaskCount;
+    // deleted 是对话流程结果；类别和任务投影刷新仍依赖 Service 的两类失效通知。
     if (m_editingCategoryId == id) beginCreate();
     setErrorMessage({});
     emit deleted(categoryId, unassigned);
@@ -274,6 +278,7 @@ QString TaskCategoryViewModel::categoryErrorText(const int error) const
 
 void TaskCategoryViewModel::setErrorMessage(const QString &message)
 {
+    // 一次性通知与可重读错误属性分开；重复属性值不重复发 errorMessageChanged。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("类别操作失败"),

@@ -29,6 +29,7 @@ QString taskPriorityText(const model::TaskPriority priority)
 
 QString taskDeadlineText(const model::Task &task, const QString &emptyText)
 {
+    // Model 保存 UTC；展示边界统一转换为用户本地时间。
     return task.deadline().has_value()
         ? task.deadline()->toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"))
         : emptyText;

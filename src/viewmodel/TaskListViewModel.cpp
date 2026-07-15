@@ -45,7 +45,7 @@ TaskListViewModel::TaskListViewModel(
     , m_reloadTimer(this)
 {
     // Service 是多个 ViewModel 共享的状态源；成功写入后的统一信号会触发
-    // 列表重建，无需让编辑器或 QML 手动刷新本列表。
+    // 列表重建，无需让编辑器或 Widget 手动刷新本列表。
     connect(&m_taskService, &model::TaskService::tasksChanged, this,
             &TaskListViewModel::reload);
     connect(&m_taskService, &model::TaskService::dependenciesChanged, this,
@@ -58,6 +58,7 @@ TaskListViewModel::TaskListViewModel(
                 this, &TaskListViewModel::reload);
     }
     connect(&m_reloadTimer, &QTimer::timeout, this, &TaskListViewModel::reload);
+    // 逾期与推荐理由依赖当前时间，分钟刷新只更新派生展示状态，不写入持久层。
     m_reloadTimer.start(60'000);
     reloadCategories();
     reload();
@@ -390,7 +391,7 @@ void TaskListViewModel::reload()
 
     setError({});
     TaskPlanProjection projection = makeTaskPlanProjection(*result.value);
-    // 分钟定时刷新若没有产生新顺序或理由，不重置QML模型，避免列表滚动位置跳动。
+    // 分钟定时刷新若没有产生新顺序或理由，不重置 Qt 模型，避免列表滚动位置跳动。
     if (m_allTasks == projection.tasks
         && m_orderReasonTexts == projection.orderReasonTexts
         && m_overdueStates == projection.overdueStates
@@ -433,7 +434,7 @@ void TaskListViewModel::clearFilters()
     if (previouslyActive != hasActiveFilters()) {
         emit hasActiveFiltersChanged();
     }
-    // 批量清除只重建一次，避免QML列表短暂经过中间筛选状态。
+    // 批量清除只重建一次，避免 Widget 短暂观察到多个中间筛选状态。
     rebuildVisibleTasks();
 }
 
@@ -623,6 +624,8 @@ void TaskListViewModel::clearError()
 bool TaskListViewModel::performTransition(const QString &taskId,
                                           const model::TaskTransition transition)
 {
+    // Contract 暴露语义命令，ViewModel 只负责路由；状态机、依赖和单进行中约束
+    // 必须由 Service 在执行时最终复核，不能仅信任列表中投影的命令资格。
     const model::TaskId id = parseTaskId(taskId);
     if (id.isNull()) {
         setError(taskErrorMessage(model::TaskError::NotFound));
@@ -760,6 +763,7 @@ void TaskListViewModel::setBulkSelection(QSet<model::TaskId> selection)
         return;
     }
     m_bulkSelectedTaskIds = std::move(selection);
+    // 选择属于会话级展示状态，仅精确通知 BulkSelectedRole，避免无关 Role 重绑定。
     if (!m_visibleTasks.isEmpty()) {
         emit dataChanged(index(0), index(m_visibleTasks.size() - 1),
                          {BulkSelectedRole});
@@ -769,7 +773,7 @@ void TaskListViewModel::setBulkSelection(QSet<model::TaskId> selection)
 
 void TaskListViewModel::rebuildVisibleTasks()
 {
-    // 整批替换投影时遵循 QAbstractItemModel 的重置协议，使 QML 安全重建 delegate。
+    // 整批替换投影时遵循 QAbstractItemModel 的重置协议，使 Widget 安全重建行绑定。
     beginResetModel();
     m_visibleTasks.clear();
     m_visibleTasks.reserve(m_allTasks.size());
@@ -860,7 +864,8 @@ const model::TaskCategory *TaskListViewModel::categoryForTask(
 
 void TaskListViewModel::setError(const QString &message)
 {
-    // 属性支持持续绑定，事件信号用于立即弹出反馈；二者表达同一份展示错误。
+    // errorMessage 属性支持持续绑定，notificationRaised 是一次性展示通知；
+    // errorOccurred 为兼容既有绑定保留，三者均只表达展示错误，不承载业务控制流。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("任务操作失败"),

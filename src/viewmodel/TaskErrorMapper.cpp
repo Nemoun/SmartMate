@@ -4,6 +4,7 @@ namespace smartmate::viewmodel {
 
 QString taskErrorMessage(const model::TaskError error)
 {
+    // ViewModel 只翻译稳定错误枚举，不解析 Repository 的 detail 技术文本。
     using enum model::TaskError;
 
     switch (error) {

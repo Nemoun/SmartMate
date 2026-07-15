@@ -30,6 +30,7 @@ QString blockingReasonText(const QList<model::TaskId> &blockingIds,
                            const QHash<model::TaskId, QString> &taskTitles,
                            const QHash<QString, int> &titleCounts)
 {
+    // 标题重复时附加短 ID，保证用户能区分同名阻塞任务且不暴露完整 UUID 噪声。
     if (blockingIds.isEmpty()) {
         return QStringLiteral("存在尚未完成或取消的前置任务");
     }
@@ -71,6 +72,7 @@ const model::TaskCommandAvailability &TaskPlanProjection::availabilityFor(
 TaskPlanProjection makeTaskPlanProjection(
     const QList<model::PlannedTask> &plannedTasks)
 {
+    // 一次遍历建立所有按稳定 ID 索引的展示缓存，多个 ViewModel 可共享一致文案。
     TaskPlanProjection projection;
     projection.tasks.reserve(plannedTasks.size());
     projection.orderReasonTexts.reserve(plannedTasks.size());
@@ -80,6 +82,7 @@ TaskPlanProjection makeTaskPlanProjection(
 
     QHash<model::TaskId, QString> taskTitles;
     QHash<QString, int> titleCounts;
+    // 先统计标题重复次数，再生成阻塞文案，避免同名任务产生歧义。
     for (const model::PlannedTask &plannedTask : plannedTasks) {
         taskTitles.insert(plannedTask.task.id(), plannedTask.task.title());
         ++titleCounts[plannedTask.task.title()];

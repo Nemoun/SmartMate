@@ -48,6 +48,8 @@ TaskGraphViewModel::TaskGraphViewModel(
     , m_selectedPredecessors(new TaskGraphRelationListModel(this))
     , m_selectedSuccessors(new TaskGraphRelationListModel(this))
 {
+    // Service 信号只表示领域快照已经失效；ViewModel 重新查询完整图投影，
+    // 不依赖其他 ViewModel 转发数据，从而保持各 Contract 相互独立。
     connect(&m_taskService, &model::TaskService::tasksChanged,
             this, &TaskGraphViewModel::reload);
     connect(&m_taskService, &model::TaskService::dependenciesChanged,
@@ -252,6 +254,7 @@ void TaskGraphViewModel::setStatusFilterIndex(const int index)
 
 void TaskGraphViewModel::reload()
 {
+    // 拓扑层级、闭包、类别裁剪和边满足状态均由 Model 计算；此处只请求快照并布局。
     model::TaskGraphQuery query;
     query.scope = static_cast<model::TaskGraphCategoryScope>(m_categoryFilterMode);
     if (m_categoryFilterMode == 2) query.categoryId = m_categoryFilterCategoryId;
@@ -296,6 +299,7 @@ bool TaskGraphViewModel::setCategoryFilter(const int mode,
 
 bool TaskGraphViewModel::selectTask(const QString &taskId)
 {
+    // Widget 只提交稳定 TaskId；行号仅用于当前快照内定位，不作为任务身份。
     const model::TaskId id{QUuid{taskId}};
     if (id.isNull() || rowForTask(id) < 0) return false;
     if (m_selectedTaskId == id) return true;
@@ -409,9 +413,11 @@ QString TaskGraphViewModel::durationText(const model::Task &task)
 
 void TaskGraphViewModel::replaceGraph(const model::TaskGraphSnapshot &snapshot)
 {
+    // 节点坐标和连线路径是展示投影，不回写 Repository，也不污染领域快照。
     TaskGraphLayoutResult layout = layoutTaskGraph(snapshot);
 
     const model::TaskId oldSelection = m_selectedTaskId;
+    // 图结构和行序整体变化时使用模型重置，保证 Widget 不会读到新旧节点混合状态。
     beginResetModel();
     m_nodes = std::move(layout.nodes);
     m_snapshotEdges = snapshot.edges;
@@ -433,6 +439,7 @@ void TaskGraphViewModel::replaceGraph(const model::TaskGraphSnapshot &snapshot)
 
 void TaskGraphViewModel::notifyInteractionRoles()
 {
+    // 搜索、悬停和选择只影响交互 Role，无需重置节点或重新执行图布局。
     if (!m_nodes.isEmpty()) {
         emit dataChanged(index(0), index(m_nodes.size() - 1),
                          {SelectedRole, EmphasisLevelRole, FilterMatchedRole});
@@ -453,6 +460,7 @@ void TaskGraphViewModel::notifyInteractionRoles()
 
 void TaskGraphViewModel::rebuildRelationModels()
 {
+    // 侧栏只投影所选节点的直接入边、出边；连接闭包仍直接使用 Model 快照结果。
     QList<RelationProjection> predecessors;
     QList<RelationProjection> successors;
     for (const model::TaskGraphEdge &edge : m_snapshotEdges) {
@@ -483,6 +491,7 @@ void TaskGraphViewModel::rebuildRelationModels()
 
 void TaskGraphViewModel::setErrorMessage(const QString &message)
 {
+    // notificationRaised 是一次性展示事件；errorMessageChanged 支持 Widget 同步绑定当前状态。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("依赖图操作失败"),
@@ -514,6 +523,7 @@ void TaskGraphViewModel::reloadCategories()
                 return category.id == m_categoryFilterCategoryId;
             });
         if (!exists) {
+            // 类别被删除后退回“未分类”范围，避免 Contract 保留已失效的稳定类别 ID。
             m_categoryFilterMode = 1;
             m_categoryFilterCategoryId = model::TaskCategoryId{};
             emit categoryFilterChanged();

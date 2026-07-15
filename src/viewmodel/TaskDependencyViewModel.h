@@ -62,9 +62,13 @@ private:
     [[nodiscard]] QString dependencyErrorMessage(
         model::TaskError error,
         const model::TaskErrorContext &context) const;
+    /// 使用 Model 返回的完整上下文原子重置候选模型和选择草稿。
     void replaceDraft(model::TaskDependencyEditContext context);
+    /// 选中状态变化后同步 selectionChanged/formStateChanged。
     void notifySelectionChanged();
+    /// 去重错误属性通知，并把非空错误发布为 UiNotification。
     void setErrorMessage(const QString &message);
+    /// 类别目录变化时只刷新类别展示 Role，不重建依赖资格。
     void reloadCategories();
     [[nodiscard]] const model::TaskCategory *categoryForTask(
         const model::Task &task) const;
@@ -75,18 +79,24 @@ private:
 
     /// 非拥有引用；组合根保证 Service 生命周期长于本 ViewModel。
     model::TaskService &m_taskService;
+    /// 非拥有可选指针；nullptr 表示隔离测试不投影类别。
     model::TaskCategoryService *m_categoryService{nullptr};
+    /// 类别展示快照，仅用于候选名称和强调色。
     QList<model::TaskCategory> m_categories;
+    /// 当前依赖编辑目标及标题，来自 Model 编辑上下文。
     model::TaskId m_taskId;
     QString m_taskTitle;
     /// 候选列表排除当前任务；未归档任务可新增，原有归档前置仍保留以便移除。
     QList<model::Task> m_candidates;
     /// 保存本次读取的全量标题，确保环路径经过隐藏或归档任务时仍可完整解释。
     QHash<model::TaskId, QString> m_taskTitles;
+    /// 当前可修改选择草稿。
     QSet<model::TaskId> m_selectedPredecessors;
+    /// 打开会话时的选择检查点，用于 dirty 和 cancel。
     QSet<model::TaskId> m_originalPredecessors;
     /// 候选资格完全来自 Model 上下文，ViewModel 不根据任务状态重新推导。
     QSet<model::TaskId> m_selectablePredecessors;
+    /// 最近一次展示错误。
     QString m_errorMessage;
 };
 

@@ -34,6 +34,7 @@ TaskDependencyViewModel::TaskDependencyViewModel(
     , m_taskService(taskService)
     , m_categoryService(categoryService)
 {
+    // 类别变化只影响候选展示 Role；候选资格仍使用打开会话时的 Model 上下文。
     if (m_categoryService) {
         connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
                 this, &TaskDependencyViewModel::reloadCategories);
@@ -180,6 +181,7 @@ bool TaskDependencyViewModel::setPredecessorSelected(const QString &predecessorT
     } else {
         m_selectedPredecessors.remove(id);
     }
+    // 单行选择变化使用 dataChanged，避免为一次勾选重置整个候选模型和滚动位置。
     emit dataChanged(index(row), index(row), {SelectedRole, SelectableRole});
     notifySelectionChanged();
     setErrorMessage({});
@@ -208,6 +210,7 @@ bool TaskDependencyViewModel::save()
         return false;
     }
 
+    // Service 已原子保存完整集合；更新检查点后 dirty 归零，再发布会话成功通知。
     m_originalPredecessors = m_selectedPredecessors;
     emit formStateChanged();
     setErrorMessage({});
@@ -303,6 +306,7 @@ QString TaskDependencyViewModel::dependencyErrorMessage(
 void TaskDependencyViewModel::replaceDraft(
     model::TaskDependencyEditContext context)
 {
+    // 目标、候选、选择和资格来自同一 Model 快照，必须通过一次 reset 原子替换。
     beginResetModel();
     m_taskId = context.targetTask.id();
     m_taskTitle = context.targetTask.title();
@@ -338,6 +342,7 @@ void TaskDependencyViewModel::notifySelectionChanged()
 
 void TaskDependencyViewModel::setErrorMessage(const QString &message)
 {
+    // notificationRaised 供 View 展示，errorMessageChanged 供属性绑定重读。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("依赖操作失败"),
