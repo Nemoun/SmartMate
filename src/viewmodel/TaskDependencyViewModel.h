@@ -55,8 +55,6 @@ signals:
     void errorMessageChanged();
 
 private:
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
     [[nodiscard]] QString taskDisplayName(const model::TaskId &taskId) const;
     [[nodiscard]] QString dependencyErrorMessage(

@@ -120,7 +120,7 @@ private:
     struct Snapshot {
         QString title;
         QString description;
-        int priorityIndex{1};
+        int priorityIndex{-1};
         std::optional<QDateTime> deadline;
         std::optional<int> estimatedMinutes;
         std::optional<model::TaskCategoryId> categoryId;
@@ -128,6 +128,9 @@ private:
 
         bool operator==(const Snapshot &) const = default;
     };
+
+    /// 构造使用描述表显式选中普通优先级的空白草稿。
+    [[nodiscard]] static Snapshot defaultSnapshot();
 
     /// 捕获当前表单字段与已接受前置，用于 dirty 比较。
     [[nodiscard]] Snapshot currentSnapshot() const;
@@ -153,8 +156,6 @@ private:
     /// 将内部截止时间投影到注入时区，供类型化控件显示。
     [[nodiscard]] std::optional<QDateTime> displayedDeadline() const;
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     /// 刷新类别选项，并安全处理编辑期间类别被外部删除的情况。
     void reloadCategories();
     [[nodiscard]] const model::TaskCategory *selectedCategory() const;
@@ -177,7 +178,7 @@ private:
     QString m_description;
     /// 仅用于展示当前持久化状态；所有改变都必须通过任务列表的显式状态命令。
     model::TaskStatus m_currentStatus{model::TaskStatus::Todo};
-    int m_priorityIndex{1};
+    int m_priorityIndex{-1};
     /// 保存原始精度；只有用户重新选择时才归零到分钟。
     std::optional<QDateTime> m_deadline;
     /// Model 使用的总分钟数，界面仅将其投影为天、小时和分钟。

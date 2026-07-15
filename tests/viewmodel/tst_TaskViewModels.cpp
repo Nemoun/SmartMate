@@ -3,6 +3,7 @@
 #include "TaskEditorViewModel.h"
 #include "TaskGraphViewModel.h"
 #include "TaskListViewModel.h"
+#include "TaskPresentationFormatter.h"
 #include "TaskFocusViewModel.h"
 #include "TaskDetailsViewModel.h"
 #include "TaskCategoryViewModel.h"
@@ -48,6 +49,9 @@ using smartmate::viewmodel::TaskDependencyViewModel;
 using smartmate::viewmodel::TaskEditorViewModel;
 using smartmate::viewmodel::TaskGraphViewModel;
 using smartmate::viewmodel::TaskListViewModel;
+using smartmate::viewmodel::TaskGraphStatusFilter;
+using smartmate::viewmodel::TaskPriorityVisual;
+using smartmate::viewmodel::TaskStatusVisual;
 using smartmate::viewmodel::TaskFocusViewModel;
 using smartmate::viewmodel::TaskDetailsViewModel;
 using smartmate::viewmodel::TaskCategoryViewModel;

@@ -25,7 +25,8 @@ void TaskViewModelsTest::editorCreatesACompleteTypedDraft()
 
     editor.setTitle(QStringLiteral("  MVVM 大作业  "));
     editor.setDescription(QStringLiteral("实现任务编辑草稿"));
-    editor.setPriorityIndex(static_cast<int>(TaskPriority::Urgent));
+    editor.setPriorityIndex(
+        smartmate::viewmodel::taskPriorityIndex(TaskPriority::Urgent));
     QVERIFY(editor.setDeadlineSelection(2030, 6, 15, 8, 30));
     QVERIFY(editor.setEstimatedDuration(0, 1, 30));
     QVERIFY(editor.hasDeadline());

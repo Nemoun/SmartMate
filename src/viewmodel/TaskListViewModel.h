@@ -100,8 +100,6 @@ signals:
 
 private:
     /// Model 依赖状态的界面投影；中文原因在 reload() 时一次生成，Widget 不拼接图数据。
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] static model::TaskId parseTaskId(const QString &taskId);
     [[nodiscard]] const model::Task *taskForId(const model::TaskId &taskId) const;
     [[nodiscard]] const model::TaskCommandAvailability &availabilityFor(

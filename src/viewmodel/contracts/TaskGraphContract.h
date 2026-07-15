@@ -1,8 +1,10 @@
 #pragma once
 
 #include "common/presentation/UiNotification.h"
+#include "viewmodel/contracts/TaskPresentationTypes.h"
 
 #include <QAbstractListModel>
+#include <QStringList>
 #include <QVariantList>
 
 namespace smartmate::viewmodel {
@@ -22,6 +24,7 @@ class TaskGraphContract : public QAbstractListModel {
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
     Q_PROPERTY(int statusFilterIndex READ statusFilterIndex WRITE setStatusFilterIndex
                    NOTIFY statusFilterIndexChanged)
+    Q_PROPERTY(QStringList statusFilterOptions READ statusFilterOptions CONSTANT)
     Q_PROPERTY(QVariantList categoryFilterOptions READ categoryFilterOptions
                    NOTIFY categoryOptionsChanged)
     Q_PROPERTY(int categoryFilterMode READ categoryFilterMode NOTIFY categoryFilterChanged)
@@ -142,6 +145,7 @@ public:
     /// 更新图搜索会话状态，不持久化，也不改变 Model 节点集合。
     virtual void setSearchText(const QString &searchText) = 0;
     [[nodiscard]] virtual int statusFilterIndex() const noexcept = 0;
+    [[nodiscard]] virtual QStringList statusFilterOptions() const = 0;
     /// 更新状态筛选索引；具体 ViewModel 负责范围检查和匹配投影。
     virtual void setStatusFilterIndex(int index) = 0;
     [[nodiscard]] virtual QVariantList categoryFilterOptions() const = 0;

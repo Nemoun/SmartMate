@@ -147,6 +147,14 @@ target_link_libraries(tst_task_viewmodels
 
 add_test(NAME viewmodel.task_viewmodels COMMAND tst_task_viewmodels)
 
+qt_add_executable(tst_task_presentation
+    viewmodel/tst_TaskPresentation.cpp
+)
+target_link_libraries(tst_task_presentation
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.task_presentation COMMAND tst_task_presentation)
+
 qt_add_executable(tst_appearance_settings
     viewmodel/tst_AppearanceSettings.cpp
     fakes/FakeAppearanceSettingsRepository.h
@@ -274,6 +282,7 @@ set(runtime_tests
     persistence.sqlite_task_repository
     persistence.appearance_settings
     viewmodel.task_viewmodels
+    viewmodel.task_presentation
     viewmodel.appearance_settings
     viewmodel.contracts
     view.widgets_settings

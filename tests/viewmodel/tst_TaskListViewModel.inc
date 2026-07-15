@@ -30,6 +30,10 @@ void TaskViewModelsTest::listProjectsActiveAndArchivedTasksInPlanOrder()
     QCOMPARE(idAt(viewModel, 2), QStringLiteral("22222222-2222-2222-2222-222222222222"));
     QCOMPARE(viewModel.data(viewModel.index(0), TaskListViewModel::PriorityTextRole).toString(),
              QStringLiteral("紧急"));
+    QCOMPARE(viewModel.data(viewModel.index(0), TaskListViewModel::StatusRole).toInt(),
+             static_cast<int>(TaskStatusVisual::InProgress));
+    QCOMPARE(viewModel.data(viewModel.index(0), TaskListViewModel::PriorityRole).toInt(),
+             static_cast<int>(TaskPriorityVisual::Urgent));
     QCOMPARE(viewModel.data(viewModel.index(0),
                             TaskListViewModel::OrderReasonTextRole).toString(),
              QStringLiteral("正在进行"));

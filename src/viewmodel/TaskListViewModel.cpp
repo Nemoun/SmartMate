@@ -15,10 +15,8 @@
 namespace smartmate::viewmodel {
 
 namespace {
-constexpr auto deadlineFormat = "yyyy-MM-dd HH:mm";
 constexpr int allPrioritiesFilterIndex = 0;
 constexpr int firstPriorityFilterIndex = 1;
-constexpr int priorityFilterOptionCount = 5;
 const model::TaskCommandAvailability emptyAvailability{};
 }
 
@@ -89,17 +87,15 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
     case DescriptionRole:
         return task.description();
     case StatusRole:
-        return static_cast<int>(task.status());
+        return static_cast<int>(taskStatusVisual(task.status()));
     case StatusTextRole:
-        return statusText(task.status());
+        return taskStatusText(task.status());
     case PriorityRole:
-        return static_cast<int>(task.priority());
+        return static_cast<int>(taskPriorityVisual(task.priority()));
     case PriorityTextRole:
-        return priorityText(task.priority());
+        return taskPriorityText(task.priority());
     case DeadlineTextRole:
-        return task.deadline().has_value()
-            ? task.deadline()->toLocalTime().toString(QString::fromLatin1(deadlineFormat))
-            : QString{};
+        return taskDeadlineText(task, {});
     case EstimatedMinutesRole:
         return task.estimatedMinutes().has_value() ? *task.estimatedMinutes() : 0;
     case ArchivedRole:
@@ -147,7 +143,8 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
     }
     case CategoryAccentRole: {
         const auto *category = categoryForTask(&task);
-        return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+        return category ? taskCategoryAccent(category->color)
+                        : taskUncategorizedAccent();
     }
     case HasCategoryRole:
         return categoryForTask(&task) != nullptr;
@@ -210,11 +207,7 @@ int TaskListViewModel::priorityFilterIndex() const noexcept
 
 QStringList TaskListViewModel::priorityFilterOptions() const
 {
-    return {QStringLiteral("全部优先级"),
-            QStringLiteral("低"),
-            QStringLiteral("普通"),
-            QStringLiteral("高"),
-            QStringLiteral("紧急")};
+    return taskPriorityFilterOptions();
 }
 
 QVariantList TaskListViewModel::categoryFilterOptions() const
@@ -224,11 +217,11 @@ QVariantList TaskListViewModel::categoryFilterOptions() const
     options.append(QVariantMap{{QStringLiteral("mode"), 0},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("全部类别")},
-                               {QStringLiteral("accent"), QStringLiteral("#64748b")}});
+                               {QStringLiteral("accent"), taskAllCategoriesAccent()}});
     options.append(QVariantMap{{QStringLiteral("mode"), 1},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("未分类")},
-                               {QStringLiteral("accent"), QStringLiteral("#94a3b8")}});
+                               {QStringLiteral("accent"), taskUncategorizedAccent()}});
     for (const auto &category : m_categories) {
         options.append(QVariantMap{
             {QStringLiteral("mode"), 2},
@@ -341,7 +334,7 @@ void TaskListViewModel::setSearchText(const QString &searchText)
 void TaskListViewModel::setPriorityFilterIndex(const int priorityFilterIndex)
 {
     if (priorityFilterIndex < allPrioritiesFilterIndex
-        || priorityFilterIndex >= priorityFilterOptionCount
+        || priorityFilterIndex >= taskPriorityFilterOptions().size()
         || m_priorityFilterIndex == priorityFilterIndex) {
         return;
     }
@@ -662,16 +655,6 @@ bool TaskListViewModel::performTransition(const QString &taskId,
     return true;
 }
 
-QString TaskListViewModel::statusText(const model::TaskStatus status)
-{
-    return taskStatusText(status);
-}
-
-QString TaskListViewModel::priorityText(const model::TaskPriority priority)
-{
-    return taskPriorityText(priority);
-}
-
 model::TaskId TaskListViewModel::parseTaskId(const QString &taskId)
 {
     return QUuid::fromString(taskId.trimmed());
@@ -783,7 +766,7 @@ void TaskListViewModel::rebuildVisibleTasks()
     const QString keyword = m_searchText.trimmed();
     const bool filtersPriority =
         m_priorityFilterIndex != allPrioritiesFilterIndex;
-    const auto selectedPriority = static_cast<model::TaskPriority>(
+    const auto selectedPriority = taskPriorityFromIndex(
         m_priorityFilterIndex - firstPriorityFilterIndex);
 
     for (const auto &task : m_allTasks) {
@@ -796,7 +779,9 @@ void TaskListViewModel::rebuildVisibleTasks()
             && !task.description().contains(keyword, Qt::CaseInsensitive)) {
             continue;
         }
-        if (filtersPriority && task.priority() != selectedPriority) {
+        if (filtersPriority
+            && (!selectedPriority.has_value()
+                || task.priority() != *selectedPriority)) {
             continue;
         }
         if (m_categoryFilterMode == 1 && task.categoryId().has_value()) {

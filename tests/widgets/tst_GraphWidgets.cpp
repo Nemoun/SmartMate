@@ -147,6 +147,8 @@ public:
     QString searchText() const override { return search; }
     void setSearchText(const QString &value) override { if (search == value) return; search = value; ++searchWrites; emit searchTextChanged(); }
     int statusFilterIndex() const noexcept override { return status; }
+    QStringList statusFilterOptions() const override
+    { return {QStringLiteral("A"), QStringLiteral("B"), QStringLiteral("C")}; }
     void setStatusFilterIndex(int value) override { status = value; ++statusWrites; emit statusFilterIndexChanged(); }
     QVariantList categoryFilterOptions() const override { return {
         QVariantMap{{"mode", 0}, {"categoryId", ""}, {"name", QStringLiteral("全部类别")}},
@@ -220,6 +222,11 @@ void GraphWidgetsTest::projectedGeometryAndStableCommandsDriveTheView()
     FakeAppearance appearance; FakeGraph graph; FakeDetails details; FakeDependency dependencies;
     view::widgets::DependencyGraphPage page{{appearance, graph, details, dependencies}};
     page.resize(920, 700); page.show();
+    auto *statusFilter = child<QComboBox>(page, "graphStatusFilter");
+    QCOMPARE(statusFilter->count(), graph.statusFilterOptions().size());
+    for (int index = 0; index < statusFilter->count(); ++index) {
+        QCOMPARE(statusFilter->itemText(index), graph.statusFilterOptions().at(index));
+    }
     auto *view = child<view::widgets::DependencyGraphView>(page, "dependencyGraphViewport");
     QCOMPARE(view->nodeItemCount(), 2);
     QCOMPARE(view->edgeItemCount(), 1);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "viewmodel/contracts/TaskPresentationTypes.h"
+
 #include <QColor>
 #include <QFont>
 #include <QPalette>
@@ -42,8 +44,8 @@ struct WidgetTheme {
     QColor warning;
     QColor danger;
 
-    [[nodiscard]] QColor statusColor(int statusIndex) const;
-    [[nodiscard]] QColor priorityColor(int priorityIndex) const;
+    [[nodiscard]] QColor statusColor(viewmodel::TaskStatusVisual status) const;
+    [[nodiscard]] QColor priorityColor(viewmodel::TaskPriorityVisual priority) const;
 
     [[nodiscard]] static WidgetTheme fromAccentIndex(int accentThemeIndex);
     [[nodiscard]] static WidgetTheme fromPalette(const QPalette &palette);

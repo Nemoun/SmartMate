@@ -102,8 +102,10 @@ void TaskItemDelegate::paint(QPainter *painter,
 
     const bool blocked = index.data(Role::BlockedRole).toBool();
     const bool overdue = index.data(Role::OverdueRole).toBool();
-    const int status = index.data(Role::StatusRole).toInt();
-    const int priority = index.data(Role::PriorityRole).toInt();
+    const auto status = static_cast<viewmodel::TaskStatusVisual>(
+        index.data(Role::StatusRole).toInt());
+    const auto priority = static_cast<viewmodel::TaskPriorityVisual>(
+        index.data(Role::PriorityRole).toInt());
     const QColor statusColor = theme.statusColor(status);
     painter->setPen(Qt::NoPen);
     painter->setBrush(blocked ? theme.warning : statusColor);

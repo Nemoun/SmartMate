@@ -1022,6 +1022,16 @@ void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
                                   categories, dependencies}};
     const view::widgets::WidgetTheme theme =
         view::widgets::WidgetTheme::fromAccentIndex(0);
+    QCOMPARE(theme.statusColor(viewmodel::TaskStatusVisual::InProgress),
+             theme.inProgress);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Low),
+             theme.textSecondary);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Normal),
+             theme.todo);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::High),
+             theme.warning);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Urgent),
+             theme.danger);
     page.setPalette(theme.palette());
     page.setStyleSheet(theme.styleSheet());
     page.resize(900, 650);
@@ -1061,7 +1071,8 @@ void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
         tasks.taskStatus = status;
         tasks.blocked = false;
         const QImage image = render();
-        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(status));
+        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(
+            static_cast<viewmodel::TaskStatusVisual>(status)));
     }
     tasks.blocked = true;
     const QImage blockedImage = render();

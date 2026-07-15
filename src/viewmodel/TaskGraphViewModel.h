@@ -42,6 +42,7 @@ public:
     [[nodiscard]] QString searchText() const override;
     void setSearchText(const QString &searchText) override;
     [[nodiscard]] int statusFilterIndex() const noexcept override;
+    [[nodiscard]] QStringList statusFilterOptions() const override;
     void setStatusFilterIndex(int index) override;
     [[nodiscard]] QVariantList categoryFilterOptions() const override;
     [[nodiscard]] int categoryFilterMode() const noexcept override;
@@ -90,10 +91,6 @@ private:
     [[nodiscard]] const NodeProjection *selectedNode() const;
     [[nodiscard]] int emphasisFor(const model::TaskId &taskId) const;
     [[nodiscard]] bool filterMatches(const NodeProjection &projection) const;
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
-    [[nodiscard]] static QString deadlineText(const model::Task &task);
-    [[nodiscard]] static QString durationText(const model::Task &task);
     /// 布局领域快照并用模型重置协议原子替换节点、边和统计。
     void replaceGraph(const model::TaskGraphSnapshot &snapshot);
     /// 选择/悬停变化时只通知强调相关节点和边 Role。
@@ -131,7 +128,7 @@ private:
     model::TaskId m_hoveredTaskId;
     /// 搜索和状态筛选只改变 FilterMatched/定位投影，不持久化。
     QString m_searchText;
-    int m_statusFilterIndex{0};
+    TaskGraphStatusFilter m_statusFilter{TaskGraphStatusFilter::All};
     /// 类别展示及筛选选项快照。
     QList<model::TaskCategory> m_categories;
     int m_categoryFilterMode{0};

@@ -77,10 +77,11 @@ QVariant TaskGraphViewModel::data(const QModelIndex &index, const int role) cons
     case TaskIdRole: return stableId(task.id());
     case ShortIdRole: return stableId(task.id()).left(8);
     case TitleRole: return task.title();
-    case StatusTextRole: return statusText(task.status());
-    case StatusIndexRole: return static_cast<int>(task.status());
-    case PriorityTextRole: return priorityText(task.priority());
-    case DeadlineTextRole: return deadlineText(task);
+    case StatusTextRole: return taskStatusText(task.status());
+    case StatusIndexRole: return static_cast<int>(taskStatusVisual(task.status()));
+    case PriorityTextRole: return taskPriorityText(task.priority());
+    case DeadlineTextRole:
+        return taskDeadlineText(task, QStringLiteral("未设置截止时间"));
     case UnlockCountRole: return projection.node.dependencyState.unlockCount;
     case BlockedRole: return projection.node.dependencyState.blocked;
     case BlockingReasonTextRole: return projection.blockingReasonText;
@@ -100,7 +101,8 @@ QVariant TaskGraphViewModel::data(const QModelIndex &index, const int role) cons
     }
     case CategoryAccentRole: {
         const auto *category = categoryForTask(task);
-        return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+        return category ? taskCategoryAccent(category->color)
+                        : taskUncategorizedAccent();
     }
     case HasCategoryRole: return categoryForTask(task) != nullptr;
     case CoreNodeRole: return projection.node.coreNode;
@@ -129,7 +131,10 @@ QAbstractItemModel *TaskGraphViewModel::selectedSuccessors() noexcept { return m
 qreal TaskGraphViewModel::contentWidth() const noexcept { return m_contentWidth; }
 qreal TaskGraphViewModel::contentHeight() const noexcept { return m_contentHeight; }
 QString TaskGraphViewModel::searchText() const { return m_searchText; }
-int TaskGraphViewModel::statusFilterIndex() const noexcept { return m_statusFilterIndex; }
+int TaskGraphViewModel::statusFilterIndex() const noexcept
+{ return static_cast<int>(m_statusFilter); }
+QStringList TaskGraphViewModel::statusFilterOptions() const
+{ return taskGraphStatusFilterOptions(); }
 QVariantList TaskGraphViewModel::categoryFilterOptions() const
 {
     QVariantList options;
@@ -137,11 +142,11 @@ QVariantList TaskGraphViewModel::categoryFilterOptions() const
     options.append(QVariantMap{{QStringLiteral("mode"), 0},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("全部类别")},
-                               {QStringLiteral("accent"), QStringLiteral("#64748b")}});
+                               {QStringLiteral("accent"), taskAllCategoriesAccent()}});
     options.append(QVariantMap{{QStringLiteral("mode"), 1},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("未分类")},
-                               {QStringLiteral("accent"), QStringLiteral("#94a3b8")}});
+                               {QStringLiteral("accent"), taskUncategorizedAccent()}});
     for (const auto &category : m_categories) {
         options.append(QVariantMap{
             {QStringLiteral("mode"), 2},
@@ -186,13 +191,13 @@ QString TaskGraphViewModel::selectedTaskTitle() const
 QString TaskGraphViewModel::selectedDescription() const
 { const auto *node = selectedNode(); return node ? node->node.task.description() : QString{}; }
 QString TaskGraphViewModel::selectedStatusText() const
-{ const auto *node = selectedNode(); return node ? statusText(node->node.task.status()) : QString{}; }
+{ const auto *node = selectedNode(); return node ? taskStatusText(node->node.task.status()) : QString{}; }
 QString TaskGraphViewModel::selectedPriorityText() const
-{ const auto *node = selectedNode(); return node ? priorityText(node->node.task.priority()) : QString{}; }
+{ const auto *node = selectedNode(); return node ? taskPriorityText(node->node.task.priority()) : QString{}; }
 QString TaskGraphViewModel::selectedDeadlineText() const
-{ const auto *node = selectedNode(); return node ? deadlineText(node->node.task) : QString{}; }
+{ const auto *node = selectedNode(); return node ? taskDeadlineText(node->node.task, QStringLiteral("未设置截止时间")) : QString{}; }
 QString TaskGraphViewModel::selectedEstimatedDurationText() const
-{ const auto *node = selectedNode(); return node ? durationText(node->node.task) : QString{}; }
+{ const auto *node = selectedNode(); return node ? taskDurationText(node->node.task, QStringLiteral("未设置预计用时")) : QString{}; }
 QString TaskGraphViewModel::selectedBlockingReason() const
 { const auto *node = selectedNode(); return node ? node->blockingReasonText : QString{}; }
 int TaskGraphViewModel::selectedUnlockCount() const noexcept
@@ -220,7 +225,8 @@ QString TaskGraphViewModel::selectedCategoryAccent() const
 {
     const auto *node = selectedNode();
     const auto *category = node ? categoryForTask(node->node.task) : nullptr;
-    return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+    return category ? taskCategoryAccent(category->color)
+                    : taskUncategorizedAccent();
 }
 bool TaskGraphViewModel::selectedHasCategory() const noexcept
 {
@@ -245,9 +251,9 @@ void TaskGraphViewModel::setSearchText(const QString &searchText)
 
 void TaskGraphViewModel::setStatusFilterIndex(const int index)
 {
-    const int normalized = std::clamp(index, 0, 4);
-    if (m_statusFilterIndex == normalized) return;
-    m_statusFilterIndex = normalized;
+    const TaskGraphStatusFilter normalized = taskGraphStatusFilterFromIndex(index);
+    if (m_statusFilter == normalized) return;
+    m_statusFilter = normalized;
     emit statusFilterIndexChanged();
     notifyInteractionRoles();
 }
@@ -381,34 +387,23 @@ bool TaskGraphViewModel::filterMatches(const NodeProjection &projection) const
         || task.title().contains(term, Qt::CaseInsensitive)
         || task.description().contains(term, Qt::CaseInsensitive);
     bool statusMatches = true;
-    switch (m_statusFilterIndex) {
-    case 1: statusMatches = task.status() == model::TaskStatus::Todo; break;
-    case 2: statusMatches = task.status() == model::TaskStatus::InProgress; break;
-    case 3: statusMatches = projection.node.dependencyState.blocked; break;
-    case 4: statusMatches = task.status() == model::TaskStatus::Done; break;
-    default: break;
+    switch (m_statusFilter) {
+    case TaskGraphStatusFilter::Todo:
+        statusMatches = task.status() == model::TaskStatus::Todo;
+        break;
+    case TaskGraphStatusFilter::InProgress:
+        statusMatches = task.status() == model::TaskStatus::InProgress;
+        break;
+    case TaskGraphStatusFilter::Blocked:
+        statusMatches = projection.node.dependencyState.blocked;
+        break;
+    case TaskGraphStatusFilter::Done:
+        statusMatches = task.status() == model::TaskStatus::Done;
+        break;
+    case TaskGraphStatusFilter::All:
+        break;
     }
     return textMatches && statusMatches;
-}
-
-QString TaskGraphViewModel::statusText(const model::TaskStatus status)
-{
-    return taskStatusText(status);
-}
-
-QString TaskGraphViewModel::priorityText(const model::TaskPriority priority)
-{
-    return taskPriorityText(priority);
-}
-
-QString TaskGraphViewModel::deadlineText(const model::Task &task)
-{
-    return taskDeadlineText(task, QStringLiteral("未设置截止时间"));
-}
-
-QString TaskGraphViewModel::durationText(const model::Task &task)
-{
-    return taskDurationText(task, QStringLiteral("未设置预计用时"));
 }
 
 void TaskGraphViewModel::replaceGraph(const model::TaskGraphSnapshot &snapshot)
@@ -483,7 +478,7 @@ void TaskGraphViewModel::rebuildRelationModels()
         const int row = rowForTask(relatedId);
         if (row < 0) continue;
         const model::Task &task = m_nodes.at(row).node.task;
-        target->append({task.id(), task.title(), statusText(task.status()), relation});
+        target->append({task.id(), task.title(), taskStatusText(task.status()), relation});
     }
     m_selectedPredecessors->replaceRows(std::move(predecessors));
     m_selectedSuccessors->replaceRows(std::move(successors));

@@ -63,9 +63,9 @@ QVariant TaskDependencyViewModel::data(const QModelIndex &index, const int role)
     case TitleRole:
         return task.title();
     case StatusTextRole:
-        return statusText(task.status());
+        return taskStatusText(task.status());
     case PriorityTextRole:
-        return priorityText(task.priority());
+        return taskPriorityText(task.priority());
     case SelectedRole:
         return selected;
     case ArchivedRole:
@@ -78,7 +78,8 @@ QVariant TaskDependencyViewModel::data(const QModelIndex &index, const int role)
     }
     case CategoryAccentRole: {
         const auto *category = categoryForTask(task);
-        return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+        return category ? taskCategoryAccent(category->color)
+                        : taskUncategorizedAccent();
     }
     case HasCategoryRole:
         return categoryForTask(task) != nullptr;
@@ -235,16 +236,6 @@ void TaskDependencyViewModel::cancel()
 void TaskDependencyViewModel::clearError()
 {
     setErrorMessage({});
-}
-
-QString TaskDependencyViewModel::statusText(const model::TaskStatus status)
-{
-    return taskStatusText(status);
-}
-
-QString TaskDependencyViewModel::priorityText(const model::TaskPriority priority)
-{
-    return taskPriorityText(priority);
 }
 
 int TaskDependencyViewModel::candidateRow(const model::TaskId &taskId) const

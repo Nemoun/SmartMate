@@ -23,6 +23,10 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
     TaskGraphViewModel graph{service};
 
     QCOMPARE(graph.rowCount(), 3);
+    QCOMPARE(graph.statusFilterOptions(),
+             smartmate::viewmodel::taskGraphStatusFilterOptions());
+    QCOMPARE(graph.statusFilterIndex(),
+             static_cast<int>(TaskGraphStatusFilter::All));
     QVERIFY(!graph.empty());
     QVERIFY(graph.contentWidth() > 0.0);
     QVERIFY(graph.contentHeight() > 0.0);
@@ -32,6 +36,9 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
         graph, successor.id().toString(QUuid::WithoutBraces));
     QVERIFY(predecessorRow >= 0);
     QVERIFY(successorRow >= 0);
+    QCOMPARE(graph.data(graph.index(successorRow),
+                        TaskGraphViewModel::StatusIndexRole).toInt(),
+             static_cast<int>(TaskStatusVisual::Todo));
 
     const qreal predecessorY = graph.data(
         graph.index(predecessorRow), TaskGraphViewModel::NodeYRole).toReal();
@@ -106,7 +113,7 @@ void TaskViewModelsTest::graphProjectsNodesEdgesAndSelectionDetails()
     graph.setSearchText(QStringLiteral("独立"));
     QVERIFY(graph.locateFirstMatch());
     QCOMPARE(graph.selectedTaskTitle(), QStringLiteral("独立任务"));
-    graph.setStatusFilterIndex(1);
+    graph.setStatusFilterIndex(static_cast<int>(TaskGraphStatusFilter::Todo));
     QCOMPARE(graph.data(graph.index(graphRowForId(
                          graph, isolated.id().toString(QUuid::WithoutBraces))),
                         TaskGraphViewModel::FilterMatchedRole).toBool(), false);

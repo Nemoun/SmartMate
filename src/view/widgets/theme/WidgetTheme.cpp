@@ -43,23 +43,27 @@ WidgetTheme WidgetTheme::fromPalette(const QPalette &palette)
         ? blue : fromAccentIndex(0);
 }
 
-QColor WidgetTheme::statusColor(const int statusIndex) const
+QColor WidgetTheme::statusColor(const viewmodel::TaskStatusVisual status) const
 {
-    switch (statusIndex) {
-    case 0: return todo;
-    case 1: return inProgress;
-    case 2: return done;
-    case 3: return cancelled;
-    default: return archived;
+    switch (status) {
+    case viewmodel::TaskStatusVisual::Todo: return todo;
+    case viewmodel::TaskStatusVisual::InProgress: return inProgress;
+    case viewmodel::TaskStatusVisual::Done: return done;
+    case viewmodel::TaskStatusVisual::Cancelled: return cancelled;
+    case viewmodel::TaskStatusVisual::Archived: return archived;
     }
+    return archived;
 }
 
-QColor WidgetTheme::priorityColor(const int priorityIndex) const
+QColor WidgetTheme::priorityColor(const viewmodel::TaskPriorityVisual priority) const
 {
-    if (priorityIndex >= 3) return danger;
-    if (priorityIndex == 2) return warning;
-    if (priorityIndex == 1) return todo;
-    return textSecondary;
+    switch (priority) {
+    case viewmodel::TaskPriorityVisual::Low: return textSecondary;
+    case viewmodel::TaskPriorityVisual::Normal: return todo;
+    case viewmodel::TaskPriorityVisual::High: return warning;
+    case viewmodel::TaskPriorityVisual::Urgent: return danger;
+    }
+    return danger;
 }
 
 QPalette WidgetTheme::palette() const

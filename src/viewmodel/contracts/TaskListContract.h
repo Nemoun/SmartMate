@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/presentation/UiNotification.h"
+#include "viewmodel/contracts/TaskPresentationTypes.h"
 
 #include <QAbstractListModel>
 #include <QStringList>

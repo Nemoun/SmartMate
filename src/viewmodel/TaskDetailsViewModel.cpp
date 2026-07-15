@@ -8,7 +8,6 @@
 #include <algorithm>
 
 namespace smartmate::viewmodel {
-namespace { constexpr auto detailDateTimeFormat = "yyyy-MM-dd HH:mm"; }
 
 TaskDetailsViewModel::TaskDetailsViewModel(model::TaskService &taskService,
                                            QObject *parent)
@@ -55,8 +54,8 @@ QString TaskDetailsViewModel::selectedStatusText() const { const auto *task = se
 QString TaskDetailsViewModel::selectedPriorityText() const { const auto *task = selectedTask(); return task ? taskPriorityText(task->priority()) : QString{}; }
 QString TaskDetailsViewModel::selectedDeadlineText() const { const auto *task = selectedTask(); return task ? taskDeadlineText(*task, {}) : QString{}; }
 int TaskDetailsViewModel::selectedEstimatedMinutes() const noexcept { const auto *task = selectedTask(); return task && task->estimatedMinutes() ? *task->estimatedMinutes() : 0; }
-QString TaskDetailsViewModel::selectedCreatedAtText() const { const auto *task = selectedTask(); return task ? task->createdAtUtc().toLocalTime().toString(QString::fromLatin1(detailDateTimeFormat)) : QString{}; }
-QString TaskDetailsViewModel::selectedUpdatedAtText() const { const auto *task = selectedTask(); return task ? task->updatedAtUtc().toLocalTime().toString(QString::fromLatin1(detailDateTimeFormat)) : QString{}; }
+QString TaskDetailsViewModel::selectedCreatedAtText() const { const auto *task = selectedTask(); return task ? taskDateTimeText(task->createdAtUtc().toLocalTime()) : QString{}; }
+QString TaskDetailsViewModel::selectedUpdatedAtText() const { const auto *task = selectedTask(); return task ? taskDateTimeText(task->updatedAtUtc().toLocalTime()) : QString{}; }
 QString TaskDetailsViewModel::selectedReasonText() const { return m_projection.orderReasonTexts.value(m_selectedTaskId); }
 QString TaskDetailsViewModel::selectedBlockingReasonText() const { return m_projection.dependencyProjections.value(m_selectedTaskId).blockingReasonText; }
 int TaskDetailsViewModel::selectedPredecessorCount() const noexcept { return m_projection.dependencyProjections.value(m_selectedTaskId).predecessorCount; }
@@ -64,7 +63,7 @@ int TaskDetailsViewModel::selectedUnlockCount() const noexcept { return m_projec
 bool TaskDetailsViewModel::selectedCanEditTask() const noexcept { return m_projection.availabilityFor(m_selectedTaskId).canEditTask; }
 bool TaskDetailsViewModel::selectedCanEditDependencies() const noexcept { return m_projection.availabilityFor(m_selectedTaskId).canEditDependencies; }
 QString TaskDetailsViewModel::selectedCategoryName() const { const auto *category = selectedCategory(); return category ? category->name : QString{}; }
-QString TaskDetailsViewModel::selectedCategoryAccent() const { const auto *category = selectedCategory(); return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8"); }
+QString TaskDetailsViewModel::selectedCategoryAccent() const { const auto *category = selectedCategory(); return category ? taskCategoryAccent(category->color) : taskUncategorizedAccent(); }
 bool TaskDetailsViewModel::selectedHasCategory() const noexcept { return selectedCategory() != nullptr; }
 
 bool TaskDetailsViewModel::selectTask(const QString &taskId)

@@ -78,17 +78,22 @@ void TaskGraphNodeItem::paint(QPainter *painter,
     const bool core = m_index.data(Graph::CoreNodeRole).toBool();
     const bool archived = m_index.data(Graph::ArchivedRole).toBool();
     const bool blocked = m_index.data(Graph::BlockedRole).toBool();
-    const int status = m_index.data(Graph::StatusIndexRole).toInt();
+    const auto status = static_cast<viewmodel::TaskStatusVisual>(
+        m_index.data(Graph::StatusIndexRole).toInt());
     const QColor stateColor = blocked ? m_theme.warning : m_theme.statusColor(status);
     const QColor fill = selected ? m_theme.primarySoft
         : (!core || archived) ? m_theme.surfaceStrong : m_theme.surfaceElevated;
-    const QColor border = selected || status == 1 ? m_theme.primary
+    const QColor border = selected || status == viewmodel::TaskStatusVisual::InProgress
+        ? m_theme.primary
         : !core ? m_theme.archived
         : blocked ? m_theme.warning
         : archived ? m_theme.archived : m_theme.borderStrong;
 
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(QPen(border, selected ? 3.0 : status == 1 ? 2.5 : 1.5));
+    painter->setPen(QPen(
+        border,
+        selected ? 3.0
+                 : status == viewmodel::TaskStatusVisual::InProgress ? 2.5 : 1.5));
     painter->setBrush(fill);
     painter->drawRoundedRect(card.adjusted(1.5, 1.5, -1.5, -1.5), 11, 11);
     painter->setPen(Qt::NoPen);

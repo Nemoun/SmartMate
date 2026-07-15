@@ -130,8 +130,7 @@ DependencyGraphPage::DependencyGraphPage(
     m_search->setPlaceholderText(tr("搜索并定位任务"));
     m_search->setMinimumWidth(150);
     m_statusFilter->setObjectName(QStringLiteral("graphStatusFilter"));
-    m_statusFilter->addItems({tr("全部状态"), tr("待办"), tr("进行中"),
-                              tr("阻塞"), tr("已完成")});
+    m_statusFilter->addItems(dependencies.taskGraph.statusFilterOptions());
     m_categoryFilter->setObjectName(QStringLiteral("graphCategoryFilter"));
     m_locateCurrent->setObjectName(QStringLiteral("locateCurrentGraphTaskButton"));
     m_zoomOut->setObjectName(QStringLiteral("zoomOutGraphButton"));

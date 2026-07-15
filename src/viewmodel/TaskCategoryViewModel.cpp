@@ -102,8 +102,10 @@ QStringList TaskCategoryViewModel::colorAccents() const
 {
     QStringList accents;
     for (int index = 0; index < taskCategoryColorOptions().size(); ++index) {
-        accents.append(taskCategoryAccent(
-            static_cast<model::TaskCategoryColor>(index)));
+        const auto color = taskCategoryColorFromIndex(index);
+        if (color.has_value()) {
+            accents.append(taskCategoryAccent(*color));
+        }
     }
     return accents;
 }

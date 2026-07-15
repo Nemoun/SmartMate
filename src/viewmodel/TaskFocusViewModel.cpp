@@ -63,7 +63,7 @@ bool TaskFocusViewModel::focusOverdue() const noexcept { return m_projection.ove
 bool TaskFocusViewModel::focusCanStart() const noexcept { return m_projection.availabilityFor(m_focusTaskId).canStart; }
 bool TaskFocusViewModel::focusCanComplete() const noexcept { return m_projection.availabilityFor(m_focusTaskId).canComplete; }
 QString TaskFocusViewModel::focusCategoryName() const { const auto *category = focusCategory(); return category ? category->name : QString{}; }
-QString TaskFocusViewModel::focusCategoryAccent() const { const auto *category = focusCategory(); return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8"); }
+QString TaskFocusViewModel::focusCategoryAccent() const { const auto *category = focusCategory(); return category ? taskCategoryAccent(category->color) : taskUncategorizedAccent(); }
 bool TaskFocusViewModel::focusHasCategory() const noexcept { return focusCategory() != nullptr; }
 
 void TaskFocusViewModel::reload()
