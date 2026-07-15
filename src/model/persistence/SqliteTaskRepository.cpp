@@ -1,4 +1,5 @@
 #include "persistence/SqliteTaskRepository.h"
+#include "persistence/TaskSqlCodec.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -44,89 +45,13 @@ void executeStatement(QSqlDatabase &database, const QString &statement)
     }
 }
 
-// 持久化使用稳定英文值，避免枚举顺序或中文界面文案变化破坏已有数据库。
-QString priorityToStorage(TaskPriority priority)
-{
-    switch (priority) {
-    case TaskPriority::Low:
-        return QStringLiteral("low");
-    case TaskPriority::Normal:
-        return QStringLiteral("normal");
-    case TaskPriority::High:
-        return QStringLiteral("high");
-    case TaskPriority::Urgent:
-        return QStringLiteral("urgent");
-    }
-
-    throwPersistenceError(QStringLiteral("Cannot store an unknown task priority"));
-}
-
-TaskPriority priorityFromStorage(const QString &value)
-{
-    if (value == QStringLiteral("low")) {
-        return TaskPriority::Low;
-    }
-    if (value == QStringLiteral("normal")) {
-        return TaskPriority::Normal;
-    }
-    if (value == QStringLiteral("high")) {
-        return TaskPriority::High;
-    }
-    if (value == QStringLiteral("urgent")) {
-        return TaskPriority::Urgent;
-    }
-
-    throwPersistenceError(
-        QStringLiteral("Unknown task priority in SQLite: %1").arg(value));
-}
-
-QString statusToStorage(TaskStatus status)
-{
-    switch (status) {
-    case TaskStatus::Todo:
-        return QStringLiteral("todo");
-    case TaskStatus::InProgress:
-        return QStringLiteral("in_progress");
-    case TaskStatus::Done:
-        return QStringLiteral("done");
-    case TaskStatus::Cancelled:
-        return QStringLiteral("cancelled");
-    case TaskStatus::Archived:
-        return QStringLiteral("archived");
-    }
-
-    throwPersistenceError(QStringLiteral("Cannot store an unknown task status"));
-}
-
-TaskStatus statusFromStorage(const QString &value)
-{
-    if (value == QStringLiteral("todo")) {
-        return TaskStatus::Todo;
-    }
-    if (value == QStringLiteral("in_progress")) {
-        return TaskStatus::InProgress;
-    }
-    if (value == QStringLiteral("done")) {
-        return TaskStatus::Done;
-    }
-    if (value == QStringLiteral("cancelled")) {
-        return TaskStatus::Cancelled;
-    }
-    if (value == QStringLiteral("archived")) {
-        return TaskStatus::Archived;
-    }
-
-    throwPersistenceError(
-        QStringLiteral("Unknown task status in SQLite: %1").arg(value));
-}
-
 std::optional<TaskStatus> optionalStatusFromStorage(const QVariant &value)
 {
     // SQL NULL 与 std::nullopt 一一对应，避免用魔法字符串表达领域可空值。
     if (value.isNull()) {
         return std::nullopt;
     }
-    return statusFromStorage(value.toString());
+    return detail::taskStatusFromSqlText(value.toString());
 }
 
 std::optional<QDateTime> optionalDateTimeFromStorage(const QVariant &value)
@@ -170,8 +95,8 @@ Task taskFromQuery(const QSqlQuery &query)
         id,
         query.value(1).toString(),
         query.value(2).toString(),
-        priorityFromStorage(query.value(3).toString()),
-        statusFromStorage(query.value(4).toString()),
+        detail::taskPriorityFromSqlText(query.value(3).toString()),
+        detail::taskStatusFromSqlText(query.value(4).toString()),
         optionalStatusFromStorage(query.value(5)),
         optionalDateTimeFromStorage(query.value(6)),
         optionalIntegerFromStorage(query.value(7)),
@@ -187,17 +112,10 @@ TaskCategory categoryFromQuery(const QSqlQuery &query)
         throwPersistenceError(QStringLiteral("SQLite contains an invalid category id"));
     }
 
-    const auto color = taskCategoryColorFromStorageText(query.value(2).toString());
-    if (!color.has_value()) {
-        throwPersistenceError(
-            QStringLiteral("Unknown task category color in SQLite: %1")
-                .arg(query.value(2).toString()));
-    }
-
     return TaskCategory{
         id,
         query.value(1).toString(),
-        *color,
+        detail::taskCategoryColorFromSqlText(query.value(2).toString()),
         QDateTime::fromMSecsSinceEpoch(query.value(3).toLongLong(), QTimeZone::UTC),
         QDateTime::fromMSecsSinceEpoch(query.value(4).toLongLong(), QTimeZone::UTC)};
 }
@@ -214,13 +132,15 @@ void bindTask(QSqlQuery &query, const Task &task)
     query.bindValue(QStringLiteral(":description"),
                     task.description().isNull() ? QStringLiteral("")
                                                 : task.description());
-    query.bindValue(QStringLiteral(":priority"), priorityToStorage(task.priority()));
-    query.bindValue(QStringLiteral(":status"), statusToStorage(task.status()));
+    query.bindValue(QStringLiteral(":priority"),
+                    detail::taskPriorityToSqlText(task.priority()));
+    query.bindValue(QStringLiteral(":status"),
+                    detail::taskStatusToSqlText(task.status()));
 
     if (task.statusBeforeArchive().has_value()) {
         query.bindValue(
             QStringLiteral(":status_before_archive"),
-            statusToStorage(*task.statusBeforeArchive()));
+            detail::taskStatusToSqlText(*task.statusBeforeArchive()));
     } else {
         query.bindValue(QStringLiteral(":status_before_archive"), QVariant());
     }
@@ -265,7 +185,7 @@ void bindCategory(QSqlQuery &query, const TaskCategory &category)
     // name_key与Model校验共用同一Unicode规范化函数，数据库唯一索引只负责并发兜底。
     query.bindValue(QStringLiteral(":name_key"), taskCategoryNameKey(category.name));
     query.bindValue(QStringLiteral(":color"),
-                    taskCategoryColorToStorageText(category.color));
+                    detail::taskCategoryColorToSqlText(category.color));
     query.bindValue(
         QStringLiteral(":created_at_utc_ms"),
         category.createdAtUtc.toUTC().toMSecsSinceEpoch());
@@ -764,11 +684,12 @@ TaskBatchWriteResult SqliteTaskRepository::updateTaskStatesAtomically(
         QList<TaskId> conflictingTaskIds;
         for (const TaskStateChange &change : changes) {
             updateQuery.bindValue(QStringLiteral(":target_status"),
-                                  statusToStorage(change.targetStatus));
+                              detail::taskStatusToSqlText(change.targetStatus));
             if (change.statusBeforeArchive.has_value()) {
                 updateQuery.bindValue(
                     QStringLiteral(":status_before_archive"),
-                    statusToStorage(*change.statusBeforeArchive));
+                                  detail::taskStatusToSqlText(
+                                      *change.statusBeforeArchive));
             } else {
                 updateQuery.bindValue(QStringLiteral(":status_before_archive"),
                                       QVariant());
@@ -780,7 +701,7 @@ TaskBatchWriteResult SqliteTaskRepository::updateTaskStatesAtomically(
                 QStringLiteral(":task_id"),
                 change.taskId.toString(QUuid::WithoutBraces));
             updateQuery.bindValue(QStringLiteral(":expected_status"),
-                                  statusToStorage(change.expectedStatus));
+                              detail::taskStatusToSqlText(change.expectedStatus));
             if (!updateQuery.exec()) {
                 throwDatabaseError(QStringLiteral("Cannot update batch task state"),
                                    updateQuery.lastError());

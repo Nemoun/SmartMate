@@ -1,6 +1,7 @@
 #include "fakes/FakeTaskCategoryRepository.h"
 
 #include "domain/TaskCategory.h"
+#include "domain/TaskCategoryConstraints.h"
 #include "services/TaskCategoryService.h"
 
 #include <QSignalSpy>
@@ -12,8 +13,7 @@ using smartmate::model::TaskCategoryColor;
 using smartmate::model::TaskCategoryDraft;
 using smartmate::model::TaskCategoryError;
 using smartmate::model::TaskCategoryService;
-using smartmate::model::taskCategoryColorFromStorageText;
-using smartmate::model::taskCategoryColorToStorageText;
+using smartmate::model::isValidTaskCategoryColor;
 using smartmate::model::taskCategoryNameKey;
 using smartmate::tests::FakeTaskCategoryRepository;
 
@@ -37,7 +37,7 @@ class TaskCategoryServiceTest final : public QObject {
     Q_OBJECT
 
 private slots:
-    void normalizesNamesAndColors();
+    void normalizesNamesAndValidatesColors();
     void createsAndSortsCategories();
     void rejectsInvalidAndDuplicateNames();
     void updatesWithoutNotifyingForNoChange();
@@ -45,7 +45,7 @@ private slots:
     void mapsRepositoryFailures();
 };
 
-void TaskCategoryServiceTest::normalizesNamesAndColors()
+void TaskCategoryServiceTest::normalizesNamesAndValidatesColors()
 {
     QCOMPARE(taskCategoryNameKey(QStringLiteral("  Ｗork  ")),
              taskCategoryNameKey(QStringLiteral("work")));
@@ -55,12 +55,9 @@ void TaskCategoryServiceTest::normalizesNamesAndColors()
         TaskCategoryColor::Orange, TaskCategoryColor::Rose,
         TaskCategoryColor::Violet, TaskCategoryColor::Slate};
     for (const TaskCategoryColor color : colors) {
-        const QString text = taskCategoryColorToStorageText(color);
-        QVERIFY(!text.isEmpty());
-        QCOMPARE(taskCategoryColorFromStorageText(text),
-                 std::optional<TaskCategoryColor>{color});
+        QVERIFY(isValidTaskCategoryColor(color));
     }
-    QVERIFY(!taskCategoryColorFromStorageText(QStringLiteral("unknown")).has_value());
+    QVERIFY(!isValidTaskCategoryColor(static_cast<TaskCategoryColor>(999)));
 }
 
 void TaskCategoryServiceTest::createsAndSortsCategories()
@@ -92,13 +89,19 @@ void TaskCategoryServiceTest::rejectsInvalidAndDuplicateNames()
 
     QCOMPARE(service.createCategory({QStringLiteral("   "), TaskCategoryColor::Blue}).error,
              TaskCategoryError::EmptyName);
-    QCOMPARE(service.createCategory({QString(51, QLatin1Char('a')),
+    QCOMPARE(service.createCategory({QString(
+                                         smartmate::model::TaskCategoryConstraints::maximumNameLength
+                                             + 1,
+                                         QLatin1Char('a')),
                                      TaskCategoryColor::Blue}).error,
              TaskCategoryError::NameTooLong);
     const QString emoji = QString::fromUcs4(U"😀");
-    QVERIFY(service.createCategory({emoji.repeated(50),
+    QVERIFY(service.createCategory({emoji.repeated(
+                                        smartmate::model::TaskCategoryConstraints::maximumNameLength),
                                     TaskCategoryColor::Teal}).ok());
-    QCOMPARE(service.createCategory({emoji.repeated(51),
+    QCOMPARE(service.createCategory({emoji.repeated(
+                                         smartmate::model::TaskCategoryConstraints::maximumNameLength
+                                             + 1),
                                      TaskCategoryColor::Teal}).error,
              TaskCategoryError::NameTooLong);
     QCOMPARE(service.createCategory({QStringLiteral("ｗＯＲＫ"),

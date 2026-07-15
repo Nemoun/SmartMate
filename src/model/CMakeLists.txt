@@ -5,6 +5,7 @@ add_library(smartmate_model STATIC
     domain/Task.cpp
     domain/TaskCategory.h
     domain/TaskCategory.cpp
+    domain/TaskCategoryConstraints.h
     domain/TaskCommandAvailability.h
     domain/TaskConstraints.h
     domain/TaskCreationRequest.h
@@ -14,6 +15,7 @@ add_library(smartmate_model STATIC
     domain/TaskStateMachine.h
     domain/TaskStateMachine.cpp
     domain/TaskTypes.h
+    domain/UnicodeText.h
     dependencies/TaskDependencyGraph.h
     dependencies/TaskDependencyGraph.cpp
     planner/TaskOrderingPolicy.h

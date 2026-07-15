@@ -1,13 +1,10 @@
 #include "services/TaskDraftValidator.h"
 
 #include "domain/TaskConstraints.h"
+#include "domain/UnicodeText.h"
 
 namespace smartmate::model {
 namespace {
-
-/// 文本长度上限属于 Model 业务规则，Widget 只能据此展示校验结果。
-constexpr int maximumTitleLength = 200;
-constexpr int maximumDescriptionLength = 5000;
 
 [[nodiscard]] bool isValidPriority(const TaskPriority priority) noexcept
 {
@@ -29,7 +26,9 @@ TaskValidationResult validateTaskEstimatedMinutes(const int minutes)
         || minutes > TaskConstraints::maximumEstimatedMinutes) {
         return TaskValidationResult::failure(
             TaskError::InvalidEstimate,
-            QStringLiteral("Estimated minutes must be between 1 and 525600."));
+            QStringLiteral("Estimated minutes must be between %1 and %2.")
+                .arg(TaskConstraints::minimumEstimatedMinutes)
+                .arg(TaskConstraints::maximumEstimatedMinutes));
     }
     return TaskValidationResult::success();
 }
@@ -42,15 +41,19 @@ TaskValidationResult validateTaskDraft(const TaskDraft &draft)
         return TaskValidationResult::failure(
             TaskError::EmptyTitle, QStringLiteral("Task title must not be empty."));
     }
-    if (normalizedTitle.size() > maximumTitleLength) {
+    if (unicodeCodePointCount(normalizedTitle)
+        > TaskConstraints::maximumTitleLength) {
         return TaskValidationResult::failure(
             TaskError::TitleTooLong,
-            QStringLiteral("Task title exceeds 200 characters."));
+            QStringLiteral("Task title exceeds %1 characters.")
+                .arg(TaskConstraints::maximumTitleLength));
     }
-    if (draft.description.size() > maximumDescriptionLength) {
+    if (unicodeCodePointCount(draft.description)
+        > TaskConstraints::maximumDescriptionLength) {
         return TaskValidationResult::failure(
             TaskError::DescriptionTooLong,
-            QStringLiteral("Task description exceeds 5000 characters."));
+            QStringLiteral("Task description exceeds %1 characters.")
+                .arg(TaskConstraints::maximumDescriptionLength));
     }
     if (draft.deadline.has_value() && !draft.deadline->isValid()) {
         return TaskValidationResult::failure(

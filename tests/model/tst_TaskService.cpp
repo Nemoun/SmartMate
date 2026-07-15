@@ -93,6 +93,7 @@ private slots:
     void normalizesOmittedDescriptionToEmptyText();
     void validatesDraftWithoutRepositoryAccess();
     void validatesDraftFields();
+    void validatesUnicodeTextBoundaries();
     void acceptsDeadlineAndEstimateBoundaries();
     void createsEveryPriorityAsTodo();
     void startEnforcesSingleInProgressTask();
@@ -420,6 +421,36 @@ void TaskServiceTest::validatesDraftFields()
 
     QCOMPARE(changedSpy.count(), 0);
     QVERIFY(repository.tasks().isEmpty());
+}
+
+void TaskServiceTest::validatesUnicodeTextBoundaries()
+{
+    FakeTaskRepository repository;
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    FakeTaskBatchTransitionRepository batchTransitionRepository{repository};
+    const TaskService service{repository, dependencyRepository, creationRepository,
+                              batchTransitionRepository, deletionRepository,
+                              categoryRepository};
+    const QString emoji = QString::fromUcs4(U"😀");
+
+    TaskDraft draft = validDraft();
+    draft.title = emoji.repeated(
+        smartmate::model::TaskConstraints::maximumTitleLength);
+    QVERIFY(service.validateDraft(draft).ok());
+
+    draft.title = emoji.repeated(
+        smartmate::model::TaskConstraints::maximumTitleLength + 1);
+    QCOMPARE(service.validateDraft(draft).error, TaskError::TitleTooLong);
+
+    draft = validDraft();
+    draft.description = emoji.repeated(
+        smartmate::model::TaskConstraints::maximumDescriptionLength);
+    QVERIFY(service.validateDraft(draft).ok());
+
+    draft.description = emoji.repeated(
+        smartmate::model::TaskConstraints::maximumDescriptionLength + 1);
+    QCOMPARE(service.validateDraft(draft).error, TaskError::DescriptionTooLong);
 }
 
 void TaskServiceTest::acceptsDeadlineAndEstimateBoundaries()

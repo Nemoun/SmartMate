@@ -1,4 +1,6 @@
 add_library(smartmate_persistence STATIC
+    TaskSqlCodec.h
+    TaskSqlCodec.cpp
     SqliteTaskRepository.h
     SqliteTaskRepository.cpp
     QSettingsAppearanceRepository.h

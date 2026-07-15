@@ -1,4 +1,5 @@
 #include "persistence/SqliteTaskRepository.h"
+#include "persistence/TaskSqlCodec.h"
 
 #include "domain/TaskDependency.h"
 #include "domain/TaskCategory.h"
@@ -257,6 +258,8 @@ private slots:
     void migratesVersionTwoWithoutChangingTasksOrDependencies();
     void rollsBackFailedVersionOneMigration();
     void rejectsFutureSchemaVersion();
+    void stableSqlCodecsRoundTripEveryValue();
+    void stableSqlCodecsRejectInvalidValues();
     void roundTripsTaskCategoryAndUnicodeNameKey();
     void categoryForeignKeyRejectsMissingCategory();
     void deletesCategoryAndUnassignsTasksWithoutChangingDependencies();
@@ -351,6 +354,73 @@ void SqliteTaskRepositoryTest::initializesSchemaIdempotently()
         database.close();
     }
     QSqlDatabase::removeDatabase(connectionName);
+}
+
+void SqliteTaskRepositoryTest::stableSqlCodecsRoundTripEveryValue()
+{
+    using namespace smartmate::model::persistence::detail;
+
+    const QList<QPair<TaskPriority, QString>> priorities{
+        {TaskPriority::Low, QStringLiteral("low")},
+        {TaskPriority::Normal, QStringLiteral("normal")},
+        {TaskPriority::High, QStringLiteral("high")},
+        {TaskPriority::Urgent, QStringLiteral("urgent")},
+    };
+    for (const auto &[value, text] : priorities) {
+        QCOMPARE(taskPriorityToSqlText(value), text);
+        QCOMPARE(taskPriorityFromSqlText(text), value);
+    }
+
+    const QList<QPair<TaskStatus, QString>> statuses{
+        {TaskStatus::Todo, QStringLiteral("todo")},
+        {TaskStatus::InProgress, QStringLiteral("in_progress")},
+        {TaskStatus::Done, QStringLiteral("done")},
+        {TaskStatus::Cancelled, QStringLiteral("cancelled")},
+        {TaskStatus::Archived, QStringLiteral("archived")},
+    };
+    for (const auto &[value, text] : statuses) {
+        QCOMPARE(taskStatusToSqlText(value), text);
+        QCOMPARE(taskStatusFromSqlText(text), value);
+    }
+
+    const QList<QPair<TaskCategoryColor, QString>> colors{
+        {TaskCategoryColor::Blue, QStringLiteral("blue")},
+        {TaskCategoryColor::Teal, QStringLiteral("teal")},
+        {TaskCategoryColor::Green, QStringLiteral("green")},
+        {TaskCategoryColor::Amber, QStringLiteral("amber")},
+        {TaskCategoryColor::Orange, QStringLiteral("orange")},
+        {TaskCategoryColor::Rose, QStringLiteral("rose")},
+        {TaskCategoryColor::Violet, QStringLiteral("violet")},
+        {TaskCategoryColor::Slate, QStringLiteral("slate")},
+    };
+    for (const auto &[value, text] : colors) {
+        QCOMPARE(taskCategoryColorToSqlText(value), text);
+        QCOMPARE(taskCategoryColorFromSqlText(text), value);
+    }
+}
+
+void SqliteTaskRepositoryTest::stableSqlCodecsRejectInvalidValues()
+{
+    using namespace smartmate::model::persistence::detail;
+
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskPriorityToSqlText(static_cast<TaskPriority>(999)),
+        RepositoryException);
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskPriorityFromSqlText(QStringLiteral("unknown")),
+        RepositoryException);
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskStatusToSqlText(static_cast<TaskStatus>(999)),
+        RepositoryException);
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskStatusFromSqlText(QStringLiteral("unknown")),
+        RepositoryException);
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskCategoryColorToSqlText(static_cast<TaskCategoryColor>(999)),
+        RepositoryException);
+    QVERIFY_EXCEPTION_THROWN(
+        (void) taskCategoryColorFromSqlText(QStringLiteral("unknown")),
+        RepositoryException);
 }
 
 void SqliteTaskRepositoryTest::migratesVersionOneWithoutChangingTaskData()

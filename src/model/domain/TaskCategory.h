@@ -4,14 +4,12 @@
 #include <QString>
 #include <QUuid>
 
-#include <optional>
-
 namespace smartmate::model {
 
 /// 类别在所有层之间传递的稳定身份；名称变化不得改变该身份。
 using TaskCategoryId = QUuid;
 
-/// 固定调色板的稳定领域值；持久化必须使用英文文本而非枚举序号。
+/// 固定调色板的领域值；枚举序号不承担展示或持久化协议。
 enum class TaskCategoryColor : int {
     Blue = 0,
     Teal = 1,
@@ -55,12 +53,5 @@ struct TaskCategory final {
 
 /// 判断颜色是否属于当前固定调色板。
 [[nodiscard]] bool isValidTaskCategoryColor(TaskCategoryColor color) noexcept;
-
-/// 将颜色转换为跨版本稳定的 SQLite 文本。
-[[nodiscard]] QString taskCategoryColorToStorageText(TaskCategoryColor color);
-
-/// 从稳定文本恢复颜色；未知文本返回空值，由 Repository 视为损坏数据。
-[[nodiscard]] std::optional<TaskCategoryColor> taskCategoryColorFromStorageText(
-    const QString &text);
 
 } // namespace smartmate::model

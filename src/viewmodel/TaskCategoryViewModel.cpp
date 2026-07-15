@@ -1,6 +1,7 @@
 #include "TaskCategoryViewModel.h"
 
 #include "TaskCategoryPresentation.h"
+#include "domain/TaskCategoryConstraints.h"
 #include "services/TaskCategoryResult.h"
 #include "services/TaskCategoryService.h"
 #include "services/TaskService.h"
@@ -17,7 +18,8 @@ namespace {
     case model::TaskCategoryError::EmptyName:
         return QStringLiteral("类别名称不能为空。");
     case model::TaskCategoryError::NameTooLong:
-        return QStringLiteral("类别名称不能超过50个字符。");
+        return QStringLiteral("类别名称不能超过%1个字符。")
+            .arg(model::TaskCategoryConstraints::maximumNameLength);
     case model::TaskCategoryError::DuplicateName:
         return QStringLiteral("已存在同名类别。");
     case model::TaskCategoryError::InvalidColor:

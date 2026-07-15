@@ -1,5 +1,7 @@
 #include "services/TaskCategoryService.h"
 
+#include "domain/TaskCategoryConstraints.h"
+#include "domain/UnicodeText.h"
 #include "repositories/RepositoryException.h"
 
 #include <QDateTime>
@@ -10,9 +12,6 @@
 
 namespace smartmate::model {
 namespace {
-
-/// 类别名长度按 Unicode code point 计算，而不是 UTF-16 code unit。
-constexpr qsizetype maximumCategoryNameLength = 50;
 
 [[nodiscard]] QString stableCategoryId(const TaskCategoryId &id)
 {
@@ -26,9 +25,9 @@ constexpr qsizetype maximumCategoryNameLength = 50;
     if (trimmedName.isEmpty()) {
         return TaskCategoryError::EmptyName;
     }
-    // QString::size()统计UTF-16 code unit，会把补充平面字符计为两个；
-    // 领域“字符”边界按Unicode code point计算，并与SQLite length()保持一致。
-    if (trimmedName.toUcs4().size() > maximumCategoryNameLength) {
+    // 领域“字符”边界按 Unicode code point 计算，并与 SQLite length() 保持一致。
+    if (unicodeCodePointCount(trimmedName)
+        > TaskCategoryConstraints::maximumNameLength) {
         return TaskCategoryError::NameTooLong;
     }
     if (!isValidTaskCategoryColor(draft.color)) {
@@ -43,7 +42,8 @@ constexpr qsizetype maximumCategoryNameLength = 50;
     case TaskCategoryError::EmptyName:
         return QStringLiteral("Task category name must not be empty.");
     case TaskCategoryError::NameTooLong:
-        return QStringLiteral("Task category name exceeds 50 characters.");
+        return QStringLiteral("Task category name exceeds %1 characters.")
+            .arg(TaskCategoryConstraints::maximumNameLength);
     case TaskCategoryError::InvalidColor:
         return QStringLiteral("Task category color is invalid.");
     default:
