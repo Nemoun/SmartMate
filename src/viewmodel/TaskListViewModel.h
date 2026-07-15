@@ -98,6 +98,9 @@ signals:
     void errorOccurred(const QString &message);
 
 private:
+    /// 优先级筛选索引是稳定的展示协议，不依赖领域枚举底层序号。
+    static constexpr int allPrioritiesFilterIndex = 0;
+    static constexpr int firstPriorityFilterIndex = 1;
     /// Model 依赖状态的界面投影；中文原因在 reload() 时一次生成，Widget 不拼接图数据。
     [[nodiscard]] static model::TaskId parseTaskId(const QString &taskId);
     [[nodiscard]] const model::Task *taskForId(const model::TaskId &taskId) const;

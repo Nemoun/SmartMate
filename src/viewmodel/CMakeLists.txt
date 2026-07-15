@@ -5,6 +5,8 @@ add_library(smartmate_viewmodel STATIC
     AppearanceSettingsViewModel.cpp
     TaskEditorViewModel.h
     TaskEditorViewModel.cpp
+    TaskEditorSessionCommands.cpp
+    TaskEditorDraftState.cpp
     TaskDependencyViewModel.h
     TaskDependencyViewModel.cpp
     TaskErrorMapper.h
@@ -27,6 +29,9 @@ add_library(smartmate_viewmodel STATIC
     TaskGraphLayout.cpp
     TaskListViewModel.h
     TaskListViewModel.cpp
+    TaskListCommands.cpp
+    TaskListBulkCommands.cpp
+    TaskListProjection.cpp
     TaskFocusViewModel.h
     TaskFocusViewModel.cpp
     TaskDetailsViewModel.h
