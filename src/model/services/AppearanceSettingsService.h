@@ -38,11 +38,17 @@ struct AppearanceSettingsResult final {
 };
 
 /// 校验并编排外观偏好读写，ViewModel 不直接接触 Repository。
+///
+/// 本 Service 返回同步结果但不建立 Qt 数据绑定：具体 ViewModel 将成功快照保存为
+/// 可观察状态，再通过 Contract 的 getter 与 appearanceChanged() 通知 Widget。
 class AppearanceSettingsService final {
 public:
+    /// 注入设置持久化端口；该构造过程不读取设置，也不触发任何展示通知。
     explicit AppearanceSettingsService(IAppearanceSettingsRepository &repository);
 
+    /// 查询命令：返回当前设置快照，由 ViewModel 完成首次 getter 同步。
     [[nodiscard]] AppearanceSettingsResult load() const;
+    /// 保存命令：校验并持久化完整设置；调用方根据返回结果决定是否发布 Contract 通知。
     [[nodiscard]] AppearanceSettingsResult save(const AppearanceSettings &settings);
 
 private:

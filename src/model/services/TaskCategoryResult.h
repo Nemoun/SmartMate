@@ -29,6 +29,7 @@ enum class TaskCategoryError {
 };
 
 /// 类别 Service 的结构化结果；成功时必须同时拥有 value 且 error 为 None。
+/// value 仅供具体 ViewModel 生成 Contract getter/Role 投影，不允许 Widget 直接绑定领域实体。
 template<typename T>
 struct TaskCategoryServiceResult final {
     /// 成功时的领域快照；失败时为空。

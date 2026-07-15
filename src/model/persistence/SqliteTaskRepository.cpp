@@ -26,6 +26,7 @@ constexpr auto kSelectCategoryColumns =
 
 [[noreturn]] void throwDatabaseError(const QString &operation, const QSqlError &error)
 {
+    // 将 Qt SQL 技术错误收敛为 RepositoryException，禁止 QSqlError 越过端口边界。
     throw RepositoryException(
         QStringLiteral("%1: %2").arg(operation, error.text()));
 }
@@ -121,6 +122,7 @@ TaskStatus statusFromStorage(const QString &value)
 
 std::optional<TaskStatus> optionalStatusFromStorage(const QVariant &value)
 {
+    // SQL NULL 与 std::nullopt 一一对应，避免用魔法字符串表达领域可空值。
     if (value.isNull()) {
         return std::nullopt;
     }
@@ -158,6 +160,7 @@ std::optional<TaskCategoryId> optionalCategoryIdFromStorage(const QVariant &valu
 
 Task taskFromQuery(const QSqlQuery &query)
 {
+    // 在 Persistence 边界完成行到领域快照的转换；非法存量数据立即报告而非静默修正。
     const auto id = TaskId::fromString(query.value(0).toString());
     if (id.isNull()) {
         throwPersistenceError(QStringLiteral("SQLite contains an invalid task id"));
@@ -202,6 +205,7 @@ TaskCategory categoryFromQuery(const QSqlQuery &query)
 // 外部文本只通过参数绑定写入；可选值映射为SQL NULL，时间统一保存为UTC毫秒。
 void bindTask(QSqlQuery &query, const Task &task)
 {
+    // 所有外部值都使用命名参数绑定，既防止 SQL 注入也避免字符串转义差异。
     query.bindValue(
         QStringLiteral(":id"), task.id().toString(QUuid::WithoutBraces));
     query.bindValue(QStringLiteral(":title"), task.title());
@@ -254,6 +258,7 @@ void bindTask(QSqlQuery &query, const Task &task)
 
 void bindCategory(QSqlQuery &query, const TaskCategory &category)
 {
+    // Service 已完成业务校验；此处只负责稳定存储编码和数据库约束的并发兜底。
     query.bindValue(
         QStringLiteral(":id"), category.id.toString(QUuid::WithoutBraces));
     query.bindValue(QStringLiteral(":name"), category.name);
@@ -444,7 +449,7 @@ void SqliteTaskRepository::initializeSchema()
             database,
             QStringLiteral(
                 "CREATE INDEX IF NOT EXISTS idx_tasks_category_id ON tasks(category_id)"));
-        // Service先给出友好业务错误，此索引再防止并发或绕过Service破坏单进行中约束。
+        // Service 先给出友好业务错误，此索引再防止并发或绕过 Service 破坏单进行中约束。
         executeStatement(
             database,
             QStringLiteral(
@@ -514,6 +519,7 @@ QList<Task> SqliteTaskRepository::findAll() const
     auto database = QSqlDatabase::database(m_connectionName, false);
     QSqlQuery query(database);
     const QString statement =
+        // 此 ORDER BY 只保证 Repository 结果确定；ViewModel 绑定顺序由 Model Planner 重算。
         QStringLiteral("SELECT %1 FROM tasks ORDER BY updated_at_utc_ms DESC, id ASC")
             .arg(QLatin1StringView(kSelectColumns));
     if (!query.exec(statement)) {
@@ -547,6 +553,7 @@ std::optional<Task> SqliteTaskRepository::findById(const TaskId &id) const
 
 void SqliteTaskRepository::insert(const Task &task)
 {
+    // 单表写端口不复制业务规则；调用方 Service 负责校验和成功后的 tasksChanged()。
     auto database = QSqlDatabase::database(m_connectionName, false);
     QSqlQuery query(database);
     query.prepare(QStringLiteral(
@@ -567,6 +574,7 @@ void SqliteTaskRepository::insert(const Task &task)
 
 bool SqliteTaskRepository::update(const Task &task)
 {
+    // 返回受影响行数供 Service 区分“写入成功”与“稳定 ID 已消失”，本层不发通知。
     auto database = QSqlDatabase::database(m_connectionName, false);
     QSqlQuery query(database);
     query.prepare(QStringLiteral(
@@ -626,6 +634,7 @@ void SqliteTaskRepository::replacePredecessors(
     }
 
     try {
+        // “删除全部旧入边 + 插入完整新集合”是一个持久化命令，不能让绑定观察到中间状态。
         QSqlQuery deleteQuery(database);
         deleteQuery.prepare(QStringLiteral(
             "DELETE FROM task_dependencies WHERE successor_id = :successor_id"));
@@ -661,6 +670,7 @@ void SqliteTaskRepository::replacePredecessors(
                 QStringLiteral("Cannot commit task dependency transaction"),
                 database.lastError());
         }
+        // commit 成功后才正常返回；dependenciesChanged() 由 Service 在事务外统一发送。
     } catch (...) {
         database.rollback();
         throw;
@@ -722,6 +732,7 @@ void SqliteTaskRepository::insertTaskWithPredecessors(
                 QStringLiteral("Cannot commit atomic task creation transaction"),
                 database.lastError());
         }
+        // Persistence 不发送通知；Service 确认任务和全部边已提交后再通知任务/依赖投影。
     } catch (...) {
         // commit失败也尝试回滚；SQLite会在连接继续使用前恢复到一致状态。
         database.rollback();
@@ -794,6 +805,7 @@ TaskBatchWriteResult SqliteTaskRepository::updateTaskStatesAtomically(
                 QStringLiteral("Cannot commit batch task transition transaction"),
                 database.lastError());
         }
+        // 原子提交完成后返回计数；Service 再发送一次 tasksChanged()，避免逐项刷新绑定。
         return {static_cast<int>(changes.size()), {}};
     } catch (...) {
         database.rollback();
@@ -813,6 +825,7 @@ SqliteTaskRepository::deleteArchivedTasksWithDependencies(
     }
 
     try {
+        // 先删除依赖边以满足外键 RESTRICT；任一任务条件删除失败时事务会恢复全部边。
         // 循环复用预编译语句既避免 SQLite 参数上限，也使选中任务之间的共享边只在
         // 第一次命中时计数。若后续状态条件冲突，整个事务会恢复全部已删除边。
         QSqlQuery dependencyQuery(database);
@@ -876,6 +889,7 @@ SqliteTaskRepository::deleteArchivedTasksWithDependencies(
                 QStringLiteral("Cannot commit permanent task deletion transaction"),
                 database.lastError());
         }
+        // 返回去重后的实际删边数；Service 据此决定是否发送 dependenciesChanged()。
         return {deletedTaskCount, static_cast<int>(removedDependencyCount), {}};
     } catch (...) {
         database.rollback();
@@ -888,6 +902,7 @@ QList<TaskCategory> SqliteTaskRepository::findAllCategories() const
     auto database = QSqlDatabase::database(m_connectionName, false);
     QSqlQuery query(database);
     const QString statement =
+        // name_key 与稳定 ID 仅保证查询可复现；展示 Role 仍由类别 ViewModel 生成。
         QStringLiteral(
             "SELECT %1 FROM task_categories ORDER BY name_key ASC, id ASC")
             .arg(QLatin1StringView(kSelectCategoryColumns));
@@ -924,6 +939,7 @@ std::optional<TaskCategory> SqliteTaskRepository::findCategoryById(
 
 void SqliteTaskRepository::insertCategory(const TaskCategory &category)
 {
+    // 唯一索引负责并发兜底；友好的 DuplicateName 错误仍由 Service 预检和映射。
     auto database = QSqlDatabase::database(m_connectionName, false);
     QSqlQuery query(database);
     query.prepare(QStringLiteral(
@@ -1023,6 +1039,7 @@ SqliteTaskRepository::deleteCategoryAndUnassignTasks(
                 QStringLiteral("Cannot commit task category deletion transaction"),
                 database.lastError());
         }
+        // 返回影响范围后由 TaskCategoryService 分别发布类别目录和任务归属失效通知。
         return {true, static_cast<int>(unassignedTaskCount)};
     } catch (...) {
         database.rollback();

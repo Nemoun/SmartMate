@@ -107,6 +107,7 @@ struct TaskValidationResult final {
 };
 
 /// Service 操作结果；成功必须同时具有 value 且 error 为 None。
+/// 该结果是 Model→ViewModel 的同步数据边界，不是 Widget 可直接绑定的 Contract。
 template<typename T>
 struct ServiceResult final {
     /// 成功时的领域结果；失败时为空。

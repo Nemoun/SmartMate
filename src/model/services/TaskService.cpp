@@ -454,6 +454,7 @@ TaskDependencyListResult TaskService::replaceTaskPredecessors(
         for (const TaskId &predecessorId : normalizedPredecessors) {
             replacedIncoming.append({predecessorId, taskId});
         }
+        // 原子替换完成后只宣告依赖快照失效；订阅 ViewModel 再查询各自需要的数据。
         emit dependenciesChanged();
         return TaskDependencyListResult::success(std::move(replacedIncoming));
     } catch (const RepositoryException &exception) {
@@ -596,8 +597,10 @@ TaskResult TaskService::createTask(const TaskCreationRequest &request)
         } catch (const RepositoryException &exception) {
             return persistenceFailure(exception);
         }
+        // 原子命令完成后才通知：各 ViewModel 收到信号后按自身 Contract 职责重新查询。
         emit tasksChanged();
         if (!normalizedPredecessors.isEmpty()) {
+            // 只有创建了依赖边才使依赖投影失效，避免图与详情进行无效重载。
             emit dependenciesChanged();
         }
         return TaskResult::success(std::move(task));
@@ -641,6 +644,7 @@ TaskResult TaskService::updateTask(const TaskId &id, const TaskDraft &draft)
             return TaskResult::failure(TaskError::NotFound,
                                        QStringLiteral("Task was not found during update."));
         }
+        // 这是 Model 失效通知，不携带 Widget 可绑定字段；展示数据由 ViewModel 重新投影。
         emit tasksChanged();
         return TaskResult::success(std::move(updated));
     } catch (const RepositoryException &exception) {
@@ -791,8 +795,10 @@ TaskBatchResult TaskService::deleteArchivedTasks(const QList<TaskId> &taskIds)
                 QStringLiteral("Deletion repository did not delete the complete batch."));
         }
 
+        // 永久删除事务成功后任务投影必然失效；一次批量命令只广播一次。
         emit tasksChanged();
         if (writeResult.removedDependencyCount > 0) {
+            // 删除确实移除了入边/出边时，依赖图和阻塞投影才需要刷新。
             emit dependenciesChanged();
         }
         return TaskBatchResult::success(
@@ -896,6 +902,7 @@ TaskBatchResult TaskService::applyBatchTransition(
                 QStringLiteral("Batch transition repository did not update every task."));
         }
 
+        // 整批原子写入成功后统一通知，禁止逐项 emit 导致绑定观察到中间状态。
         emit tasksChanged();
         return TaskBatchResult::success(
             TaskBatchOutcome{std::move(transitionedTasks), 0});
@@ -974,6 +981,7 @@ TaskResult TaskService::applyTransition(const TaskId &id,
             return persistenceFailure(exception);
         }
 
+        // 写入完成后广播快照失效；失败路径绝不通知，绑定不会显示未提交状态。
         emit tasksChanged();
         return TaskResult::success(std::move(transitioned));
     } catch (const RepositoryException &exception) {

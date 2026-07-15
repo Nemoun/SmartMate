@@ -140,6 +140,7 @@ TaskCategoryResult TaskCategoryService::createCategory(
         const QDateTime nowUtc = QDateTime::currentDateTimeUtc();
         TaskCategory category{id, name, draft.color, nowUtc, nowUtc};
         m_repository.insertCategory(category);
+        // 命令先完成持久化，再广播失效通知；订阅 ViewModel 会各自重建 Contract 投影。
         emit categoriesChanged();
         return TaskCategoryResult::success(std::move(category));
     } catch (const RepositoryException &exception) {
@@ -188,6 +189,7 @@ TaskCategoryResult TaskCategoryService::updateCategory(
                 TaskCategoryError::NotFound,
                 QStringLiteral("Task category disappeared during update."));
         }
+        // 只广播“类别目录已变化”，不携带领域实体，避免把 Service 信号当成界面数据绑定。
         emit categoriesChanged();
         return TaskCategoryResult::success(std::move(updated));
     } catch (const RepositoryException &exception) {
@@ -218,8 +220,10 @@ TaskCategoryDeletionResult TaskCategoryService::deleteCategory(
                 TaskCategoryError::NotFound,
                 QStringLiteral("Task category disappeared during deletion."));
         }
+        // 类别目录必然变化；各 ViewModel 通过 listCategories() 拉取一致的新快照。
         emit categoriesChanged();
         if (writeResult.unassignedTaskCount > 0) {
+            // 只有任务归属实际变化才通知任务投影，避免无关联类别删除引起无效刷新。
             emit taskCategoryAssignmentsChanged();
         }
         return TaskCategoryDeletionResult::success(

@@ -8,6 +8,10 @@
 namespace smartmate::model {
 
 /// 类别名称、颜色及生命周期规则的唯一 Model 入口；不拥有注入的 Repository。
+///
+/// create/update/delete 是强类型业务命令；listCategories 是 ViewModel 重建类别投影的
+/// 查询入口。变化信号只表示 Model 数据已失效，具体 ViewModel 收到后重新查询并发布
+/// Contract 通知，Service 不直接绑定 Widget。
 class TaskCategoryService final : public QObject {
     Q_OBJECT
 
@@ -16,23 +20,23 @@ public:
     explicit TaskCategoryService(ITaskCategoryRepository &repository,
                                  QObject *parent = nullptr);
 
-    /// 返回按规范化名称和稳定 ID 排序的全部类别快照。
+    /// 查询命令：返回按规范化名称和稳定 ID 排序的全部类别快照，不发送变化通知。
     [[nodiscard]] TaskCategoryListResult listCategories() const;
-    /// 校验名称与颜色，生成稳定 ID 后创建类别。
+    /// 创建命令：校验名称与颜色并生成稳定 ID；成功写入后发送 categoriesChanged()。
     [[nodiscard]] TaskCategoryResult createCategory(
         const TaskCategoryDraft &draft);
-    /// 按稳定 ID 更新类别；同值保存视为成功但不会发送变化通知。
+    /// 更新命令：按稳定 ID 保存；实际变化后发送 categoriesChanged()，幂等保存不通知。
     [[nodiscard]] TaskCategoryResult updateCategory(
         const TaskCategoryId &id,
         const TaskCategoryDraft &draft);
-    /// 原子删除类别并将关联任务改为未分类，不影响任务依赖边。
+    /// 删除命令：原子删除类别并解除任务归属；按实际影响发送两类变化通知。
     [[nodiscard]] TaskCategoryDeletionResult deleteCategory(
         const TaskCategoryId &id);
 
 signals:
-    /// 类别目录实际创建、修改或删除后发送；无变化保存不会通知。
+    /// 类别目录失效通知：实际创建、修改或删除后发送，订阅 ViewModel 应重新查询类别投影。
     void categoriesChanged();
-    /// 删除类别实际解除任务归属时发送，任务投影和依赖图据此刷新。
+    /// 任务类别归属失效通知：仅解除至少一个任务归属时发送，任务列表/详情/图据此重投影。
     void taskCategoryAssignmentsChanged();
 
 private:

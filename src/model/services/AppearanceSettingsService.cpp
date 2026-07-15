@@ -60,6 +60,8 @@ AppearanceSettingsResult AppearanceSettingsService::save(
     }
     try {
         m_repository.save(settings);
+        // 外观绑定由 ViewModel 持有：它取得成功结果后更新本地状态并发出 Contract 通知。
+        // Service 不直接通知 Widget，也不依赖任何具体 ViewModel。
         return AppearanceSettingsResult::success(settings);
     } catch (const RepositoryException &exception) {
         return AppearanceSettingsResult::failure(
