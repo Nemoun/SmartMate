@@ -7,6 +7,7 @@ class QString;
 namespace smartmate::model {
 class TaskService;
 class TaskCategoryService;
+class StatisticsService;
 class AppearanceSettingsService;
 
 namespace persistence {
@@ -46,6 +47,8 @@ private:
     std::unique_ptr<model::TaskService> m_taskService;
     /// 类别业务用例入口，与任务服务共享类别 Repository 数据源。
     std::unique_ptr<model::TaskCategoryService> m_taskCategoryService;
+    /// 统计聚合入口，只通过任务事件、任务和依赖 Repository 读取事实数据。
+    std::unique_ptr<model::StatisticsService> m_statisticsService;
     /// 外观偏好的 QSettings 持久化适配器。
     std::unique_ptr<model::persistence::QSettingsAppearanceRepository>
         m_appearanceRepository;

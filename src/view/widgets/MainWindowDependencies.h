@@ -8,6 +8,7 @@
 #include "viewmodel/contracts/TaskCategoryContract.h"
 #include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskGraphContract.h"
+#include "viewmodel/contracts/StatisticsContract.h"
 
 namespace smartmate::view::widgets {
 
@@ -24,6 +25,7 @@ struct MainWindowDependencies {
     viewmodel::TaskCategoryContract &taskCategories;
     viewmodel::TaskDependencyContract &taskDependencies;
     viewmodel::TaskGraphContract &taskGraph;
+    viewmodel::StatisticsContract &statistics;
 };
 
 } // namespace smartmate::view::widgets

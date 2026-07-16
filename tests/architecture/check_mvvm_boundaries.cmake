@@ -272,6 +272,14 @@ if(EXISTS "${widgets_cmake}")
         record_violation("${widgets_cmake}"
             "smartmate_widgets may not link concrete ViewModel, Model, persistence, QML, Quick, or SQL")
     endif()
+    if(NOT widgets_cmake_lower MATCHES "private[ \t\r\n]+qt6::charts")
+        record_violation("${widgets_cmake}"
+            "smartmate_widgets must own Qt6::Charts as a private View dependency")
+    endif()
+    if(widgets_cmake_lower MATCHES "qt6::(chartsqml|graphs)")
+        record_violation("${widgets_cmake}"
+            "Widgets statistics may use Qt Charts only, not ChartsQml or Qt Graphs")
+    endif()
 endif()
 
 set(app_cmake "${ROOT_DIR}/src/app/CMakeLists.txt")
@@ -292,6 +300,53 @@ if(EXISTS "${app_cmake}")
     if(app_cmake_lower MATCHES "smartmatewidgets|smartmateqmlbaseline|smartmate_(ui|viewmodel_qml)|qt6::(qml|quick)")
         record_violation("${app_cmake}"
             "Removed migration frontend targets and Qt QML/Quick links may not remain")
+    endif()
+endif()
+
+set(main_window_dependencies
+    "${ROOT_DIR}/src/view/widgets/MainWindowDependencies.h")
+if(EXISTS "${main_window_dependencies}")
+    file(READ "${main_window_dependencies}" main_window_dependencies_contents)
+    string(TOLOWER "${main_window_dependencies_contents}" main_window_dependencies_lower)
+    if(NOT main_window_dependencies_lower MATCHES "statisticscontract"
+       OR NOT main_window_dependencies_lower MATCHES "statistics")
+        record_violation("${main_window_dependencies}"
+            "MainWindow must receive the statistics page through StatisticsContract")
+    endif()
+endif()
+
+set(app_bootstrapper_header "${ROOT_DIR}/src/app/AppBootstrapper.h")
+set(app_bootstrapper_source "${ROOT_DIR}/src/app/AppBootstrapper.cpp")
+if(EXISTS "${app_bootstrapper_header}" AND EXISTS "${app_bootstrapper_source}")
+    file(READ "${app_bootstrapper_header}" app_bootstrapper_header_contents)
+    file(READ "${app_bootstrapper_source}" app_bootstrapper_source_contents)
+    string(TOLOWER
+        "${app_bootstrapper_header_contents}${app_bootstrapper_source_contents}"
+        app_bootstrapper_lower)
+    if(NOT app_bootstrapper_lower MATCHES "statisticsservice"
+       OR NOT app_bootstrapper_lower MATCHES "m_statisticsservice"
+       OR NOT app_bootstrapper_lower MATCHES "statistics\(\)")
+        record_violation("${app_bootstrapper_source}"
+            "The app composition root must own StatisticsService and inject StatisticsContract")
+    endif()
+endif()
+
+set(deploy_script "${ROOT_DIR}/scripts/deploy.ps1")
+if(EXISTS "${deploy_script}")
+    file(READ "${deploy_script}" deploy_script_contents)
+    string(TOLOWER "${deploy_script_contents}" deploy_script_lower)
+    string(FIND "${deploy_script_lower}"
+        "\"qt6charts$debugsuffix.dll\"" required_charts_index)
+    if(required_charts_index LESS 0)
+        record_violation("${deploy_script}"
+            "The deployment must require the Qt Charts runtime")
+    endif()
+    if(NOT deploy_script_lower MATCHES "qt6chartsqml\\\*\\.dll"
+       OR NOT deploy_script_lower MATCHES "qt6graphs\\\*\\.dll"
+       OR NOT deploy_script_lower MATCHES "qt6qml\\\*\\.dll"
+       OR NOT deploy_script_lower MATCHES "qt6quick\\\*\\.dll")
+        record_violation("${deploy_script}"
+            "The deployment must reject ChartsQml, Qt Graphs, QML, and Qt Quick runtimes")
     endif()
 endif()
 

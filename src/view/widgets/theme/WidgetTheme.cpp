@@ -66,6 +66,25 @@ QColor WidgetTheme::priorityColor(const viewmodel::TaskPriorityVisual priority) 
     return danger;
 }
 
+QColor WidgetTheme::statisticsCategoryColor(
+    const viewmodel::StatisticsCategoryContract::Color color) const
+{
+    using Color = viewmodel::StatisticsCategoryContract::Color;
+    switch (color) {
+    case Color::Blue: return QColor{"#2563eb"};
+    case Color::Teal: return QColor{"#0f766e"};
+    case Color::Green: return QColor{"#15803d"};
+    case Color::Amber: return QColor{"#b45309"};
+    case Color::Orange: return QColor{"#c2410c"};
+    case Color::Rose: return QColor{"#be123c"};
+    case Color::Violet: return QColor{"#7c3aed"};
+    case Color::Slate: return QColor{"#475569"};
+    case Color::Unclassified: return QColor{"#94a3b8"};
+    case Color::Other: return QColor{"#64748b"};
+    }
+    return textMuted;
+}
+
 QPalette WidgetTheme::palette() const
 {
     // Palette 与 QSS 共用同一主题对象，避免自绘图元和标准控件出现颜色分裂。
@@ -102,10 +121,12 @@ QString WidgetTheme::styleSheet() const
         QPushButton { padding: 7px 12px; border: 1px solid %7; border-radius: 7px; background: %8; }
         QPushButton:hover { border-color: %9; }
         QPushButton:checked { color: %10; border-color: %10; background: %11; font-weight: 600; }
-        QPushButton#taskNavigationButton, QPushButton#graphNavigationButton, QPushButton#settingsNavigationButton {
+        QPushButton#taskNavigationButton, QPushButton#graphNavigationButton,
+        QPushButton#statisticsNavigationButton, QPushButton#settingsNavigationButton {
             text-align: left; padding: 10px 14px; border: none; background: transparent;
         }
-        QPushButton#taskNavigationButton:checked, QPushButton#graphNavigationButton:checked, QPushButton#settingsNavigationButton:checked {
+        QPushButton#taskNavigationButton:checked, QPushButton#graphNavigationButton:checked,
+        QPushButton#statisticsNavigationButton:checked, QPushButton#settingsNavigationButton:checked {
             color: %10; background: %11;
         }
         QComboBox { padding: 6px 10px; border: 1px solid %7; border-radius: 6px; background: %5; }
@@ -226,6 +247,30 @@ QString WidgetTheme::styleSheet() const
         QLabel#focusTaskDescription { color: %12; font-size: 13px; }
         QLabel#focusTaskMeta { color: %12; font-size: 12px; }
         QLabel#focusOverdueReminder { color: %16; font-size: 12px; font-weight: 600; }
+        QFrame#todayStatisticsCard, QFrame#weekStatisticsCard,
+        QFrame#onTimeStatisticsCard, QFrame#overdueStatisticsCard,
+        QFrame#trendStatisticsCard, QFrame#categoryStatisticsCard,
+        QFrame#healthStatisticsCard {
+            background: %5; border: 1px solid %4; border-radius: 11px;
+        }
+        QLabel#statisticsCardTitle { color: %12; font-size: 12px; font-weight: 700; }
+        QLabel#todayStatisticsValue, QLabel#weekStatisticsValue,
+        QLabel#onTimeStatisticsValue, QLabel#overdueStatisticsValue {
+            color: %2; font-size: 24px; font-weight: 700;
+        }
+        QLabel#todayStatisticsDetail, QLabel#weekStatisticsDetail,
+        QLabel#onTimeStatisticsDetail, QLabel#overdueStatisticsDetail,
+        QLabel#trendAccessibleSummary, QLabel#categoryAccessibleSummary,
+        QLabel#healthAccessibleSummary { color: %12; font-size: 12px; }
+        QLabel#trendEmptyState, QLabel#categoryEmptyState {
+            color: %12; background: %6; border: 1px dashed %7;
+            border-radius: 9px; padding: 20px;
+        }
+        QStackedWidget#trendStatisticsStack, QStackedWidget#categoryStatisticsStack {
+            background: transparent; border: none;
+        }
+        QPushButton#last7DaysButton, QPushButton#last30DaysButton,
+        QPushButton#last12WeeksButton { padding: 6px 10px; }
         QStatusBar { background: %5; color: %12; border-top: 1px solid %4; }
     )")
         .arg(background.name(), textPrimary.name(), navigation.name(),

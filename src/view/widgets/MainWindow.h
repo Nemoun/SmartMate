@@ -30,7 +30,8 @@ protected:
 
 private:
     MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
-               QWidget *taskPage, QWidget *graphPage, QWidget *parent);
+               QWidget *taskPage, QWidget *graphPage,
+               QWidget *statisticsPage, QWidget *parent);
     void applyAppearance();
     void applyNavigationMode();
     void showNotification(const common::UiNotification &notification);
@@ -45,6 +46,7 @@ private:
     QLabel *m_brand;
     QPushButton *m_taskNavigation;
     QPushButton *m_graphNavigation;
+    QPushButton *m_statisticsNavigation;
     QPushButton *m_settingsNavigation;
 };
 

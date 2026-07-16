@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Qt6 6.10.2 EXACT REQUIRED COMPONENTS
     Core
+    Charts
     Gui
     Sql
     Test

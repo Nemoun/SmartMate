@@ -140,19 +140,27 @@ void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
 
     auto *pages = window.findChild<QStackedWidget *>();
     QVERIFY(pages != nullptr);
+    QCOMPARE(pages->count(), 4);
     QCOMPARE(pages->currentIndex(), 0);
+    auto *statisticsNavigation =
+        requiredChild<QPushButton>(window, "statisticsNavigationButton");
+    QCOMPARE(statisticsNavigation->accessibleName(), QStringLiteral("统计"));
+    QTest::mouseClick(statisticsNavigation, Qt::LeftButton);
+    QCOMPARE(pages->currentIndex(), 2);
     QTest::mouseClick(requiredChild<QPushButton>(window, "settingsNavigationButton"),
                       Qt::LeftButton);
-    QCOMPARE(pages->currentIndex(), 2);
+    QCOMPARE(pages->currentIndex(), 3);
 
     window.show();
     window.resize(900, 620);
     QCoreApplication::processEvents();
     QCOMPARE(requiredChild<QFrame>(window, "navigationPanel")->width(), 64);
+    QCOMPARE(statisticsNavigation->toolTip(), QStringLiteral("统计"));
     window.resize(1180, 760);
     QCoreApplication::processEvents();
     QCOMPARE(requiredChild<QFrame>(window, "navigationPanel")->width(), 208);
-    QCOMPARE(pages->currentIndex(), 2);
+    QCOMPARE(statisticsNavigation->toolTip(), QString{});
+    QCOMPARE(pages->currentIndex(), 3);
     QVERIFY(requiredChild<QPushButton>(window, "settingsNavigationButton")->isChecked());
 }
 

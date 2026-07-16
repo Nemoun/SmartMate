@@ -3,6 +3,7 @@
 #include "view/widgets/settings/SettingsPage.h"
 #include "view/widgets/task/TaskPage.h"
 #include "view/widgets/graph/DependencyGraphPage.h"
+#include "view/widgets/statistics/StatisticsPage.h"
 #include "view/widgets/theme/WidgetTheme.h"
 
 #include <QApplication>
@@ -65,6 +66,7 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
                                           dependencies.taskGraph,
                                           dependencies.taskDetails,
                                           dependencies.taskDependencies}},
+                 new StatisticsPage{dependencies.statistics},
                  parent)
 {
     auto *taskPage = qobject_cast<TaskPage *>(m_pages->widget(0));
@@ -89,6 +91,9 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
     connect(&dependencies.taskGraph,
             &viewmodel::TaskGraphContract::notificationRaised,
             this, &MainWindow::showNotification);
+    connect(&dependencies.statistics,
+            &viewmodel::StatisticsContract::notificationRaised,
+            this, &MainWindow::showNotification);
 }
 
 MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
@@ -96,12 +101,14 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     : MainWindow(appearanceSettings,
                  migrationPlaceholder(tr("任务"), tr("任务页面未注入测试依赖。")),
                  migrationPlaceholder(tr("依赖图"), tr("依赖图页面未注入测试依赖。")),
+                 migrationPlaceholder(tr("统计"), tr("统计页面未注入测试依赖。")),
                  parent)
 {
 }
 
 MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
-                       QWidget *taskPage, QWidget *graphPage, QWidget *parent)
+                       QWidget *taskPage, QWidget *graphPage,
+                       QWidget *statisticsPage, QWidget *parent)
     : QMainWindow(parent)
     , m_appearanceSettings(appearanceSettings)
     , m_baselineFont(QApplication::font())
@@ -110,6 +117,7 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     , m_brand(new QLabel(QStringLiteral("SmartMate"), m_navigation))
     , m_taskNavigation(nullptr)
     , m_graphNavigation(nullptr)
+    , m_statisticsNavigation(nullptr)
     , m_settingsNavigation(nullptr)
 {
     setObjectName(QStringLiteral("mainWindow"));
@@ -147,8 +155,14 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     m_taskNavigation->setAccessibleName(tr("任务"));
     m_graphNavigation = navigationButton(tr("依赖图"), QStringLiteral("graphNavigationButton"),
                                          *navigationGroup, *navigationLayout, 1);
+    m_graphNavigation->setAccessibleName(tr("依赖图"));
+    m_statisticsNavigation = navigationButton(
+        tr("统计"), QStringLiteral("statisticsNavigationButton"),
+        *navigationGroup, *navigationLayout, 2);
+    m_statisticsNavigation->setAccessibleName(tr("统计"));
     m_settingsNavigation = navigationButton(tr("设置"), QStringLiteral("settingsNavigationButton"),
-                                            *navigationGroup, *navigationLayout, 2);
+                                            *navigationGroup, *navigationLayout, 3);
+    m_settingsNavigation->setAccessibleName(tr("设置"));
     navigationLayout->addStretch();
 
     rootLayout->addWidget(m_navigation);
@@ -156,6 +170,7 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
 
     m_pages->addWidget(taskPage);
     m_pages->addWidget(graphPage);
+    m_pages->addWidget(statisticsPage);
     m_pages->addWidget(new SettingsPage{appearanceSettings, m_pages});
 
     // 导航是纯 View 会话状态，只切换页面索引，不写入任何业务对象。
@@ -189,9 +204,11 @@ void MainWindow::applyNavigationMode()
     m_brand->setText(compact ? QStringLiteral("S") : QStringLiteral("SmartMate"));
     m_taskNavigation->setText(compact ? QStringLiteral("✓") : tr("任务"));
     m_graphNavigation->setText(compact ? QStringLiteral("↗") : tr("依赖图"));
+    m_statisticsNavigation->setText(compact ? QStringLiteral("▥") : tr("统计"));
     m_settingsNavigation->setText(compact ? QStringLiteral("⚙") : tr("设置"));
     m_taskNavigation->setToolTip(compact ? tr("任务") : QString{});
     m_graphNavigation->setToolTip(compact ? tr("依赖图") : QString{});
+    m_statisticsNavigation->setToolTip(compact ? tr("统计") : QString{});
     m_settingsNavigation->setToolTip(compact ? tr("设置") : QString{});
 }
 
