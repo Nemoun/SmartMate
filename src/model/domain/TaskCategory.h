@@ -4,14 +4,12 @@
 #include <QString>
 #include <QUuid>
 
-#include <optional>
-
 namespace smartmate::model {
 
 /// 类别在所有层之间传递的稳定身份；名称变化不得改变该身份。
 using TaskCategoryId = QUuid;
 
-/// 固定调色板的稳定领域值；持久化必须使用英文文本而非枚举序号。
+/// 固定调色板的领域值；枚举序号不承担展示或持久化协议。
 enum class TaskCategoryColor : int {
     Blue = 0,
     Teal = 1,
@@ -25,7 +23,9 @@ enum class TaskCategoryColor : int {
 
 /// 用户输入的类别草稿；名称校验与规范化由 TaskCategoryService 完成。
 struct TaskCategoryDraft final {
+    /// 用户可见名称；唯一性比较使用 taskCategoryNameKey() 的规范化结果。
     QString name;
+    /// 固定调色板中的领域颜色，不直接保存界面色值。
     TaskCategoryColor color{TaskCategoryColor::Blue};
 
     friend bool operator==(const TaskCategoryDraft &,
@@ -34,10 +34,15 @@ struct TaskCategoryDraft final {
 
 /// 独立于任务的类别实体；任务只保存可空的稳定 TaskCategoryId。
 struct TaskCategory final {
+    /// 类别稳定身份；重命名和换色不会改变它。
     TaskCategoryId id;
+    /// 用户可见名称，已由 Service 完成业务校验。
     QString name;
+    /// 固定调色板值，由 ViewModel 映射为具体展示色。
     TaskCategoryColor color{TaskCategoryColor::Blue};
+    /// 类别创建时间，使用 UTC。
     QDateTime createdAtUtc;
+    /// 类别最后更新时间，使用 UTC。
     QDateTime updatedAtUtc;
 
     friend bool operator==(const TaskCategory &, const TaskCategory &) = default;
@@ -48,12 +53,5 @@ struct TaskCategory final {
 
 /// 判断颜色是否属于当前固定调色板。
 [[nodiscard]] bool isValidTaskCategoryColor(TaskCategoryColor color) noexcept;
-
-/// 将颜色转换为跨版本稳定的 SQLite 文本。
-[[nodiscard]] QString taskCategoryColorToStorageText(TaskCategoryColor color);
-
-/// 从稳定文本恢复颜色；未知文本返回空值，由Repository视为损坏数据。
-[[nodiscard]] std::optional<TaskCategoryColor> taskCategoryColorFromStorageText(
-    const QString &text);
 
 } // namespace smartmate::model

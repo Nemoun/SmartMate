@@ -2,11 +2,18 @@ add_library(smartmate_widgets STATIC
     MainWindowDependencies.h
     MainWindow.h
     MainWindow.cpp
+    statistics/StatisticsPage.h
+    statistics/StatisticsPage.cpp
     binding/WidgetBinding.h
     settings/SettingsPage.h
     settings/SettingsPage.cpp
     task/TaskPage.h
     task/TaskPage.cpp
+    task/TaskDragMime.h
+    task/TaskListView.h
+    task/TaskListView.cpp
+    task/TaskFocusPanel.h
+    task/TaskFocusPanel.cpp
     task/TaskItemDelegate.h
     task/TaskItemDelegate.cpp
     task/TaskEditorDialog.h
@@ -25,6 +32,10 @@ add_library(smartmate_widgets STATIC
     task/DurationPickerDialog.cpp
     graph/DependencyGraphPage.h
     graph/DependencyGraphPage.cpp
+    graph/DependencyGraphToolbar.h
+    graph/DependencyGraphToolbar.cpp
+    graph/TaskGraphDetailsPanel.h
+    graph/TaskGraphDetailsPanel.cpp
     graph/DependencyGraphView.h
     graph/DependencyGraphView.cpp
     graph/TaskGraphItems.h
@@ -43,4 +54,6 @@ target_link_libraries(smartmate_widgets
         smartmate_common
         smartmate_viewmodel_contracts
         Qt6::Widgets
+    PRIVATE
+        Qt6::Charts
 )

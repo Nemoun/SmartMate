@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "TaskProjectionSources.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
 
 #include <QDateTime>
@@ -14,7 +15,6 @@
 
 namespace smartmate::model {
 class TaskService;
-class TaskCategoryService;
 }
 
 namespace smartmate::viewmodel {
@@ -27,16 +27,12 @@ class TaskEditorViewModel final : public TaskEditorContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
 public:
-    explicit TaskEditorViewModel(model::TaskService &taskService, QObject *parent = nullptr);
     TaskEditorViewModel(model::TaskService &taskService,
-                        model::TaskCategoryService &categoryService,
+                        TaskCategoryProjectionSource &categorySource,
                         QObject *parent = nullptr);
     /// 注入时区供测试和确定性显示使用；生产环境默认使用系统时区。
     TaskEditorViewModel(model::TaskService &taskService,
-                        QTimeZone timeZone,
-                        QObject *parent = nullptr);
-    TaskEditorViewModel(model::TaskService &taskService,
-                        model::TaskCategoryService &categoryService,
+                        TaskCategoryProjectionSource &categorySource,
                         QTimeZone timeZone,
                         QObject *parent = nullptr);
 
@@ -120,7 +116,7 @@ private:
     struct Snapshot {
         QString title;
         QString description;
-        int priorityIndex{1};
+        int priorityIndex{-1};
         std::optional<QDateTime> deadline;
         std::optional<int> estimatedMinutes;
         std::optional<model::TaskCategoryId> categoryId;
@@ -129,35 +125,41 @@ private:
         bool operator==(const Snapshot &) const = default;
     };
 
+    /// 构造使用描述表显式选中普通优先级的空白草稿。
+    [[nodiscard]] static Snapshot defaultSnapshot();
+
+    /// 捕获当前表单字段与已接受前置，用于 dirty 比较。
     [[nodiscard]] Snapshot currentSnapshot() const;
+    /// 原子替换整个草稿并统一发布所有相关 Contract 通知。
     void replaceDraft(const Snapshot &draft,
                       const QString &taskId,
                       bool editMode,
                       model::TaskStatus currentStatus = model::TaskStatus::Todo);
+    /// 使用模型重置协议替换创建前置候选。
     void replaceCandidates(QList<model::Task> candidates);
+    /// 只通知候选选中 Role，避免因选择变化重建列表。
     void notifyCandidateSelectionChanged();
+    /// 将当前草稿记录为已确认检查点，使 dirty 归零。
     void rememberCurrentDraft();
+    /// 复用 Model 校验计算 dirty/canSave/validationMessage 并按需通知。
     void updateFormState();
+    /// 去重错误属性通知并发布 UiNotification。
     void setErrorMessage(const QString &message);
+    /// 切换编辑会话可见状态，不持有或操纵具体 Dialog。
     void setSessionActive(bool active);
+    /// 将表单友好字段转换为完整 TaskDraft；校验失败返回空值。
     [[nodiscard]] std::optional<model::TaskDraft> buildTaskDraft();
+    /// 将内部截止时间投影到注入时区，供类型化控件显示。
     [[nodiscard]] std::optional<QDateTime> displayedDeadline() const;
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
-    void reloadCategories();
+    /// 刷新类别选项，并安全处理编辑期间类别被外部删除的情况。
+    void applyCategories();
     [[nodiscard]] const model::TaskCategory *selectedCategory() const;
-
-    TaskEditorViewModel(model::TaskService &taskService,
-                        model::TaskCategoryService *categoryService,
-                        QTimeZone timeZone,
-                        QObject *parent);
 
     // 非拥有的应用服务引用。
     model::TaskService &m_taskService;
-    /// 非拥有指针；生产组合根注入，nullptr仅供旧隔离测试维持无类别模式。
-    model::TaskCategoryService *m_categoryService{nullptr};
-    // 当前可编辑草稿采用表单友好形态，便于与 QML 双向绑定。
+    TaskCategoryProjectionSource &m_categorySource;
+    // 当前可编辑草稿采用表单友好形态，便于与 Qt Widgets 显式双向绑定。
     QString m_taskId;
     bool m_editMode{false};
     /// 只表达编辑会话是否打开，不持有或控制任何具体 Dialog。
@@ -166,13 +168,12 @@ private:
     QString m_description;
     /// 仅用于展示当前持久化状态；所有改变都必须通过任务列表的显式状态命令。
     model::TaskStatus m_currentStatus{model::TaskStatus::Todo};
-    int m_priorityIndex{1};
+    int m_priorityIndex{-1};
     /// 保存原始精度；只有用户重新选择时才归零到分钟。
     std::optional<QDateTime> m_deadline;
     /// Model 使用的总分钟数，界面仅将其投影为天、小时和分钟。
     std::optional<int> m_estimatedMinutes;
     std::optional<model::TaskCategoryId> m_categoryId;
-    QList<model::TaskCategory> m_categories;
     /// 解释日历和时钟选择的时区，生产环境为系统时区。
     QTimeZone m_timeZone;
     // 原始快照和由草稿推导出的界面状态。

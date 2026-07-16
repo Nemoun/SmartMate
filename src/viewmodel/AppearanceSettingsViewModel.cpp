@@ -133,6 +133,7 @@ void AppearanceSettingsViewModel::load()
 void AppearanceSettingsViewModel::apply(
     const model::AppearanceSettings &settings)
 {
+    // 幂等应用不发送通知，避免多个主题绑定重复刷新样式和字体。
     if (m_settings == settings) {
         return;
     }
@@ -147,6 +148,7 @@ void AppearanceSettingsViewModel::saveCandidate(
         return;
     }
     if (m_service != nullptr) {
+        // 先持久化完整候选，再替换可观察状态；失败时 Widget 继续看到旧的已确认设置。
         const auto result = m_service->save(candidate);
         if (!result.ok()) {
             setError(QStringLiteral("无法保存外观设置，请稍后重试。"));
@@ -159,6 +161,7 @@ void AppearanceSettingsViewModel::saveCandidate(
 
 void AppearanceSettingsViewModel::setError(const QString &message)
 {
+    // notificationRaised 是一次性展示事件，errorMessageChanged 是可重读属性通知，二者职责不同。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("外观设置失败"),

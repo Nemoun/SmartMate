@@ -73,6 +73,7 @@ $sourceExecutable = Join-Path $buildDirectory 'SmartMate.exe'
 # Debug构建不等于一定安装了Debug版Qt；先探测DLL，再选择windeployqt运行库模式。
 $debugRuntimeCandidates = @(
     (Join-Path $qtBinDirectory 'Qt6Cored.dll'),
+    (Join-Path $qtBinDirectory 'Qt6Chartsd.dll'),
     (Join-Path $QtRoot 'plugins/platforms/qwindowsd.dll'),
     (Join-Path $QtRoot 'plugins/sqldrivers/qsqlited.dll')
 )
@@ -131,11 +132,11 @@ try {
     $deployedExecutable = Join-Path $distributionDirectory 'SmartMate.exe'
     Copy-Item -LiteralPath $sourceExecutable -Destination $deployedExecutable
 
-    Write-Host '[3/5] Collect Qt Widgets and MinGW runtime files'
+    Write-Host '[3/5] Collect Qt Widgets, Qt Charts, and MinGW runtime files'
     if ($Configuration -eq 'Debug' -and -not $hasDebugQtRuntime) {
         Write-Host 'Qt debug DLLs are not installed; deploy the Debug build with the matching release Qt runtime.'
     }
-    # 正式程序只允许扫描可执行文件的 Widgets 依赖；qoffscreen供发布目录冒烟测试使用。
+    # 正式程序只扫描可执行文件的 Widgets + Charts 依赖；qoffscreen供发布目录冒烟测试使用。
     $deployArguments = @(
         "--$runtimeMode",
         '--compiler-runtime',
@@ -158,6 +159,7 @@ try {
         "Qt6Core$debugSuffix.dll",
         "Qt6Gui$debugSuffix.dll",
         "Qt6Widgets$debugSuffix.dll",
+        "Qt6Charts$debugSuffix.dll",
         "Qt6Sql$debugSuffix.dll",
         'libgcc_s_seh-1.dll',
         'libstdc++-6.dll',
@@ -181,7 +183,13 @@ try {
     }
 
     $forbiddenRuntimeFiles = @(
-        foreach ($pattern in @('Qt6Qml*.dll', 'Qt6Quick*.dll', 'Qt6QuickControls2*.dll')) {
+        foreach ($pattern in @(
+            'Qt6ChartsQml*.dll',
+            'Qt6Graphs*.dll',
+            'Qt6Qml*.dll',
+            'Qt6Quick*.dll',
+            'Qt6QuickControls2*.dll'
+        )) {
             Get-ChildItem -Path (Join-Path $distributionDirectory $pattern) `
                 -File -ErrorAction SilentlyContinue
         }
@@ -193,7 +201,7 @@ try {
         if (Test-Path -LiteralPath $deployedQmlDirectory) {
             $forbiddenNames += 'qml/'
         }
-        throw "QML/Qt Quick files were unexpectedly deployed: $($forbiddenNames -join ', ')"
+        throw "QML/Qt Quick/Qt Graphs files were unexpectedly deployed: $($forbiddenNames -join ', ')"
     }
 
     Write-Host '[4/5] Run the deployed executable with only packaged runtimes'

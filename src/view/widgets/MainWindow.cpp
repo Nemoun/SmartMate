@@ -3,6 +3,7 @@
 #include "view/widgets/settings/SettingsPage.h"
 #include "view/widgets/task/TaskPage.h"
 #include "view/widgets/graph/DependencyGraphPage.h"
+#include "view/widgets/statistics/StatisticsPage.h"
 #include "view/widgets/theme/WidgetTheme.h"
 
 #include <QApplication>
@@ -51,6 +52,19 @@ QPushButton *navigationButton(const QString &text,
     return button;
 }
 
+QString themedStyleSheet(const WidgetTheme &theme, const QFont &font)
+{
+    // QWidget 样式表会形成字体传播边界；把基础字体写入同一份 QSS，确保未单独
+    // 指定标题字号的子控件与 Contract 当前字体档位保持一致。
+    QString family = font.family();
+    family.replace(u'\\', QStringLiteral("\\\\"));
+    family.replace(u'"', QStringLiteral("\\\""));
+    return QStringLiteral("QWidget { font-family: \"%1\"; font-size: %2pt; }\n%3")
+        .arg(family,
+             QString::number(font.pointSizeF(), 'f', 2),
+             theme.styleSheet());
+}
+
 } // namespace
 
 MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
@@ -65,11 +79,14 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
                                           dependencies.taskGraph,
                                           dependencies.taskDetails,
                                           dependencies.taskDependencies}},
+                 new StatisticsPage{dependencies.statistics},
                  parent)
 {
     auto *taskPage = qobject_cast<TaskPage *>(m_pages->widget(0));
     connect(taskPage, &TaskPage::showDependencyGraphRequested, m_pages,
             [this] { m_pages->setCurrentIndex(1); });
+    // 各窄 Contract 的一次性展示通知统一汇聚到窗口状态栏；
+    // 通知只负责反馈，不承担 ViewModel 之间的数据同步。
     connect(&dependencies.taskList, &viewmodel::TaskListContract::notificationRaised,
             this, &MainWindow::showNotification);
     connect(&dependencies.taskFocus, &viewmodel::TaskFocusContract::notificationRaised,
@@ -87,6 +104,9 @@ MainWindow::MainWindow(MainWindowDependencies dependencies, QWidget *parent)
     connect(&dependencies.taskGraph,
             &viewmodel::TaskGraphContract::notificationRaised,
             this, &MainWindow::showNotification);
+    connect(&dependencies.statistics,
+            &viewmodel::StatisticsContract::notificationRaised,
+            this, &MainWindow::showNotification);
 }
 
 MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
@@ -94,12 +114,14 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     : MainWindow(appearanceSettings,
                  migrationPlaceholder(tr("任务"), tr("任务页面未注入测试依赖。")),
                  migrationPlaceholder(tr("依赖图"), tr("依赖图页面未注入测试依赖。")),
+                 migrationPlaceholder(tr("统计"), tr("统计页面未注入测试依赖。")),
                  parent)
 {
 }
 
 MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings,
-                       QWidget *taskPage, QWidget *graphPage, QWidget *parent)
+                       QWidget *taskPage, QWidget *graphPage,
+                       QWidget *statisticsPage, QWidget *parent)
     : QMainWindow(parent)
     , m_appearanceSettings(appearanceSettings)
     , m_baselineFont(QApplication::font())
@@ -108,6 +130,7 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     , m_brand(new QLabel(QStringLiteral("SmartMate"), m_navigation))
     , m_taskNavigation(nullptr)
     , m_graphNavigation(nullptr)
+    , m_statisticsNavigation(nullptr)
     , m_settingsNavigation(nullptr)
 {
     setObjectName(QStringLiteral("mainWindow"));
@@ -145,8 +168,14 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
     m_taskNavigation->setAccessibleName(tr("任务"));
     m_graphNavigation = navigationButton(tr("依赖图"), QStringLiteral("graphNavigationButton"),
                                          *navigationGroup, *navigationLayout, 1);
+    m_graphNavigation->setAccessibleName(tr("依赖图"));
+    m_statisticsNavigation = navigationButton(
+        tr("统计"), QStringLiteral("statisticsNavigationButton"),
+        *navigationGroup, *navigationLayout, 2);
+    m_statisticsNavigation->setAccessibleName(tr("统计"));
     m_settingsNavigation = navigationButton(tr("设置"), QStringLiteral("settingsNavigationButton"),
-                                            *navigationGroup, *navigationLayout, 2);
+                                            *navigationGroup, *navigationLayout, 3);
+    m_settingsNavigation->setAccessibleName(tr("设置"));
     navigationLayout->addStretch();
 
     rootLayout->addWidget(m_navigation);
@@ -154,14 +183,17 @@ MainWindow::MainWindow(viewmodel::AppearanceSettingsContract &appearanceSettings
 
     m_pages->addWidget(taskPage);
     m_pages->addWidget(graphPage);
+    m_pages->addWidget(statisticsPage);
     m_pages->addWidget(new SettingsPage{appearanceSettings, m_pages});
 
+    // 导航是纯 View 会话状态，只切换页面索引，不写入任何业务对象。
     connect(navigationGroup, &QButtonGroup::idClicked, m_pages,
             [this](const int index) { m_pages->setCurrentIndex(index); });
     m_taskNavigation->setChecked(true);
     m_pages->setCurrentIndex(0);
 
     statusBar()->setObjectName(QStringLiteral("notificationStatusBar"));
+    // 先建立通知连接再执行初始同步，后续 Contract 变化使用同一路径刷新主题。
     connect(&appearanceSettings,
             &viewmodel::AppearanceSettingsContract::appearanceChanged,
             this, &MainWindow::applyAppearance);
@@ -185,9 +217,11 @@ void MainWindow::applyNavigationMode()
     m_brand->setText(compact ? QStringLiteral("S") : QStringLiteral("SmartMate"));
     m_taskNavigation->setText(compact ? QStringLiteral("✓") : tr("任务"));
     m_graphNavigation->setText(compact ? QStringLiteral("↗") : tr("依赖图"));
+    m_statisticsNavigation->setText(compact ? QStringLiteral("▥") : tr("统计"));
     m_settingsNavigation->setText(compact ? QStringLiteral("⚙") : tr("设置"));
     m_taskNavigation->setToolTip(compact ? tr("任务") : QString{});
     m_graphNavigation->setToolTip(compact ? tr("依赖图") : QString{});
+    m_statisticsNavigation->setToolTip(compact ? tr("统计") : QString{});
     m_settingsNavigation->setToolTip(compact ? tr("设置") : QString{});
 }
 
@@ -196,16 +230,21 @@ void MainWindow::applyAppearance()
     const auto &settings = m_appearanceSettings;
     const WidgetTheme theme = WidgetTheme::fromAccentIndex(
         settings.accentThemeIndex());
-    // 旧 QSS 可能继续覆盖 Base 等 Palette role；先解除旧样式，再注入完整新主题，
-    // 让自绘卡片与普通控件在强调色切换后读取同一套颜色。
+    const QFont targetFont = appearanceFont(m_baselineFont, settings);
+    // 旧 QSS 可能继续覆盖 Base 等 Palette role；先完整安装新主题，再传播字体，
+    // 让自绘卡片与普通控件读取同一套颜色。解除和安装 QSS 都可能重置子控件的
+    // 继承字体，因此最后先传播基准字体，再传播目标字体；即使字号档位未变，
+    // 也不能因 QMainWindow 的 QFont 幂等优化而让子控件停留在默认字号。
     setStyleSheet({});
     setPalette(theme.palette());
-    setFont(appearanceFont(m_baselineFont, settings));
-    setStyleSheet(theme.styleSheet());
+    setStyleSheet(themedStyleSheet(theme, targetFont));
+    setFont(m_baselineFont);
+    setFont(targetFont);
 }
 
 void MainWindow::showNotification(const common::UiNotification &notification)
 {
+    // View 决定通知的颜色和呈现位置；ViewModel 只提供严重级别与文案。
     const QString text = notification.title.isEmpty()
         ? notification.message
         : QStringLiteral("%1：%2").arg(notification.title, notification.message);

@@ -104,6 +104,16 @@ target_link_libraries(tst_task_ordering
 
 add_test(NAME model.task_ordering COMMAND tst_task_ordering)
 
+qt_add_executable(tst_statistics_service
+    model/tst_StatisticsService.cpp
+    fakes/FakeTaskActivityRepository.h
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+)
+target_include_directories(tst_statistics_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_statistics_service PRIVATE smartmate_model Qt6::Test)
+add_test(NAME model.statistics_service COMMAND tst_statistics_service)
+
 qt_add_executable(tst_sqlite_task_repository
     persistence/tst_SqliteTaskRepository.cpp
 )
@@ -147,6 +157,31 @@ target_link_libraries(tst_task_viewmodels
 
 add_test(NAME viewmodel.task_viewmodels COMMAND tst_task_viewmodels)
 
+qt_add_executable(tst_task_presentation
+    viewmodel/tst_TaskPresentation.cpp
+)
+target_link_libraries(tst_task_presentation
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.task_presentation COMMAND tst_task_presentation)
+
+qt_add_executable(tst_task_projection_sources
+    viewmodel/tst_TaskProjectionSources.cpp
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+    fakes/FakeTaskBatchTransitionRepository.h
+    fakes/FakeTaskDeletionRepository.h
+    fakes/FakeTaskCategoryRepository.h
+)
+target_include_directories(tst_task_projection_sources
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_link_libraries(tst_task_projection_sources
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.task_projection_sources COMMAND tst_task_projection_sources)
+
 qt_add_executable(tst_appearance_settings
     viewmodel/tst_AppearanceSettings.cpp
     fakes/FakeAppearanceSettingsRepository.h
@@ -170,6 +205,22 @@ target_link_libraries(tst_viewmodel_contracts
     PRIVATE smartmate_viewmodel Qt6::Test
 )
 add_test(NAME viewmodel.contracts COMMAND tst_viewmodel_contracts)
+
+qt_add_executable(tst_statistics_viewmodel
+    viewmodel/tst_StatisticsViewModel.cpp
+    fakes/FakeTaskActivityRepository.h
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+    fakes/FakeTaskBatchTransitionRepository.h
+    fakes/FakeTaskDeletionRepository.h
+    fakes/FakeTaskCategoryRepository.h
+)
+target_include_directories(tst_statistics_viewmodel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_statistics_viewmodel
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.statistics COMMAND tst_statistics_viewmodel)
 
 qt_add_executable(tst_settings_widgets
     widgets/tst_SettingsWidgets.cpp
@@ -195,6 +246,16 @@ qt_add_executable(tst_graph_widgets
 target_link_libraries(tst_graph_widgets PRIVATE smartmate_widgets Qt6::Test)
 add_test(NAME view.widgets_graph COMMAND tst_graph_widgets -platform offscreen)
 set_tests_properties(view.widgets_graph PROPERTIES TIMEOUT 20)
+
+qt_add_executable(tst_statistics_widgets
+    widgets/tst_StatisticsWidgets.cpp
+)
+target_link_libraries(tst_statistics_widgets
+    PRIVATE smartmate_widgets Qt6::Charts Qt6::Test
+)
+add_test(NAME view.widgets_statistics
+    COMMAND tst_statistics_widgets -platform offscreen)
+set_tests_properties(view.widgets_statistics PROPERTIES TIMEOUT 20)
 
 qt_add_executable(tst_widgets_appearance_flow
     integration/tst_WidgetsAppearanceFlow.cpp
@@ -235,6 +296,21 @@ target_link_libraries(tst_widgets_graph_flow
 add_test(NAME integration.widgets_graph COMMAND tst_widgets_graph_flow -platform offscreen)
 set_tests_properties(integration.widgets_graph PROPERTIES TIMEOUT 30)
 
+qt_add_executable(tst_widgets_statistics_flow
+    integration/tst_WidgetsStatisticsFlow.cpp
+)
+target_link_libraries(tst_widgets_statistics_flow
+    PRIVATE
+        smartmate_app_core
+        smartmate_widgets
+        smartmate_persistence
+        smartmate_viewmodel
+        Qt6::Test
+)
+add_test(NAME integration.widgets_statistics
+    COMMAND tst_widgets_statistics_flow -platform offscreen)
+set_tests_properties(integration.widgets_statistics PROPERTIES TIMEOUT 30)
+
 qt_add_executable(tst_task_creation_flow
     integration/tst_TaskCreationFlow.cpp
 )
@@ -271,18 +347,24 @@ set(runtime_tests
     model.task_dependency_cancellation
     model.task_state_transitions
     model.task_ordering
+    model.statistics_service
     persistence.sqlite_task_repository
     persistence.appearance_settings
     viewmodel.task_viewmodels
+    viewmodel.task_presentation
+    viewmodel.task_projection_sources
     viewmodel.appearance_settings
     viewmodel.contracts
+    viewmodel.statistics
     view.widgets_settings
     view.widgets_tasks
     view.widgets_graph
+    view.widgets_statistics
     integration.widgets_appearance
     integration.widgets_tasks
     integration.widgets_category_dependencies
     integration.widgets_graph
+    integration.widgets_statistics
     integration.task_creation_flow
     view.application_bootstrap
 )

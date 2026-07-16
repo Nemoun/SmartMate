@@ -1,9 +1,9 @@
 #include "TaskCategoryViewModel.h"
 
 #include "TaskCategoryPresentation.h"
+#include "domain/TaskCategoryConstraints.h"
 #include "services/TaskCategoryResult.h"
 #include "services/TaskCategoryService.h"
-#include "services/TaskService.h"
 
 #include <QUuid>
 
@@ -17,7 +17,8 @@ namespace {
     case model::TaskCategoryError::EmptyName:
         return QStringLiteral("类别名称不能为空。");
     case model::TaskCategoryError::NameTooLong:
-        return QStringLiteral("类别名称不能超过50个字符。");
+        return QStringLiteral("类别名称不能超过%1个字符。")
+            .arg(model::TaskCategoryConstraints::maximumNameLength);
     case model::TaskCategoryError::DuplicateName:
         return QStringLiteral("已存在同名类别。");
     case model::TaskCategoryError::InvalidColor:
@@ -33,23 +34,24 @@ namespace {
 } // namespace
 
 TaskCategoryViewModel::TaskCategoryViewModel(
-    model::TaskService &taskService,
     model::TaskCategoryService *categoryService,
+    TaskPlanProjectionSource &planSource,
+    TaskCategoryProjectionSource &categorySource,
     QObject *parent)
     : TaskCategoryContract(parent)
-    , m_taskService(taskService)
     , m_categoryService(categoryService)
+    , m_planSource(planSource)
+    , m_categorySource(categorySource)
 {
-    if (m_categoryService) {
-        connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
-                this, &TaskCategoryViewModel::reload);
-        connect(m_categoryService,
-                &model::TaskCategoryService::taskCategoryAssignmentsChanged,
-                this, &TaskCategoryViewModel::reload);
-    }
-    connect(&m_taskService, &model::TaskService::tasksChanged,
-            this, &TaskCategoryViewModel::reload);
-    reload();
+    connect(&m_planSource, &TaskPlanProjectionSource::projectionChanged,
+            this, &TaskCategoryViewModel::applyProjection);
+    connect(&m_planSource, &TaskPlanProjectionSource::refreshFailed,
+            this, &TaskCategoryViewModel::applyProjection);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::categoriesChanged,
+            this, &TaskCategoryViewModel::applyProjection);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::refreshFailed,
+            this, &TaskCategoryViewModel::applyProjection);
+    applyProjection();
     beginCreate();
 }
 
@@ -99,8 +101,10 @@ QStringList TaskCategoryViewModel::colorAccents() const
 {
     QStringList accents;
     for (int index = 0; index < taskCategoryColorOptions().size(); ++index) {
-        accents.append(taskCategoryAccent(
-            static_cast<model::TaskCategoryColor>(index)));
+        const auto color = taskCategoryColorFromIndex(index);
+        if (color.has_value()) {
+            accents.append(taskCategoryAccent(*color));
+        }
     }
     return accents;
 }
@@ -131,30 +135,30 @@ void TaskCategoryViewModel::setDraftColorIndex(const int index)
 
 void TaskCategoryViewModel::reload()
 {
-    QList<model::TaskCategory> categories;
-    if (m_categoryService) {
-        const auto categoryResult = m_categoryService->listCategories();
-        if (!categoryResult.ok()) {
-            setErrorMessage(categoryErrorMessage(categoryResult.error));
-            return;
-        }
-        categories = *categoryResult.value;
-    }
+    m_planSource.refresh();
+    m_categorySource.refresh();
+    applyProjection();
+}
 
-    QHash<model::TaskCategoryId, int> counts;
-    const auto taskResult = m_taskService.listTasks();
-    if (!taskResult.ok()) {
-        // 删除确认依赖准确使用数；读取失败时保留旧投影，不能把未知误报为零。
+void TaskCategoryViewModel::applyProjection()
+{
+    if (m_categorySource.lastError() != model::TaskCategoryError::None) {
+        setErrorMessage(categoryErrorMessage(m_categorySource.lastError()));
+        return;
+    }
+    if (m_planSource.lastError() != model::TaskError::None) {
         setErrorMessage(QStringLiteral("任务数据访问失败，无法统计类别使用数量。"));
         return;
     }
-    for (const model::Task &task : *taskResult.value) {
+    QHash<model::TaskCategoryId, int> counts;
+    for (const model::Task &task : m_planSource.projection().tasks) {
         if (task.categoryId().has_value()) ++counts[*task.categoryId()];
     }
 
     setErrorMessage({});
+    // 类别行和聚合计数必须在同一次模型重置中发布，Widget 不会观察到错配状态。
     beginResetModel();
-    m_categories = std::move(categories);
+    m_categories = m_categorySource.categories();
     m_taskCounts = std::move(counts);
     endResetModel();
     if (!m_editingCategoryId.isNull() && rowForCategory(m_editingCategoryId) < 0) {
@@ -215,6 +219,7 @@ bool TaskCategoryViewModel::save()
         setErrorMessage(categoryErrorMessage(result.error));
         return false;
     }
+    // 只有 Service 命令成功才更新原值检查点并发送 saved；实际列表刷新由 Service 通知触发。
     const QString id = result.value->id.toString(QUuid::WithoutBraces);
     m_editMode = true;
     m_editingCategoryId = result.value->id;
@@ -245,6 +250,7 @@ bool TaskCategoryViewModel::deleteCategory(const QString &categoryId)
         return false;
     }
     const int unassigned = result.value->unassignedTaskCount;
+    // deleted 是对话流程结果；类别和任务投影刷新仍依赖 Service 的两类失效通知。
     if (m_editingCategoryId == id) beginCreate();
     setErrorMessage({});
     emit deleted(categoryId, unassigned);
@@ -274,6 +280,7 @@ QString TaskCategoryViewModel::categoryErrorText(const int error) const
 
 void TaskCategoryViewModel::setErrorMessage(const QString &message)
 {
+    // 一次性通知与可重读错误属性分开；重复属性值不重复发 errorMessageChanged。
     if (!message.isEmpty()) {
         emit notificationRaised({smartmate::common::UiSeverity::Error,
                                  QStringLiteral("类别操作失败"),

@@ -1,66 +1,37 @@
 #include "TaskListViewModel.h"
 
-#include "TaskErrorMapper.h"
-#include "TaskPresentationFormatter.h"
 #include "TaskCategoryPresentation.h"
-#include "planner/TaskOrderingPolicy.h"
-#include "services/TaskCategoryService.h"
-#include "services/TaskService.h"
-
-#include <QDateTime>
+#include "TaskPresentationFormatter.h"
 
 #include <algorithm>
-#include <utility>
 
 namespace smartmate::viewmodel {
 
-namespace {
-constexpr auto deadlineFormat = "yyyy-MM-dd HH:mm";
-constexpr int allPrioritiesFilterIndex = 0;
-constexpr int firstPriorityFilterIndex = 1;
-constexpr int priorityFilterOptionCount = 5;
-const model::TaskCommandAvailability emptyAvailability{};
-}
-
-TaskListViewModel::TaskListViewModel(model::TaskService &taskService, QObject *parent)
-    : TaskListViewModel(taskService, nullptr, parent)
-{
-}
-
 TaskListViewModel::TaskListViewModel(
     model::TaskService &taskService,
-    model::TaskCategoryService &categoryService,
-    QObject *parent)
-    : TaskListViewModel(taskService, &categoryService, parent)
-{
-}
-
-TaskListViewModel::TaskListViewModel(
-    model::TaskService &taskService,
-    model::TaskCategoryService *categoryService,
+    TaskPlanProjectionSource &planSource,
+    TaskCategoryProjectionSource &categorySource,
     QObject *parent)
     : TaskListContract(parent)
     , m_taskService(taskService)
-    , m_categoryService(categoryService)
-    , m_reloadTimer(this)
+    , m_planSource(planSource)
+    , m_categorySource(categorySource)
 {
-    // Service 是多个 ViewModel 共享的状态源；成功写入后的统一信号会触发
-    // 列表重建，无需让编辑器或 QML 手动刷新本列表。
-    connect(&m_taskService, &model::TaskService::tasksChanged, this,
-            &TaskListViewModel::reload);
-    connect(&m_taskService, &model::TaskService::dependenciesChanged, this,
-            &TaskListViewModel::reload);
-    if (m_categoryService) {
-        connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
-                this, &TaskListViewModel::reloadCategories);
-        connect(m_categoryService,
-                &model::TaskCategoryService::taskCategoryAssignmentsChanged,
-                this, &TaskListViewModel::reload);
-    }
-    connect(&m_reloadTimer, &QTimer::timeout, this, &TaskListViewModel::reload);
-    m_reloadTimer.start(60'000);
-    reloadCategories();
-    reload();
+    connect(&m_planSource, &TaskPlanProjectionSource::projectionChanged,
+            this, &TaskListViewModel::applyPlanProjection);
+    connect(&m_planSource, &TaskPlanProjectionSource::refreshSucceeded,
+            this, &TaskListViewModel::syncSourceError);
+    connect(&m_planSource, &TaskPlanProjectionSource::refreshFailed,
+            this, &TaskListViewModel::syncSourceError);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::categoriesChanged,
+            this, &TaskListViewModel::applyCategories);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::refreshSucceeded,
+            this, &TaskListViewModel::syncSourceError);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::refreshFailed,
+            this, &TaskListViewModel::syncSourceError);
+    applyCategories();
+    applyPlanProjection();
+    syncSourceError();
 }
 
 int TaskListViewModel::rowCount(const QModelIndex &parent) const
@@ -88,33 +59,31 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
     case DescriptionRole:
         return task.description();
     case StatusRole:
-        return static_cast<int>(task.status());
+        return static_cast<int>(taskStatusVisual(task.status()));
     case StatusTextRole:
-        return statusText(task.status());
+        return taskStatusText(task.status());
     case PriorityRole:
-        return static_cast<int>(task.priority());
+        return static_cast<int>(taskPriorityVisual(task.priority()));
     case PriorityTextRole:
-        return priorityText(task.priority());
+        return taskPriorityText(task.priority());
     case DeadlineTextRole:
-        return task.deadline().has_value()
-            ? task.deadline()->toLocalTime().toString(QString::fromLatin1(deadlineFormat))
-            : QString{};
+        return taskDeadlineText(task, {});
     case EstimatedMinutesRole:
         return task.estimatedMinutes().has_value() ? *task.estimatedMinutes() : 0;
     case ArchivedRole:
         return task.status() == model::TaskStatus::Archived;
     case OverdueRole:
-        return m_overdueStates.value(task.id(), false);
+        return m_planSource.projection().overdueStates.value(task.id(), false);
     case OrderReasonTextRole:
-        return m_orderReasonTexts.value(task.id());
+        return m_planSource.projection().orderReasonTexts.value(task.id());
     case BlockedRole:
-        return m_dependencyProjections.value(task.id()).blocked;
+        return m_planSource.projection().dependencyProjections.value(task.id()).blocked;
     case BlockingReasonTextRole:
-        return m_dependencyProjections.value(task.id()).blockingReasonText;
+        return m_planSource.projection().dependencyProjections.value(task.id()).blockingReasonText;
     case PredecessorCountRole:
-        return m_dependencyProjections.value(task.id()).predecessorCount;
+        return m_planSource.projection().dependencyProjections.value(task.id()).predecessorCount;
     case UnlockCountRole:
-        return m_dependencyProjections.value(task.id()).unlockCount;
+        return m_planSource.projection().dependencyProjections.value(task.id()).unlockCount;
     case CanEditTaskRole:
         return availabilityFor(task.id()).canEditTask;
     case CanEditDependenciesRole:
@@ -146,7 +115,8 @@ QVariant TaskListViewModel::data(const QModelIndex &index, const int role) const
     }
     case CategoryAccentRole: {
         const auto *category = categoryForTask(&task);
-        return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+        return category ? taskCategoryAccent(category->color)
+                        : taskUncategorizedAccent();
     }
     case HasCategoryRole:
         return categoryForTask(&task) != nullptr;
@@ -209,26 +179,23 @@ int TaskListViewModel::priorityFilterIndex() const noexcept
 
 QStringList TaskListViewModel::priorityFilterOptions() const
 {
-    return {QStringLiteral("全部优先级"),
-            QStringLiteral("低"),
-            QStringLiteral("普通"),
-            QStringLiteral("高"),
-            QStringLiteral("紧急")};
+    return taskPriorityFilterOptions();
 }
 
 QVariantList TaskListViewModel::categoryFilterOptions() const
 {
+    const auto &categories = m_categorySource.categories();
     QVariantList options;
-    options.reserve(m_categories.size() + 2);
+    options.reserve(categories.size() + 2);
     options.append(QVariantMap{{QStringLiteral("mode"), 0},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("全部类别")},
-                               {QStringLiteral("accent"), QStringLiteral("#64748b")}});
+                               {QStringLiteral("accent"), taskAllCategoriesAccent()}});
     options.append(QVariantMap{{QStringLiteral("mode"), 1},
                                {QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("未分类")},
-                               {QStringLiteral("accent"), QStringLiteral("#94a3b8")}});
-    for (const auto &category : m_categories) {
+                               {QStringLiteral("accent"), taskUncategorizedAccent()}});
+    for (const auto &category : categories) {
         options.append(QVariantMap{
             {QStringLiteral("mode"), 2},
             {QStringLiteral("categoryId"), category.id.toString(QUuid::WithoutBraces)},
@@ -340,7 +307,7 @@ void TaskListViewModel::setSearchText(const QString &searchText)
 void TaskListViewModel::setPriorityFilterIndex(const int priorityFilterIndex)
 {
     if (priorityFilterIndex < allPrioritiesFilterIndex
-        || priorityFilterIndex >= priorityFilterOptionCount
+        || priorityFilterIndex >= taskPriorityFilterOptions().size()
         || m_priorityFilterIndex == priorityFilterIndex) {
         return;
     }
@@ -362,8 +329,9 @@ bool TaskListViewModel::setCategoryFilter(const int mode,
     model::TaskCategoryId id;
     if (mode == 2) {
         id = QUuid::fromString(categoryId.trimmed());
+        const auto &categories = m_categorySource.categories();
         const bool exists = std::any_of(
-            m_categories.cbegin(), m_categories.cend(),
+            categories.cbegin(), categories.cend(),
             [&id](const auto &category) { return category.id == id; });
         if (id.isNull() || !exists) return false;
     }
@@ -382,29 +350,7 @@ bool TaskListViewModel::setCategoryFilter(const int mode,
 
 void TaskListViewModel::reload()
 {
-    const auto result = m_taskService.listRecommendedTasks();
-    if (!result.ok()) {
-        setError(taskErrorMessage(result.error));
-        return;
-    }
-
-    setError({});
-    TaskPlanProjection projection = makeTaskPlanProjection(*result.value);
-    // 分钟定时刷新若没有产生新顺序或理由，不重置QML模型，避免列表滚动位置跳动。
-    if (m_allTasks == projection.tasks
-        && m_orderReasonTexts == projection.orderReasonTexts
-        && m_overdueStates == projection.overdueStates
-        && m_dependencyProjections == projection.dependencyProjections
-        && m_availabilities == projection.availabilities) {
-        return;
-    }
-
-    m_allTasks = std::move(projection.tasks);
-    m_orderReasonTexts = std::move(projection.orderReasonTexts);
-    m_overdueStates = std::move(projection.overdueStates);
-    m_dependencyProjections = std::move(projection.dependencyProjections);
-    m_availabilities = std::move(projection.availabilities);
-    rebuildVisibleTasks();
+    m_planSource.refresh();
 }
 
 void TaskListViewModel::clearFilters()
@@ -433,451 +379,8 @@ void TaskListViewModel::clearFilters()
     if (previouslyActive != hasActiveFilters()) {
         emit hasActiveFiltersChanged();
     }
-    // 批量清除只重建一次，避免QML列表短暂经过中间筛选状态。
+    // 批量清除只重建一次，避免 Widget 短暂观察到多个中间筛选状态。
     rebuildVisibleTasks();
-}
-
-bool TaskListViewModel::startTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Start);
-}
-
-bool TaskListViewModel::cancelTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Cancel);
-}
-
-bool TaskListViewModel::completeTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Complete);
-}
-
-bool TaskListViewModel::redoTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Redo);
-}
-
-bool TaskListViewModel::archiveTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Archive);
-}
-
-bool TaskListViewModel::restoreTask(const QString &taskId)
-{
-    return performTransition(taskId, model::TaskTransition::Restore);
-}
-
-bool TaskListViewModel::deleteArchivedTask(const QString &taskId)
-{
-    const model::TaskId id = parseTaskId(taskId);
-    if (id.isNull()) {
-        setError(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-
-    const model::TaskResult result = m_taskService.deleteArchivedTask(id);
-    if (!result.ok()) {
-        setError(taskErrorMessage(result.error));
-        return false;
-    }
-    setError({});
-    return true;
-}
-
-void TaskListViewModel::beginBulkSelection()
-{
-    if (m_bulkSelectionMode) {
-        return;
-    }
-    m_bulkSelectionMode = true;
-    m_bulkSelectedTaskIds.clear();
-    emit bulkSelectionChanged();
-}
-
-bool TaskListViewModel::toggleBulkSelection(const QString &taskId)
-{
-    if (!m_bulkSelectionMode) {
-        return false;
-    }
-    const model::TaskId id = parseTaskId(taskId);
-    if (id.isNull() || !isBulkSelectable(id)) {
-        return false;
-    }
-
-    QSet<model::TaskId> selection = m_bulkSelectedTaskIds;
-    if (!selection.remove(id)) {
-        selection.insert(id);
-    }
-    setBulkSelection(std::move(selection));
-    return true;
-}
-
-void TaskListViewModel::toggleSelectAllVisible()
-{
-    if (!m_bulkSelectionMode) {
-        return;
-    }
-
-    QSet<model::TaskId> visibleSelection;
-    for (const model::Task &task : std::as_const(m_visibleTasks)) {
-        if (isBulkSelectable(task.id())) {
-            visibleSelection.insert(task.id());
-        }
-    }
-    setBulkSelection(allVisibleSelected() ? QSet<model::TaskId>{}
-                                          : std::move(visibleSelection));
-}
-
-void TaskListViewModel::clearBulkSelection()
-{
-    setBulkSelection({});
-}
-
-void TaskListViewModel::cancelBulkSelection()
-{
-    if (!m_bulkSelectionMode && m_bulkSelectedTaskIds.isEmpty()) {
-        return;
-    }
-    m_bulkSelectionMode = false;
-    if (m_bulkSelectedTaskIds.isEmpty()) {
-        emit bulkSelectionChanged();
-    } else {
-        setBulkSelection({});
-    }
-}
-
-bool TaskListViewModel::archiveSelectedTasks()
-{
-    const auto result = m_taskService.archiveTasks(sortedBulkSelection());
-    if (!result.ok()) {
-        QList<model::TaskId> contextIds = result.context.conflictingTaskIds;
-        if (contextIds.isEmpty()) {
-            contextIds = result.context.blockingTaskIds;
-        }
-        if (contextIds.isEmpty()) {
-            contextIds = sortedBulkSelection();
-        }
-        const QString context = taskIdsContext(contextIds);
-        setError(context.isEmpty()
-                     ? taskErrorMessage(result.error)
-                     : QStringLiteral("%1：%2")
-                           .arg(context, taskErrorMessage(result.error)));
-        return false;
-    }
-    setError({});
-    cancelBulkSelection();
-    return true;
-}
-
-bool TaskListViewModel::restoreSelectedTasks()
-{
-    const auto result = m_taskService.restoreTasks(sortedBulkSelection());
-    if (!result.ok()) {
-        QList<model::TaskId> contextIds = result.context.conflictingTaskIds;
-        if (contextIds.isEmpty()) {
-            contextIds = result.context.blockingTaskIds;
-        }
-        if (contextIds.isEmpty()) {
-            contextIds = sortedBulkSelection();
-        }
-        const QString context = taskIdsContext(contextIds);
-        setError(context.isEmpty()
-                     ? taskErrorMessage(result.error)
-                     : QStringLiteral("%1：%2")
-                           .arg(context, taskErrorMessage(result.error)));
-        return false;
-    }
-    setError({});
-    cancelBulkSelection();
-    return true;
-}
-
-bool TaskListViewModel::deleteSelectedArchivedTasks()
-{
-    const auto result = m_taskService.deleteArchivedTasks(sortedBulkSelection());
-    if (!result.ok()) {
-        QList<model::TaskId> contextIds = result.context.conflictingTaskIds;
-        if (contextIds.isEmpty()) {
-            contextIds = result.context.blockingTaskIds;
-        }
-        if (contextIds.isEmpty()) {
-            contextIds = sortedBulkSelection();
-        }
-        const QString context = taskIdsContext(contextIds);
-        setError(context.isEmpty()
-                     ? taskErrorMessage(result.error)
-                     : QStringLiteral("%1：%2")
-                           .arg(context, taskErrorMessage(result.error)));
-        return false;
-    }
-    setError({});
-    cancelBulkSelection();
-    return true;
-}
-
-void TaskListViewModel::clearError()
-{
-    setError({});
-}
-
-bool TaskListViewModel::performTransition(const QString &taskId,
-                                          const model::TaskTransition transition)
-{
-    const model::TaskId id = parseTaskId(taskId);
-    if (id.isNull()) {
-        setError(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-
-    model::TaskResult result;
-    switch (transition) {
-    case model::TaskTransition::Start:
-        result = m_taskService.startTask(id);
-        break;
-    case model::TaskTransition::Cancel:
-        result = m_taskService.cancelTask(id);
-        break;
-    case model::TaskTransition::Complete:
-        result = m_taskService.completeTask(id);
-        break;
-    case model::TaskTransition::Redo:
-        result = m_taskService.redoTask(id);
-        break;
-    case model::TaskTransition::Archive:
-        result = m_taskService.archiveTask(id);
-        break;
-    case model::TaskTransition::Restore:
-        result = m_taskService.restoreTask(id);
-        break;
-    }
-
-    if (!result.ok()) {
-        setError(taskErrorMessage(result.error));
-        return false;
-    }
-    setError({});
-    return true;
-}
-
-QString TaskListViewModel::statusText(const model::TaskStatus status)
-{
-    return taskStatusText(status);
-}
-
-QString TaskListViewModel::priorityText(const model::TaskPriority priority)
-{
-    return taskPriorityText(priority);
-}
-
-model::TaskId TaskListViewModel::parseTaskId(const QString &taskId)
-{
-    return QUuid::fromString(taskId.trimmed());
-}
-
-const model::Task *TaskListViewModel::taskForId(
-    const model::TaskId &taskId) const
-{
-    if (taskId.isNull()) {
-        return nullptr;
-    }
-    const auto iterator = std::find_if(
-        m_allTasks.cbegin(), m_allTasks.cend(), [&taskId](const model::Task &task) {
-            return task.id() == taskId;
-        });
-    return iterator == m_allTasks.cend() ? nullptr : &*iterator;
-}
-
-const model::TaskCommandAvailability &TaskListViewModel::availabilityFor(
-    const model::TaskId &taskId) const
-{
-    const auto iterator = m_availabilities.constFind(taskId);
-    return iterator == m_availabilities.cend() ? emptyAvailability : iterator.value();
-}
-
-bool TaskListViewModel::isBulkSelectable(const model::TaskId &taskId) const
-{
-    if (!m_visibleTaskIds.contains(taskId)) {
-        return false;
-    }
-    const model::TaskCommandAvailability &availability = availabilityFor(taskId);
-    return m_showArchived ? availability.canDeletePermanently
-                          : availability.canArchive;
-}
-
-QList<model::TaskId> TaskListViewModel::sortedBulkSelection() const
-{
-    QList<model::TaskId> ids = m_bulkSelectedTaskIds.values();
-    std::sort(ids.begin(), ids.end(), [](const model::TaskId &left,
-                                         const model::TaskId &right) {
-        return left.toString(QUuid::WithoutBraces)
-            < right.toString(QUuid::WithoutBraces);
-    });
-    return ids;
-}
-
-QString TaskListViewModel::taskIdsContext(
-    const QList<model::TaskId> &taskIds) const
-{
-    QStringList labels;
-    QList<model::TaskId> ids = taskIds;
-    std::sort(ids.begin(), ids.end(), [](const model::TaskId &left,
-                                         const model::TaskId &right) {
-        return left.toString(QUuid::WithoutBraces)
-            < right.toString(QUuid::WithoutBraces);
-    });
-    const int visibleLabelCount = std::min(3, static_cast<int>(ids.size()));
-    labels.reserve(visibleLabelCount);
-    for (int index = 0; index < visibleLabelCount; ++index) {
-        const model::TaskId &id = ids.at(index);
-        const model::Task *task = taskForId(id);
-        const QString shortId = id.toString(QUuid::WithoutBraces).left(8);
-        labels.push_back(task == nullptr
-                             ? shortId
-                             : QStringLiteral("“%1”（%2）")
-                                   .arg(task->title(), shortId));
-    }
-    if (ids.size() > visibleLabelCount) {
-        labels.push_back(QStringLiteral("另 %1 项")
-                             .arg(ids.size() - visibleLabelCount));
-    }
-    return labels.join(QStringLiteral("、"));
-}
-
-void TaskListViewModel::pruneBulkSelection()
-{
-    QSet<model::TaskId> retained;
-    for (const model::TaskId &id : std::as_const(m_bulkSelectedTaskIds)) {
-        if (isBulkSelectable(id)) {
-            retained.insert(id);
-        }
-    }
-    m_bulkSelectedTaskIds = std::move(retained);
-}
-
-void TaskListViewModel::setBulkSelection(QSet<model::TaskId> selection)
-{
-    if (m_bulkSelectedTaskIds == selection) {
-        return;
-    }
-    m_bulkSelectedTaskIds = std::move(selection);
-    if (!m_visibleTasks.isEmpty()) {
-        emit dataChanged(index(0), index(m_visibleTasks.size() - 1),
-                         {BulkSelectedRole});
-    }
-    emit bulkSelectionChanged();
-}
-
-void TaskListViewModel::rebuildVisibleTasks()
-{
-    // 整批替换投影时遵循 QAbstractItemModel 的重置协议，使 QML 安全重建 delegate。
-    beginResetModel();
-    m_visibleTasks.clear();
-    m_visibleTasks.reserve(m_allTasks.size());
-    m_visibleTaskIds.clear();
-    m_visibleTaskIds.reserve(m_allTasks.size());
-
-    const QString keyword = m_searchText.trimmed();
-    const bool filtersPriority =
-        m_priorityFilterIndex != allPrioritiesFilterIndex;
-    const auto selectedPriority = static_cast<model::TaskPriority>(
-        m_priorityFilterIndex - firstPriorityFilterIndex);
-
-    for (const auto &task : m_allTasks) {
-        const bool archived = task.status() == model::TaskStatus::Archived;
-        if (archived != m_showArchived) {
-            continue;
-        }
-        if (!keyword.isEmpty()
-            && !task.title().contains(keyword, Qt::CaseInsensitive)
-            && !task.description().contains(keyword, Qt::CaseInsensitive)) {
-            continue;
-        }
-        if (filtersPriority && task.priority() != selectedPriority) {
-            continue;
-        }
-        if (m_categoryFilterMode == 1 && task.categoryId().has_value()) {
-            continue;
-        }
-        if (m_categoryFilterMode == 2
-            && (!task.categoryId().has_value()
-                || *task.categoryId() != m_categoryFilterCategoryId)) {
-            continue;
-        }
-        // 过滤只删除不匹配项，剩余任务严格保留Model给出的计划顺序。
-        m_visibleTasks.push_back(task);
-        m_visibleTaskIds.insert(task.id());
-    }
-
-    // 刷新或重排只保留仍在当前结果中且仍具备资格的稳定 TaskId。
-    pruneBulkSelection();
-    endResetModel();
-    emit countChanged();
-    emit bulkSelectionChanged();
-}
-
-void TaskListViewModel::reloadCategories()
-{
-    QList<model::TaskCategory> categories;
-    if (m_categoryService) {
-        const auto result = m_categoryService->listCategories();
-        if (!result.ok()) {
-            setError(QStringLiteral("类别数据访问失败，请稍后重试。"));
-            return;
-        }
-        categories = *result.value;
-    }
-    m_categories = std::move(categories);
-    emit categoryOptionsChanged();
-
-    if (m_categoryFilterMode == 2) {
-        const bool exists = std::any_of(
-            m_categories.cbegin(), m_categories.cend(),
-            [this](const auto &category) {
-                return category.id == m_categoryFilterCategoryId;
-            });
-        if (!exists) {
-            // 删除当前筛选类别后，相关任务已原子转为未分类，保持用户视角连续。
-            m_categoryFilterMode = 1;
-            m_categoryFilterCategoryId = model::TaskCategoryId{};
-            m_bulkSelectedTaskIds.clear();
-            emit categoryFilterChanged();
-            emit hasActiveFiltersChanged();
-        }
-    }
-    rebuildVisibleTasks();
-}
-
-const model::TaskCategory *TaskListViewModel::categoryForTask(
-    const model::Task *task) const
-{
-    if (!task || !task->categoryId().has_value()) return nullptr;
-    const auto iterator = std::find_if(
-        m_categories.cbegin(), m_categories.cend(), [&](const auto &category) {
-            return category.id == *task->categoryId();
-        });
-    return iterator == m_categories.cend() ? nullptr : &*iterator;
-}
-
-void TaskListViewModel::setError(const QString &message)
-{
-    // 属性支持持续绑定，事件信号用于立即弹出反馈；二者表达同一份展示错误。
-    if (!message.isEmpty()) {
-        emit notificationRaised({smartmate::common::UiSeverity::Error,
-                                 QStringLiteral("任务操作失败"),
-                                 message});
-    }
-    if (m_errorMessage == message) {
-        if (!message.isEmpty()) {
-            emit errorOccurred(message);
-        }
-        return;
-    }
-
-    m_errorMessage = message;
-    emit errorMessageChanged();
-    if (!message.isEmpty()) {
-        emit errorOccurred(message);
-    }
 }
 
 } // namespace smartmate::viewmodel

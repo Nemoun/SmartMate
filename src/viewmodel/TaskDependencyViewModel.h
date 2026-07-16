@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/Task.h"
+#include "TaskProjectionSources.h"
 #include "services/TaskResult.h"
 #include "viewmodel/contracts/TaskDependencyContract.h"
 
@@ -9,7 +10,6 @@
 
 namespace smartmate::model {
 class TaskService;
-class TaskCategoryService;
 }
 
 namespace smartmate::viewmodel {
@@ -22,10 +22,8 @@ class TaskDependencyViewModel final : public TaskDependencyContract {
     Q_OBJECT
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
 public:
-    explicit TaskDependencyViewModel(model::TaskService &taskService,
-                                     QObject *parent = nullptr);
     TaskDependencyViewModel(model::TaskService &taskService,
-                            model::TaskCategoryService &categoryService,
+                            TaskCategoryProjectionSource &categorySource,
                             QObject *parent = nullptr);
 
     [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
@@ -55,38 +53,39 @@ signals:
     void errorMessageChanged();
 
 private:
-    [[nodiscard]] static QString statusText(model::TaskStatus status);
-    [[nodiscard]] static QString priorityText(model::TaskPriority priority);
     [[nodiscard]] int candidateRow(const model::TaskId &taskId) const;
     [[nodiscard]] QString taskDisplayName(const model::TaskId &taskId) const;
     [[nodiscard]] QString dependencyErrorMessage(
         model::TaskError error,
         const model::TaskErrorContext &context) const;
+    /// 使用 Model 返回的完整上下文原子重置候选模型和选择草稿。
     void replaceDraft(model::TaskDependencyEditContext context);
+    /// 选中状态变化后同步 selectionChanged/formStateChanged。
     void notifySelectionChanged();
+    /// 去重错误属性通知，并把非空错误发布为 UiNotification。
     void setErrorMessage(const QString &message);
-    void reloadCategories();
+    /// 类别目录变化时只刷新类别展示 Role，不重建依赖资格。
+    void applyCategories();
     [[nodiscard]] const model::TaskCategory *categoryForTask(
         const model::Task &task) const;
 
-    TaskDependencyViewModel(model::TaskService &taskService,
-                            model::TaskCategoryService *categoryService,
-                            QObject *parent);
-
     /// 非拥有引用；组合根保证 Service 生命周期长于本 ViewModel。
     model::TaskService &m_taskService;
-    model::TaskCategoryService *m_categoryService{nullptr};
-    QList<model::TaskCategory> m_categories;
+    TaskCategoryProjectionSource &m_categorySource;
+    /// 当前依赖编辑目标及标题，来自 Model 编辑上下文。
     model::TaskId m_taskId;
     QString m_taskTitle;
     /// 候选列表排除当前任务；未归档任务可新增，原有归档前置仍保留以便移除。
     QList<model::Task> m_candidates;
     /// 保存本次读取的全量标题，确保环路径经过隐藏或归档任务时仍可完整解释。
     QHash<model::TaskId, QString> m_taskTitles;
+    /// 当前可修改选择草稿。
     QSet<model::TaskId> m_selectedPredecessors;
+    /// 打开会话时的选择检查点，用于 dirty 和 cancel。
     QSet<model::TaskId> m_originalPredecessors;
     /// 候选资格完全来自 Model 上下文，ViewModel 不根据任务状态重新推导。
     QSet<model::TaskId> m_selectablePredecessors;
+    /// 最近一次展示错误。
     QString m_errorMessage;
 };
 

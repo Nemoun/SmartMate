@@ -1,31 +1,25 @@
 #pragma once
 
-#include "TaskPlanProjection.h"
-#include "domain/TaskCategory.h"
+#include "TaskProjectionSources.h"
 #include "viewmodel/contracts/TaskDetailsContract.h"
-
-namespace smartmate::model {
-class TaskService;
-class TaskCategoryService;
-}
 
 namespace smartmate::viewmodel {
 
-/// 独立的任务详情选择与展示投影，只保存稳定 TaskId。
+/// 从共享源读取任务详情，只保存稳定 TaskId，不读取或调用其他 ViewModel。
 class TaskDetailsViewModel final : public TaskDetailsContract {
     Q_OBJECT
 public:
-    explicit TaskDetailsViewModel(model::TaskService &taskService,
-                                  QObject *parent = nullptr);
-    TaskDetailsViewModel(model::TaskService &taskService,
-                         model::TaskCategoryService &categoryService,
+    TaskDetailsViewModel(TaskPlanProjectionSource &planSource,
+                         TaskCategoryProjectionSource &categorySource,
                          QObject *parent = nullptr);
 
     [[nodiscard]] QString selectedTaskId() const override;
     [[nodiscard]] QString selectedTitle() const override;
     [[nodiscard]] QString selectedDescription() const override;
     [[nodiscard]] QString selectedStatusText() const override;
+    [[nodiscard]] TaskStatusVisual selectedStatusVisual() const noexcept override;
     [[nodiscard]] QString selectedPriorityText() const override;
+    [[nodiscard]] TaskPriorityVisual selectedPriorityVisual() const noexcept override;
     [[nodiscard]] QString selectedDeadlineText() const override;
     [[nodiscard]] int selectedEstimatedMinutes() const noexcept override;
     [[nodiscard]] QString selectedCreatedAtText() const override;
@@ -39,23 +33,22 @@ public:
     [[nodiscard]] QString selectedCategoryName() const override;
     [[nodiscard]] QString selectedCategoryAccent() const override;
     [[nodiscard]] bool selectedHasCategory() const noexcept override;
+    [[nodiscard]] bool selectedOverdue() const noexcept override;
 
     bool selectTask(const QString &taskId) override;
     void clearSelection() override;
 
 private:
-    TaskDetailsViewModel(model::TaskService &taskService,
-                         model::TaskCategoryService *categoryService,
-                         QObject *parent);
-    void reload();
-    void reloadCategories();
+    /// 共享计划变化时校验所选任务，并通知详情 getter 重读。
+    void applyPlanProjection();
+    void applyCategories();
+    /// 在当前计划投影中解析稳定选择；返回指针只在投影未替换期间有效。
     [[nodiscard]] const model::Task *selectedTask() const;
     [[nodiscard]] const model::TaskCategory *selectedCategory() const;
 
-    model::TaskService &m_taskService;
-    model::TaskCategoryService *m_categoryService{nullptr};
-    TaskPlanProjection m_projection;
-    QList<model::TaskCategory> m_categories;
+    TaskPlanProjectionSource &m_planSource;
+    TaskCategoryProjectionSource &m_categorySource;
+    /// 当前详情选择；空 ID 表示未选择。
     model::TaskId m_selectedTaskId;
 };
 

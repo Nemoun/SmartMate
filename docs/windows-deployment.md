@@ -1,12 +1,12 @@
 # Windows 部署与 Qt DLL 排障
 
-> **当前实现**：`SmartMate` 仅使用 Qt Widgets。发布脚本会验证纯 Widgets 运行时闭包，并拒绝意外出现的 QML/Qt Quick 文件。
+> **当前实现**：`SmartMate` 使用纯 Qt Widgets，统计图表只使用 Qt Charts。发布脚本会验证 Widgets + Charts 运行时闭包，并拒绝 ChartsQml、Qt Graphs、QML 或 Qt Quick 文件。
 
 ## 1. 为什么会提示缺少 DLL
 
 CMake 构建得到的 `SmartMate.exe` 只包含 SmartMate 自身代码。Qt 默认使用动态链接，程序启动时还要加载：
 
-- Qt 基础库，如 `Qt6Core.dll`、`Qt6Gui.dll`、`Qt6Widgets.dll` 和 `Qt6Sql.dll`；
+- Qt 基础库，如 `Qt6Core.dll`、`Qt6Gui.dll`、`Qt6Widgets.dll`、`Qt6Charts.dll` 和 `Qt6Sql.dll`；
 - Qt 平台插件，如 `platforms/qwindows.dll`；
 - SQLite 运行库与数据库驱动，如 `Qt6Sql.dll` 和 `sqldrivers/qsqlite.dll`；
 - MinGW 运行库，如 `libgcc_s_seh-1.dll`、`libstdc++-6.dll` 和 `libwinpthread-1.dll`。
@@ -48,6 +48,7 @@ dist/SmartMate/
   Qt6Core.dll
   Qt6Gui.dll
   Qt6Widgets.dll
+  Qt6Charts.dll
   Qt6Sql.dll
   ...
   platforms/
@@ -100,11 +101,11 @@ dist/SmartMate/platforms/qwindows.dll
 
 删除旧的 `dist/SmartMate` 后重新运行部署脚本。脚本本身会安全地重建该目录。
 
-### 发布目录意外出现 Qt6Qml、Qt6Quick 或 `qml/`
+### 发布目录意外出现 Qt6ChartsQml、Qt6Graphs、Qt6Qml、Qt6Quick 或 `qml/`
 
 原因：部署了旧 QML 基线，或在未清理的目录上手工覆盖文件。
 
-处理：重新运行项目脚本。脚本会安全重建 `dist/SmartMate`，并在发现任何 QML/Qt Quick 运行库时直接失败。
+处理：重新运行项目脚本。脚本会安全重建 `dist/SmartMate`，并在发现任何 ChartsQml、Qt Graphs、QML 或 Qt Quick 运行库时直接失败。
 
 ### “QSQLITE driver not loaded”
 
@@ -121,7 +122,7 @@ dist/SmartMate/platforms/qwindows.dll
 ## 6. 发布前验证
 
 1. 运行 Release 部署脚本，确认必需 DLL 检查和离屏冒烟测试均通过。
-2. 确认发布目录不存在 `Qt6Qml*`、`Qt6Quick*`、`Qt6QuickControls2*` 或 `qml/`。
+2. 确认存在 `Qt6Charts.dll`，且发布目录不存在 `Qt6ChartsQml*`、`Qt6Graphs*`、`Qt6Qml*`、`Qt6Quick*`、`Qt6QuickControls2*` 或 `qml/`。
 3. 从 `dist/SmartMate/SmartMate.exe` 启动，而不是从 `build/` 启动。
 4. 最可靠的最终检查是在一台没有安装 Qt 的 Windows 10/11 机器或虚拟机中复制整个目录并运行。
 5. 若程序可以启动但目标机器缺少 Microsoft 系统组件，应安装官方 Windows 更新或 Microsoft 运行时，不能使用第三方 DLL 下载站补文件。

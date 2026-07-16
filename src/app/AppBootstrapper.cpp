@@ -6,10 +6,13 @@
 #include "services/AppearanceSettingsService.h"
 #include "services/TaskCategoryService.h"
 #include "services/TaskService.h"
+#include "services/StatisticsService.h"
 #include "view/widgets/MainWindowDependencies.h"
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QString>
+#include <QTimeZone>
 
 #include <stdexcept>
 #include <utility>
@@ -29,12 +32,15 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
               *m_taskRepository))
     , m_taskCategoryService(
           std::make_unique<model::TaskCategoryService>(*m_taskRepository))
+    , m_statisticsService(
+          std::make_unique<model::StatisticsService>(
+              *m_taskRepository, *m_taskRepository, *m_taskRepository))
     , m_appearanceRepository(
           std::make_unique<model::persistence::QSettingsAppearanceRepository>())
     , m_appearanceService(
           std::make_unique<model::AppearanceSettingsService>(*m_appearanceRepository))
 {
-    // 在创建界面前验证数据源可读，避免用一个已经失效的 Service 启动 ViewModel。
+    // 在创建 ViewModel 和界面前验证任务数据源，避免应用带着失效 Service 启动。
     const model::TaskListResult initialTasks = m_taskService->listTasks();
     if (!initialTasks.ok()) {
         const QByteArray detail = initialTasks.detail.toUtf8();
@@ -43,7 +49,7 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
                                      : detail.constData());
     }
 
-    // 同时验证依赖端口，避免任务表可读但Schema v3关系表损坏时仍启动界面。
+    // 任务表可读不代表关系表可读，因此依赖 Repository 端口必须单独探测。
     const auto initialDependencies = m_taskService->listDependencies();
     if (!initialDependencies.ok()) {
         const QByteArray detail = initialDependencies.detail.toUtf8();
@@ -52,6 +58,7 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
                                      : detail.constData());
     }
 
+    // 类别与任务共享 SQLite 数据库，但属于独立业务端口，也要在启动前确认可读。
     const model::TaskCategoryListResult initialCategories =
         m_taskCategoryService->listCategories();
     if (!initialCategories.ok()) {
@@ -61,14 +68,30 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
                                      : detail.constData());
     }
 
+    // StatisticsService 会同时触达事件、任务与依赖查询端口；启动探测确保
+    // Schema v4 统计链路可读，且不对旧任务推测或回填历史事件。
+    const model::StatisticsResult initialStatistics = m_statisticsService->snapshot(
+        {model::StatisticsRange::Last7Days,
+         QDateTime::currentDateTimeUtc(),
+         QTimeZone::systemTimeZone()});
+    if (!initialStatistics.ok()) {
+        const QByteArray detail = initialStatistics.detail.toUtf8();
+        throw std::runtime_error(detail.isEmpty()
+                                     ? "Unable to read the SmartMate statistics database"
+                                     : detail.constData());
+    }
+
+    // 所有数据源就绪后再创建展示层，保证子 ViewModel 构造时可以安全加载初始投影。
     m_appViewModel = std::make_unique<viewmodel::AppViewModel>(
-        *m_taskService, *m_taskCategoryService, *m_appearanceService);
+        *m_taskService, *m_taskCategoryService,
+        *m_statisticsService, *m_appearanceService);
 }
 
 AppBootstrapper::~AppBootstrapper() = default;
 
 view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noexcept
 {
+    // View 只接收窄 Contract，不会获得具体 ViewModel、Service 或 Repository。
     return {*m_appViewModel->appearanceSettings(),
             *m_appViewModel->taskList(),
             *m_appViewModel->taskFocus(),
@@ -76,7 +99,8 @@ view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noex
             *m_appViewModel->taskEditor(),
             *m_appViewModel->taskCategories(),
             *m_appViewModel->taskDependencies(),
-            *m_appViewModel->taskGraph()};
+            *m_appViewModel->taskGraph(),
+            *m_appViewModel->statistics()};
 }
 
 } // namespace smartmate::app

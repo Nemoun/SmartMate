@@ -8,6 +8,7 @@
 namespace smartmate::viewmodel {
 namespace {
 
+// 以下均为场景像素；布局只属于 ViewModel 展示投影，不写回 Model 或设置存储。
 constexpr qreal canvasMargin = 52.0;
 constexpr qreal layerGap = 110.0;
 constexpr qreal columnGap = 36.0;
@@ -16,7 +17,9 @@ constexpr qreal arrowHalfWidth = 6.0;
 constexpr int layoutSweeps = 4;
 
 struct LayoutItem final {
+    /// 真实节点使用稳定 TaskId 文本，跨层边使用 dummy 键占位。
     QString key;
+    /// 相同中位数时保持 Model 输入顺序，保证布局可复现。
     int stableOrder{0};
 };
 
@@ -113,6 +116,7 @@ TaskGraphLayoutResult layoutTaskGraph(const model::TaskGraphSnapshot &snapshot)
         const int targetLevel = levelByKey.value(target);
         QStringList chain{source};
         QString previous = source;
+        // 跨多层边插入虚拟节点，使交叉优化和正交路由逐层处理；虚拟节点不输出给 Widget。
         for (int level = sourceLevel + 1; level < targetLevel; ++level) {
             const QString dummy = QStringLiteral("dummy:%1:%2").arg(edgeIndex).arg(level);
             stableOrder.insert(dummy, nextStableOrder);
@@ -129,6 +133,7 @@ TaskGraphLayoutResult layoutTaskGraph(const model::TaskGraphSnapshot &snapshot)
         edgeChains.append(chain);
     }
 
+    // 反复向下/向上按邻居中位数排序，减少边交叉，同时用 stableOrder 打破平局。
     for (int sweep = 0; sweep < layoutSweeps; ++sweep) {
         for (int level = 1; level <= maximumLevel; ++level) {
             const auto positions = layerPositions(layers.value(level - 1));
@@ -254,6 +259,7 @@ TaskGraphLayoutResult layoutTaskGraph(const model::TaskGraphSnapshot &snapshot)
     };
     const auto laneY = [&](const int level, const int edgeIndex,
                            const int sourceLevel, const int targetLevel) {
+        // 同一层间带中的边分配不同水平通道，减少路径完全重叠。
         const QList<int> indexes = bandEdges.value(level);
         const qreal center = canvasMargin
             + level * (taskGraphNodeHeight + layerGap)

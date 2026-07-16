@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QTest>
 
 using namespace smartmate;
@@ -65,7 +66,9 @@ public:
     QString selectedTitle() const override { return QStringLiteral("实现任务模块"); }
     QString selectedDescription() const override { return QStringLiteral("详情"); }
     QString selectedStatusText() const override { return QStringLiteral("待办"); }
+    viewmodel::TaskStatusVisual selectedStatusVisual() const noexcept override { return viewmodel::TaskStatusVisual::Todo; }
     QString selectedPriorityText() const override { return QStringLiteral("高"); }
+    viewmodel::TaskPriorityVisual selectedPriorityVisual() const noexcept override { return viewmodel::TaskPriorityVisual::High; }
     QString selectedDeadlineText() const override { return QStringLiteral("未设置"); }
     int selectedEstimatedMinutes() const noexcept override { return 30; }
     QString selectedCreatedAtText() const override { return QStringLiteral("今天"); }
@@ -79,6 +82,7 @@ public:
     QString selectedCategoryName() const override { return QStringLiteral("学习"); }
     QString selectedCategoryAccent() const override { return QStringLiteral("#175cd3"); }
     bool selectedHasCategory() const noexcept override { return true; }
+    bool selectedOverdue() const noexcept override { return false; }
     bool selectTask(const QString &taskId) override { id = taskId; ++selectCalls; emit selectionChanged(); return true; }
     void clearSelection() override { id.clear(); emit selectionChanged(); }
     QString id;
@@ -147,6 +151,8 @@ public:
     QString searchText() const override { return search; }
     void setSearchText(const QString &value) override { if (search == value) return; search = value; ++searchWrites; emit searchTextChanged(); }
     int statusFilterIndex() const noexcept override { return status; }
+    QStringList statusFilterOptions() const override
+    { return {QStringLiteral("A"), QStringLiteral("B"), QStringLiteral("C")}; }
     void setStatusFilterIndex(int value) override { status = value; ++statusWrites; emit statusFilterIndexChanged(); }
     QVariantList categoryFilterOptions() const override { return {
         QVariantMap{{"mode", 0}, {"categoryId", ""}, {"name", QStringLiteral("全部类别")}},
@@ -220,6 +226,11 @@ void GraphWidgetsTest::projectedGeometryAndStableCommandsDriveTheView()
     FakeAppearance appearance; FakeGraph graph; FakeDetails details; FakeDependency dependencies;
     view::widgets::DependencyGraphPage page{{appearance, graph, details, dependencies}};
     page.resize(920, 700); page.show();
+    auto *statusFilter = child<QComboBox>(page, "graphStatusFilter");
+    QCOMPARE(statusFilter->count(), graph.statusFilterOptions().size());
+    for (int index = 0; index < statusFilter->count(); ++index) {
+        QCOMPARE(statusFilter->itemText(index), graph.statusFilterOptions().at(index));
+    }
     auto *view = child<view::widgets::DependencyGraphView>(page, "dependencyGraphViewport");
     QCOMPARE(view->nodeItemCount(), 2);
     QCOMPARE(view->edgeItemCount(), 1);
@@ -258,6 +269,13 @@ void GraphWidgetsTest::bindingZoomDetailsAndNotificationsMatchTheBaseline()
         page, "graphTaskDetailsDialog");
     QTRY_VERIFY(fullDetails->isVisible());
     QCOMPARE(details.id, QString::fromLatin1(secondId));
+    QVERIFY(child<QFrame>(*fullDetails, "taskDetailsHeader"));
+    QVERIFY(child<QFrame>(*fullDetails, "taskDetailsDescriptionSection"));
+    QVERIFY(child<QFrame>(*fullDetails, "taskDetailsScheduleSection"));
+    QVERIFY(child<QFrame>(*fullDetails, "taskDetailsInsightSection"));
+    QCOMPARE(child<QScrollArea>(*fullDetails, "taskDetailsScrollView")
+                 ->horizontalScrollBarPolicy(),
+             Qt::ScrollBarAlwaysOff);
     QVERIFY(!child<QPushButton>(*fullDetails, "editSelectedTaskButton")->isVisible());
     QVERIFY(!child<QPushButton>(*fullDetails, "editSelectedDependenciesButton")->isVisible());
     fullDetails->reject();

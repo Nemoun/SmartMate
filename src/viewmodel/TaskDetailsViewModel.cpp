@@ -2,74 +2,51 @@
 
 #include "TaskCategoryPresentation.h"
 #include "TaskPresentationFormatter.h"
-#include "services/TaskCategoryService.h"
-#include "services/TaskService.h"
 
 #include <algorithm>
 
 namespace smartmate::viewmodel {
-namespace { constexpr auto detailDateTimeFormat = "yyyy-MM-dd HH:mm"; }
-
-TaskDetailsViewModel::TaskDetailsViewModel(model::TaskService &taskService,
-                                           QObject *parent)
-    : TaskDetailsViewModel(taskService, nullptr, parent)
-{
-}
 
 TaskDetailsViewModel::TaskDetailsViewModel(
-    model::TaskService &taskService,
-    model::TaskCategoryService &categoryService,
-    QObject *parent)
-    : TaskDetailsViewModel(taskService, &categoryService, parent)
-{
-}
-
-TaskDetailsViewModel::TaskDetailsViewModel(
-    model::TaskService &taskService,
-    model::TaskCategoryService *categoryService,
+    TaskPlanProjectionSource &planSource,
+    TaskCategoryProjectionSource &categorySource,
     QObject *parent)
     : TaskDetailsContract(parent)
-    , m_taskService(taskService)
-    , m_categoryService(categoryService)
+    , m_planSource(planSource)
+    , m_categorySource(categorySource)
 {
-    connect(&m_taskService, &model::TaskService::tasksChanged,
-            this, &TaskDetailsViewModel::reload);
-    connect(&m_taskService, &model::TaskService::dependenciesChanged,
-            this, &TaskDetailsViewModel::reload);
-    if (m_categoryService) {
-        connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
-                this, &TaskDetailsViewModel::reloadCategories);
-        connect(m_categoryService,
-                &model::TaskCategoryService::taskCategoryAssignmentsChanged,
-                this, &TaskDetailsViewModel::reload);
-    }
-    reloadCategories();
-    reload();
+    connect(&m_planSource, &TaskPlanProjectionSource::projectionChanged,
+            this, &TaskDetailsViewModel::applyPlanProjection);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::categoriesChanged,
+            this, &TaskDetailsViewModel::applyCategories);
 }
 
 QString TaskDetailsViewModel::selectedTaskId() const { return m_selectedTaskId.isNull() ? QString{} : m_selectedTaskId.toString(QUuid::WithoutBraces); }
 QString TaskDetailsViewModel::selectedTitle() const { const auto *task = selectedTask(); return task ? task->title() : QString{}; }
 QString TaskDetailsViewModel::selectedDescription() const { const auto *task = selectedTask(); return task ? task->description() : QString{}; }
 QString TaskDetailsViewModel::selectedStatusText() const { const auto *task = selectedTask(); return task ? taskStatusText(task->status()) : QString{}; }
+TaskStatusVisual TaskDetailsViewModel::selectedStatusVisual() const noexcept { const auto *task = selectedTask(); return task ? taskStatusVisual(task->status()) : TaskStatusVisual::Todo; }
 QString TaskDetailsViewModel::selectedPriorityText() const { const auto *task = selectedTask(); return task ? taskPriorityText(task->priority()) : QString{}; }
+TaskPriorityVisual TaskDetailsViewModel::selectedPriorityVisual() const noexcept { const auto *task = selectedTask(); return task ? taskPriorityVisual(task->priority()) : TaskPriorityVisual::Normal; }
 QString TaskDetailsViewModel::selectedDeadlineText() const { const auto *task = selectedTask(); return task ? taskDeadlineText(*task, {}) : QString{}; }
 int TaskDetailsViewModel::selectedEstimatedMinutes() const noexcept { const auto *task = selectedTask(); return task && task->estimatedMinutes() ? *task->estimatedMinutes() : 0; }
-QString TaskDetailsViewModel::selectedCreatedAtText() const { const auto *task = selectedTask(); return task ? task->createdAtUtc().toLocalTime().toString(QString::fromLatin1(detailDateTimeFormat)) : QString{}; }
-QString TaskDetailsViewModel::selectedUpdatedAtText() const { const auto *task = selectedTask(); return task ? task->updatedAtUtc().toLocalTime().toString(QString::fromLatin1(detailDateTimeFormat)) : QString{}; }
-QString TaskDetailsViewModel::selectedReasonText() const { return m_projection.orderReasonTexts.value(m_selectedTaskId); }
-QString TaskDetailsViewModel::selectedBlockingReasonText() const { return m_projection.dependencyProjections.value(m_selectedTaskId).blockingReasonText; }
-int TaskDetailsViewModel::selectedPredecessorCount() const noexcept { return m_projection.dependencyProjections.value(m_selectedTaskId).predecessorCount; }
-int TaskDetailsViewModel::selectedUnlockCount() const noexcept { return m_projection.dependencyProjections.value(m_selectedTaskId).unlockCount; }
-bool TaskDetailsViewModel::selectedCanEditTask() const noexcept { return m_projection.availabilityFor(m_selectedTaskId).canEditTask; }
-bool TaskDetailsViewModel::selectedCanEditDependencies() const noexcept { return m_projection.availabilityFor(m_selectedTaskId).canEditDependencies; }
+QString TaskDetailsViewModel::selectedCreatedAtText() const { const auto *task = selectedTask(); return task ? taskDateTimeText(task->createdAtUtc().toLocalTime()) : QString{}; }
+QString TaskDetailsViewModel::selectedUpdatedAtText() const { const auto *task = selectedTask(); return task ? taskDateTimeText(task->updatedAtUtc().toLocalTime()) : QString{}; }
+QString TaskDetailsViewModel::selectedReasonText() const { return m_planSource.projection().orderReasonTexts.value(m_selectedTaskId); }
+QString TaskDetailsViewModel::selectedBlockingReasonText() const { return m_planSource.projection().dependencyProjections.value(m_selectedTaskId).blockingReasonText; }
+int TaskDetailsViewModel::selectedPredecessorCount() const noexcept { return m_planSource.projection().dependencyProjections.value(m_selectedTaskId).predecessorCount; }
+int TaskDetailsViewModel::selectedUnlockCount() const noexcept { return m_planSource.projection().dependencyProjections.value(m_selectedTaskId).unlockCount; }
+bool TaskDetailsViewModel::selectedCanEditTask() const noexcept { return m_planSource.projection().availabilityFor(m_selectedTaskId).canEditTask; }
+bool TaskDetailsViewModel::selectedCanEditDependencies() const noexcept { return m_planSource.projection().availabilityFor(m_selectedTaskId).canEditDependencies; }
 QString TaskDetailsViewModel::selectedCategoryName() const { const auto *category = selectedCategory(); return category ? category->name : QString{}; }
-QString TaskDetailsViewModel::selectedCategoryAccent() const { const auto *category = selectedCategory(); return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8"); }
+QString TaskDetailsViewModel::selectedCategoryAccent() const { const auto *category = selectedCategory(); return category ? taskCategoryAccent(category->color) : taskUncategorizedAccent(); }
 bool TaskDetailsViewModel::selectedHasCategory() const noexcept { return selectedCategory() != nullptr; }
+bool TaskDetailsViewModel::selectedOverdue() const noexcept { return m_planSource.projection().overdueStates.value(m_selectedTaskId, false); }
 
 bool TaskDetailsViewModel::selectTask(const QString &taskId)
 {
     const model::TaskId id = QUuid::fromString(taskId.trimmed());
-    if (id.isNull() || !m_projection.taskForId(id)) return false;
+    if (id.isNull() || !m_planSource.projection().taskForId(id)) return false;
     if (m_selectedTaskId == id) return true;
     m_selectedTaskId = id;
     emit selectionChanged();
@@ -83,37 +60,29 @@ void TaskDetailsViewModel::clearSelection()
     emit selectionChanged();
 }
 
-void TaskDetailsViewModel::reload()
+void TaskDetailsViewModel::applyPlanProjection()
 {
-    const auto result = m_taskService.listRecommendedTasks();
-    if (!result.ok()) return;
-    TaskPlanProjection projection = makeTaskPlanProjection(*result.value);
     const bool selectionRemoved = !m_selectedTaskId.isNull()
-        && !projection.taskForId(m_selectedTaskId);
-    if (m_projection == projection && !selectionRemoved) return;
-    m_projection = std::move(projection);
+        && !m_planSource.projection().taskForId(m_selectedTaskId);
     if (selectionRemoved) m_selectedTaskId = model::TaskId{};
     emit selectionChanged();
 }
 
-void TaskDetailsViewModel::reloadCategories()
+void TaskDetailsViewModel::applyCategories()
 {
-    if (!m_categoryService) return;
-    const auto result = m_categoryService->listCategories();
-    if (!result.ok() || m_categories == *result.value) return;
-    m_categories = *result.value;
     emit selectionChanged();
 }
 
-const model::Task *TaskDetailsViewModel::selectedTask() const { return m_projection.taskForId(m_selectedTaskId); }
+const model::Task *TaskDetailsViewModel::selectedTask() const { return m_planSource.projection().taskForId(m_selectedTaskId); }
 
 const model::TaskCategory *TaskDetailsViewModel::selectedCategory() const
 {
     const model::Task *task = selectedTask();
     if (!task || !task->categoryId()) return nullptr;
-    const auto it = std::find_if(m_categories.cbegin(), m_categories.cend(),
+    const auto &categories = m_categorySource.categories();
+    const auto it = std::find_if(categories.cbegin(), categories.cend(),
         [task](const model::TaskCategory &category) { return category.id == *task->categoryId(); });
-    return it == m_categories.cend() ? nullptr : &*it;
+    return it == categories.cend() ? nullptr : &*it;
 }
 
 } // namespace smartmate::viewmodel

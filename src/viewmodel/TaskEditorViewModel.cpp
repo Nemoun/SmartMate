@@ -1,12 +1,8 @@
 #include "TaskEditorViewModel.h"
 
-#include "TaskErrorMapper.h"
-#include "TaskPresentationFormatter.h"
 #include "TaskCategoryPresentation.h"
+#include "TaskPresentationFormatter.h"
 #include "domain/TaskConstraints.h"
-#include "domain/TaskCreationRequest.h"
-#include "services/TaskCategoryService.h"
-#include "services/TaskService.h"
 
 #include <QDateTime>
 #include <QStringList>
@@ -16,72 +12,39 @@
 
 namespace smartmate::viewmodel {
 
-namespace {
-// 优先级索引只在展示层转换为领域枚举；生成的草稿仍须由 TaskService
-// 执行完整业务校验。任务状态不属于编辑草稿，必须经由显式状态命令修改。
-[[nodiscard]] model::TaskDraft makeDraft(const QString &title,
-                                         const QString &description,
-                                         const int priorityIndex,
-                                         std::optional<QDateTime> deadline,
-                                         std::optional<int> estimatedMinutes,
-                                         std::optional<model::TaskCategoryId> categoryId)
-{
-    model::TaskDraft draft;
-    draft.title = title;
-    draft.description = description;
-    draft.priority = static_cast<model::TaskPriority>(priorityIndex);
-    draft.deadline = std::move(deadline);
-    draft.estimatedMinutes = estimatedMinutes;
-    draft.categoryId = categoryId;
-    return draft;
-}
-}
-
-TaskEditorViewModel::TaskEditorViewModel(model::TaskService &taskService, QObject *parent)
-    : TaskEditorViewModel(taskService, nullptr, QTimeZone::systemTimeZone(), parent)
-{
-}
-
 TaskEditorViewModel::TaskEditorViewModel(
     model::TaskService &taskService,
-    model::TaskCategoryService &categoryService,
+    TaskCategoryProjectionSource &categorySource,
     QObject *parent)
-    : TaskEditorViewModel(taskService, &categoryService,
+    : TaskEditorViewModel(taskService, categorySource,
                           QTimeZone::systemTimeZone(), parent)
 {
 }
 
 TaskEditorViewModel::TaskEditorViewModel(model::TaskService &taskService,
+                                         TaskCategoryProjectionSource &categorySource,
                                          QTimeZone timeZone,
                                          QObject *parent)
-    : TaskEditorViewModel(taskService, nullptr, std::move(timeZone), parent)
-{
-}
-
-TaskEditorViewModel::TaskEditorViewModel(
-    model::TaskService &taskService,
-    model::TaskCategoryService &categoryService,
-    QTimeZone timeZone,
-    QObject *parent)
-    : TaskEditorViewModel(taskService, &categoryService, std::move(timeZone), parent)
-{
-}
-
-TaskEditorViewModel::TaskEditorViewModel(
-    model::TaskService &taskService,
-    model::TaskCategoryService *categoryService,
-    QTimeZone timeZone,
-    QObject *parent)
     : TaskEditorContract(parent)
     , m_taskService(taskService)
-    , m_categoryService(categoryService)
+    , m_categorySource(categorySource)
+    , m_priorityIndex(taskPriorityIndex(model::TaskPriority::Normal))
     , m_timeZone(std::move(timeZone))
 {
-    if (m_categoryService) {
-        connect(m_categoryService, &model::TaskCategoryService::categoriesChanged,
-                this, &TaskEditorViewModel::reloadCategories);
-    }
-    reloadCategories();
+    connect(&m_categorySource, &TaskCategoryProjectionSource::categoriesChanged,
+            this, &TaskEditorViewModel::applyCategories);
+    connect(&m_categorySource, &TaskCategoryProjectionSource::refreshFailed,
+            this, [this] {
+                setErrorMessage(QStringLiteral("类别数据访问失败，请稍后重试。"));
+            });
+    connect(&m_categorySource, &TaskCategoryProjectionSource::refreshSucceeded,
+            this, [this] {
+                if (m_errorMessage
+                    == QStringLiteral("类别数据访问失败，请稍后重试。")) {
+                    setErrorMessage({});
+                }
+            });
+    applyCategories();
     rememberCurrentDraft();
     updateFormState();
 }
@@ -107,29 +70,32 @@ QVariant TaskEditorViewModel::data(const QModelIndex &index, const int role) con
     case CandidateTitleRole:
         return candidate.title();
     case CandidateStatusTextRole:
-        return statusText(candidate.status());
+        return taskStatusText(candidate.status());
     case CandidatePriorityTextRole:
-        return priorityText(candidate.priority());
+        return taskPriorityText(candidate.priority());
     case CandidateCategoryNameRole: {
         if (!candidate.categoryId().has_value()) return QString{};
         const auto iterator = std::find_if(
-            m_categories.cbegin(), m_categories.cend(), [&](const auto &category) {
+            m_categorySource.categories().cbegin(),
+            m_categorySource.categories().cend(), [&](const auto &category) {
                 return category.id == *candidate.categoryId();
             });
-        return iterator == m_categories.cend() ? QString{} : iterator->name;
+        return iterator == m_categorySource.categories().cend() ? QString{} : iterator->name;
     }
     case CandidateCategoryAccentRole: {
         if (!candidate.categoryId().has_value()) return QString{};
         const auto iterator = std::find_if(
-            m_categories.cbegin(), m_categories.cend(), [&](const auto &category) {
+            m_categorySource.categories().cbegin(),
+            m_categorySource.categories().cend(), [&](const auto &category) {
                 return category.id == *candidate.categoryId();
             });
-        return iterator == m_categories.cend()
+        return iterator == m_categorySource.categories().cend()
             ? QString{} : taskCategoryAccent(iterator->color);
     }
     case CandidateHasCategoryRole: {
         if (!candidate.categoryId().has_value()) return false;
-        return std::any_of(m_categories.cbegin(), m_categories.cend(),
+        return std::any_of(m_categorySource.categories().cbegin(),
+                           m_categorySource.categories().cend(),
                            [&](const auto &category) {
                                return category.id == *candidate.categoryId();
                            });
@@ -184,6 +150,7 @@ void TaskEditorViewModel::setTitle(const QString &title)
         return;
     }
     m_title = title;
+    // 字段通知先让 Widget 同步文本，随后 formStateChanged 更新校验和保存资格。
     emit titleChanged();
     setErrorMessage({});
     updateFormState();
@@ -207,7 +174,7 @@ void TaskEditorViewModel::setDescription(const QString &description)
 
 QString TaskEditorViewModel::currentStatusText() const
 {
-    return statusText(m_currentStatus);
+    return taskStatusText(m_currentStatus);
 }
 
 int TaskEditorViewModel::priorityIndex() const noexcept
@@ -234,9 +201,8 @@ bool TaskEditorViewModel::hasDeadline() const noexcept
 QString TaskEditorViewModel::deadlineDisplayText() const
 {
     const auto deadline = displayedDeadline();
-    return deadline.has_value()
-        ? deadline->toString(QStringLiteral("yyyy-MM-dd HH:mm"))
-        : QStringLiteral("未设置");
+    return taskDateTimeText(deadline.value_or(QDateTime{}),
+                            QStringLiteral("未设置"));
 }
 
 int TaskEditorViewModel::deadlineYear() const
@@ -320,22 +286,17 @@ int TaskEditorViewModel::maximumEstimatedMinutes() const noexcept
 
 QStringList TaskEditorViewModel::priorityOptions() const
 {
-    return {
-        QStringLiteral("低"),
-        QStringLiteral("普通"),
-        QStringLiteral("高"),
-        QStringLiteral("紧急"),
-    };
+    return taskPriorityOptions();
 }
 
 QVariantList TaskEditorViewModel::categoryOptions() const
 {
     QVariantList options;
-    options.reserve(m_categories.size() + 1);
+    options.reserve(m_categorySource.categories().size() + 1);
     options.append(QVariantMap{{QStringLiteral("categoryId"), QString{}},
                                {QStringLiteral("name"), QStringLiteral("未分类")},
-                               {QStringLiteral("accent"), QStringLiteral("#94a3b8")}});
-    for (const auto &category : m_categories) {
+                               {QStringLiteral("accent"), taskUncategorizedAccent()}});
+    for (const auto &category : m_categorySource.categories()) {
         options.append(QVariantMap{
             {QStringLiteral("categoryId"), category.id.toString(QUuid::WithoutBraces)},
             {QStringLiteral("name"), category.name},
@@ -357,7 +318,8 @@ void TaskEditorViewModel::setSelectedCategoryId(const QString &categoryId)
     if (!trimmed.isEmpty()) {
         const model::TaskCategoryId id{QUuid::fromString(trimmed)};
         const bool exists = std::any_of(
-            m_categories.cbegin(), m_categories.cend(),
+            m_categorySource.categories().cbegin(),
+            m_categorySource.categories().cend(),
             [&id](const auto &category) { return category.id == id; });
         if (id.isNull() || !exists) {
             setErrorMessage(QStringLiteral("所选类别不存在或已被删除。"));
@@ -376,10 +338,11 @@ const model::TaskCategory *TaskEditorViewModel::selectedCategory() const
 {
     if (!m_categoryId.has_value()) return nullptr;
     const auto iterator = std::find_if(
-        m_categories.cbegin(), m_categories.cend(), [&](const auto &category) {
+        m_categorySource.categories().cbegin(),
+        m_categorySource.categories().cend(), [&](const auto &category) {
             return category.id == *m_categoryId;
         });
-    return iterator == m_categories.cend() ? nullptr : &*iterator;
+    return iterator == m_categorySource.categories().cend() ? nullptr : &*iterator;
 }
 
 QString TaskEditorViewModel::selectedCategoryName() const
@@ -391,7 +354,8 @@ QString TaskEditorViewModel::selectedCategoryName() const
 QString TaskEditorViewModel::selectedCategoryAccent() const
 {
     const auto *category = selectedCategory();
-    return category ? taskCategoryAccent(category->color) : QStringLiteral("#94a3b8");
+    return category ? taskCategoryAccent(category->color)
+                    : taskUncategorizedAccent();
 }
 
 bool TaskEditorViewModel::hasCategory() const noexcept
@@ -446,482 +410,6 @@ QString TaskEditorViewModel::predecessorSummaryText() const
 bool TaskEditorViewModel::canConfigurePredecessors() const noexcept
 {
     return !m_editMode;
-}
-
-bool TaskEditorViewModel::beginCreate()
-{
-    // 候选资格由 Model 给出；ViewModel 只保存用于多选弹窗的展示快照。
-    const auto candidates = m_taskService.listEligibleCreationPredecessors();
-    if (!candidates.ok()) {
-        setErrorMessage(taskErrorMessage(candidates.error));
-        return false;
-    }
-
-    replaceCandidates(*candidates.value);
-    replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
-    setSessionActive(true);
-    return true;
-}
-
-bool TaskEditorViewModel::beginEdit(const QString &taskId)
-{
-    const auto id = QUuid::fromString(taskId.trimmed());
-    if (id.isNull()) {
-        setErrorMessage(taskErrorMessage(model::TaskError::NotFound));
-        return false;
-    }
-
-    // 编辑资格由Model返回结构化结果；ViewModel只映射错误并决定是否建立草稿。
-    const auto result = m_taskService.findEditableTask(id);
-    if (!result.ok()) {
-        setErrorMessage(taskErrorMessage(result.error));
-        return false;
-    }
-
-    const auto &task = *result.value;
-    Snapshot draft;
-    draft.title = task.title();
-    draft.description = task.description();
-    draft.priorityIndex = static_cast<int>(task.priority());
-    draft.deadline = task.deadline();
-    draft.estimatedMinutes = task.estimatedMinutes();
-    draft.categoryId = task.categoryId();
-
-    replaceCandidates({});
-    replaceDraft(draft, task.id().toString(QUuid::WithoutBraces), true,
-                 task.status());
-    setSessionActive(true);
-    return true;
-}
-
-bool TaskEditorViewModel::setDeadlineSelection(const int year,
-                                               const int month,
-                                               const int day,
-                                               const int hour,
-                                               const int minute)
-{
-    // Reject 同时拒绝 DST 跳时产生的不存在时间与回拨产生的歧义时间，
-    // 避免界面选择在保存时悄悄变成另一个时刻。
-    const QDateTime selected{QDate{year, month, day},
-                             QTime{hour, minute},
-                             m_timeZone,
-                             QDateTime::TransitionResolution::Reject};
-    if (!selected.isValid()) {
-        setErrorMessage(QStringLiteral("所选截止时间无效，请重新选择。"));
-        return false;
-    }
-
-    if (m_deadline != selected) {
-        m_deadline = selected;
-        emit deadlineChanged();
-        updateFormState();
-    }
-    setErrorMessage({});
-    return true;
-}
-
-void TaskEditorViewModel::clearDeadline()
-{
-    if (!m_deadline.has_value()) {
-        setErrorMessage({});
-        return;
-    }
-    m_deadline.reset();
-    emit deadlineChanged();
-    setErrorMessage({});
-    updateFormState();
-}
-
-bool TaskEditorViewModel::setEstimatedDuration(const int days,
-                                               const int hours,
-                                               const int minutes)
-{
-    // 组件范围属于选择器协议；总分钟的最终领域边界仍由 TaskService 校验。
-    if (days < 0 || days > 365 || hours < 0 || hours > 23
-        || minutes < 0 || minutes > 59) {
-        setErrorMessage(taskErrorMessage(model::TaskError::InvalidEstimate));
-        return false;
-    }
-
-    const int totalMinutes = days * 24 * 60 + hours * 60 + minutes;
-    if (!m_taskService.validateEstimatedMinutes(totalMinutes).ok()) {
-        setErrorMessage(taskErrorMessage(model::TaskError::InvalidEstimate));
-        return false;
-    }
-
-    if (m_estimatedMinutes != totalMinutes) {
-        m_estimatedMinutes = totalMinutes;
-        emit estimatedDurationChanged();
-        updateFormState();
-    }
-    setErrorMessage({});
-    return true;
-}
-
-void TaskEditorViewModel::clearEstimatedDuration()
-{
-    if (!m_estimatedMinutes.has_value()) {
-        setErrorMessage({});
-        return;
-    }
-    m_estimatedMinutes.reset();
-    emit estimatedDurationChanged();
-    setErrorMessage({});
-    updateFormState();
-}
-
-void TaskEditorViewModel::beginPredecessorSelection()
-{
-    if (!canConfigurePredecessors()) {
-        return;
-    }
-    m_pickerPredecessors = m_selectedCreationPredecessors;
-    m_predecessorPickerActive = true;
-    notifyCandidateSelectionChanged();
-}
-
-bool TaskEditorViewModel::setCreationPredecessorSelected(const QString &taskId,
-                                                         const bool selected)
-{
-    if (!m_predecessorPickerActive) {
-        return false;
-    }
-
-    const model::TaskId id = QUuid::fromString(taskId.trimmed());
-    const int row = candidateRow(id);
-    if (id.isNull() || row < 0) {
-        return false;
-    }
-
-    const bool alreadySelected = m_pickerPredecessors.contains(id);
-    const bool changed = alreadySelected != selected;
-    if (selected) {
-        m_pickerPredecessors.insert(id);
-    } else {
-        m_pickerPredecessors.remove(id);
-    }
-    if (changed) {
-        emit dataChanged(index(row), index(row), {CandidateSelectedRole});
-        emit predecessorSelectionChanged();
-    }
-    return true;
-}
-
-void TaskEditorViewModel::acceptPredecessorSelection()
-{
-    if (!m_predecessorPickerActive) {
-        return;
-    }
-
-    m_predecessorPickerActive = false;
-    if (m_selectedCreationPredecessors == m_pickerPredecessors) {
-        return;
-    }
-    m_selectedCreationPredecessors = m_pickerPredecessors;
-    emit predecessorSelectionChanged();
-    setErrorMessage({});
-    updateFormState();
-}
-
-void TaskEditorViewModel::cancelPredecessorSelection()
-{
-    if (!m_predecessorPickerActive) {
-        return;
-    }
-    const bool selectionChanged = m_pickerPredecessors != m_selectedCreationPredecessors;
-    m_pickerPredecessors = m_selectedCreationPredecessors;
-    m_predecessorPickerActive = false;
-    if (selectionChanged) {
-        notifyCandidateSelectionChanged();
-        emit predecessorSelectionChanged();
-    }
-}
-
-void TaskEditorViewModel::clearCreationPredecessors()
-{
-    if (m_predecessorPickerActive) {
-        if (m_pickerPredecessors.isEmpty()) {
-            return;
-        }
-        m_pickerPredecessors.clear();
-        emit predecessorSelectionChanged();
-        notifyCandidateSelectionChanged();
-        return;
-    }
-    if (m_selectedCreationPredecessors.isEmpty()) {
-        return;
-    }
-    m_selectedCreationPredecessors.clear();
-    m_pickerPredecessors.clear();
-    emit predecessorSelectionChanged();
-    notifyCandidateSelectionChanged();
-    setErrorMessage({});
-    updateFormState();
-}
-
-bool TaskEditorViewModel::save()
-{
-    // 命令入口自身也必须守住状态，不能只依赖 QML 将保存按钮设为不可用。
-    updateFormState();
-    if (!m_dirty) {
-        setErrorMessage(QStringLiteral("没有需要保存的更改。"));
-        return false;
-    }
-    if (!m_canSave) {
-        setErrorMessage(m_validationMessage);
-        return false;
-    }
-
-    const auto draft = buildTaskDraft();
-    if (!draft.has_value()) {
-        return false;
-    }
-
-    model::TaskResult result;
-    if (m_editMode) {
-        const auto id = QUuid::fromString(m_taskId);
-        if (id.isNull()) {
-            setErrorMessage(taskErrorMessage(model::TaskError::NotFound));
-            return false;
-        }
-        result = m_taskService.updateTask(id, *draft);
-    } else {
-        QList<model::TaskId> predecessorIds = m_selectedCreationPredecessors.values();
-        std::sort(predecessorIds.begin(), predecessorIds.end(),
-                  [](const model::TaskId &left, const model::TaskId &right) {
-                      return left.toString(QUuid::WithoutBraces)
-                          < right.toString(QUuid::WithoutBraces);
-                  });
-        result = m_taskService.createTask(model::TaskCreationRequest{
-            *draft,
-            std::move(predecessorIds),
-        });
-    }
-
-    if (!result.ok()) {
-        setErrorMessage(taskErrorMessage(result.error));
-        return false;
-    }
-
-    m_taskId = result.value->id().toString(QUuid::WithoutBraces);
-    m_editMode = true;
-    if (m_currentStatus != result.value->status()) {
-        m_currentStatus = result.value->status();
-        emit currentStatusTextChanged();
-    }
-    emit modeChanged();
-    rememberCurrentDraft();
-    updateFormState();
-    setErrorMessage({});
-    setSessionActive(false);
-    emit saved(m_taskId);
-    return true;
-}
-
-void TaskEditorViewModel::cancel()
-{
-    setErrorMessage({});
-    // 主表单取消后立即丢弃字段、候选与已接受依赖，下一次打开不会继承旧草稿。
-    replaceCandidates({});
-    replaceDraft(Snapshot{}, {}, false, model::TaskStatus::Todo);
-    setSessionActive(false);
-    emit cancelled();
-}
-
-void TaskEditorViewModel::setSessionActive(const bool active)
-{
-    if (m_sessionActive == active) {
-        return;
-    }
-    m_sessionActive = active;
-    emit sessionActiveChanged();
-}
-
-TaskEditorViewModel::Snapshot TaskEditorViewModel::currentSnapshot() const
-{
-    return {
-        m_title,
-        m_description,
-        m_priorityIndex,
-        m_deadline,
-        m_estimatedMinutes,
-        m_categoryId,
-        m_selectedCreationPredecessors,
-    };
-}
-
-void TaskEditorViewModel::replaceDraft(const Snapshot &draft, const QString &taskId,
-                                       const bool editMode,
-                                       const model::TaskStatus currentStatus)
-{
-    m_taskId = taskId;
-    m_editMode = editMode;
-    m_title = draft.title;
-    m_description = draft.description;
-    m_currentStatus = currentStatus;
-    m_priorityIndex = draft.priorityIndex;
-    m_deadline = draft.deadline;
-    m_estimatedMinutes = draft.estimatedMinutes;
-    m_categoryId = draft.categoryId;
-    m_selectedCreationPredecessors = draft.predecessorIds;
-    m_pickerPredecessors = m_selectedCreationPredecessors;
-    m_predecessorPickerActive = false;
-    m_original = draft;
-
-    emit modeChanged();
-    emit titleChanged();
-    emit descriptionChanged();
-    emit currentStatusTextChanged();
-    emit priorityIndexChanged();
-    emit deadlineChanged();
-    emit estimatedDurationChanged();
-    emit categoryChanged();
-    emit predecessorSelectionChanged();
-    notifyCandidateSelectionChanged();
-    setErrorMessage({});
-    updateFormState();
-}
-
-void TaskEditorViewModel::replaceCandidates(QList<model::Task> candidates)
-{
-    beginResetModel();
-    m_predecessorCandidates = std::move(candidates);
-    endResetModel();
-    emit predecessorCandidatesChanged();
-}
-
-void TaskEditorViewModel::notifyCandidateSelectionChanged()
-{
-    if (!m_predecessorCandidates.isEmpty()) {
-        emit dataChanged(index(0), index(m_predecessorCandidates.size() - 1),
-                         {CandidateSelectedRole});
-    }
-}
-
-void TaskEditorViewModel::rememberCurrentDraft()
-{
-    m_original = currentSnapshot();
-}
-
-void TaskEditorViewModel::updateFormState()
-{
-    // 类型化选择器已经消除了格式解析；标题、预计范围等业务规则仍由
-    // TaskService::validateDraft 统一给出结论。
-    QString validationMessage;
-    const auto validation = m_taskService.validateDraft(
-        makeDraft(m_title, m_description, m_priorityIndex,
-                  m_deadline, m_estimatedMinutes, m_categoryId));
-    if (!validation.ok()) {
-        validationMessage = taskErrorMessage(validation.error);
-    }
-    const bool dirty = currentSnapshot() != m_original;
-    const bool canSave = dirty && validationMessage.isEmpty();
-    if (m_dirty == dirty && m_canSave == canSave
-        && m_validationMessage == validationMessage) {
-        return;
-    }
-
-    m_dirty = dirty;
-    m_canSave = canSave;
-    m_validationMessage = validationMessage;
-    emit formStateChanged();
-}
-
-void TaskEditorViewModel::setErrorMessage(const QString &message)
-{
-    if (!message.isEmpty()) {
-        emit notificationRaised({smartmate::common::UiSeverity::Error,
-                                 QStringLiteral("任务编辑失败"),
-                                 message});
-    }
-    if (m_errorMessage == message) {
-        return;
-    }
-    m_errorMessage = message;
-    emit errorMessageChanged();
-}
-
-std::optional<model::TaskDraft> TaskEditorViewModel::buildTaskDraft()
-{
-    updateFormState();
-    if (!m_validationMessage.isEmpty()) {
-        setErrorMessage(m_validationMessage);
-        return std::nullopt;
-    }
-
-    return makeDraft(m_title, m_description, m_priorityIndex,
-                     m_deadline, m_estimatedMinutes, m_categoryId);
-}
-
-std::optional<QDateTime> TaskEditorViewModel::displayedDeadline() const
-{
-    if (!m_deadline.has_value()) {
-        return std::nullopt;
-    }
-    return m_deadline->toTimeZone(m_timeZone);
-}
-
-int TaskEditorViewModel::candidateRow(const model::TaskId &taskId) const
-{
-    for (int row = 0; row < m_predecessorCandidates.size(); ++row) {
-        if (m_predecessorCandidates.at(row).id() == taskId) {
-            return row;
-        }
-    }
-    return -1;
-}
-
-QString TaskEditorViewModel::statusText(const model::TaskStatus status)
-{
-    return taskStatusText(status);
-}
-
-QString TaskEditorViewModel::priorityText(const model::TaskPriority priority)
-{
-    return taskPriorityText(priority);
-}
-
-void TaskEditorViewModel::reloadCategories()
-{
-    QList<model::TaskCategory> categories;
-    if (m_categoryService) {
-        const auto result = m_categoryService->listCategories();
-        if (!result.ok()) {
-            setErrorMessage(QStringLiteral("类别数据访问失败，请稍后重试。"));
-            return;
-        }
-        categories = *result.value;
-    }
-    m_categories = std::move(categories);
-    emit categoryOptionsChanged();
-
-    // 若数据库中的原类别已被管理命令删除，持久化快照已经自动转为未分类；
-    // 同步原始草稿可避免把该外部变化误判为用户编辑。
-    if (m_editMode && m_original.categoryId.has_value()) {
-        const auto originalId = *m_original.categoryId;
-        const bool originalStillExists = std::any_of(
-            m_categories.cbegin(), m_categories.cend(),
-            [&originalId](const auto &category) {
-                return category.id == originalId;
-            });
-        if (!originalStillExists) {
-            m_original.categoryId.reset();
-        }
-    }
-
-    // 删除类别是管理操作例外；若当前草稿引用了被删除类别，只清空类别字段，
-    // 其他输入仍留在本地，避免用户丢失尚未保存的编辑内容。
-    if (m_categoryId.has_value() && selectedCategory() == nullptr) {
-        m_categoryId.reset();
-        emit categoryChanged();
-        updateFormState();
-        setErrorMessage(QStringLiteral("原选择的类别已删除，任务将保存为未分类。"));
-    }
-    if (!m_predecessorCandidates.isEmpty()) {
-        emit dataChanged(index(0), index(m_predecessorCandidates.size() - 1),
-                         {CandidateCategoryNameRole, CandidateCategoryAccentRole,
-                          CandidateHasCategoryRole});
-    }
 }
 
 } // namespace smartmate::viewmodel

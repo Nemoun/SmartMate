@@ -4,6 +4,7 @@
 #include "view/widgets/task/TaskCategoryDialog.h"
 #include "view/widgets/task/TaskCreationPredecessorDialog.h"
 #include "view/widgets/task/TaskDependencyDialog.h"
+#include "view/widgets/task/TaskDetailsDialog.h"
 #include "view/widgets/task/TaskEditorDialog.h"
 #include "view/widgets/task/TaskItemDelegate.h"
 #include "view/widgets/theme/WidgetTheme.h"
@@ -19,6 +20,8 @@
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QFrame>
+#include <QFont>
 #include <QLabel>
 #include <QImage>
 #include <QLineEdit>
@@ -181,26 +184,50 @@ class FakeDetails final : public viewmodel::TaskDetailsContract {
 public:
     FakeDetails() : TaskDetailsContract(nullptr) {}
     QString selectedTaskId() const override { return id; }
-    QString selectedTitle() const override { return id.isEmpty() ? QString{} : QStringLiteral("契约任务"); }
-    QString selectedDescription() const override { return QStringLiteral("描述"); }
-    QString selectedStatusText() const override { return QStringLiteral("待办"); }
-    QString selectedPriorityText() const override { return QStringLiteral("高"); }
-    QString selectedDeadlineText() const override { return {}; }
-    int selectedEstimatedMinutes() const noexcept override { return 30; }
-    QString selectedCreatedAtText() const override { return QStringLiteral("2026-01-01 10:00"); }
-    QString selectedUpdatedAtText() const override { return QStringLiteral("2026-01-01 10:00"); }
-    QString selectedReasonText() const override { return QStringLiteral("高优先"); }
-    QString selectedBlockingReasonText() const override { return {}; }
-    int selectedPredecessorCount() const noexcept override { return 0; }
-    int selectedUnlockCount() const noexcept override { return 0; }
-    bool selectedCanEditTask() const noexcept override { return true; }
-    bool selectedCanEditDependencies() const noexcept override { return true; }
-    QString selectedCategoryName() const override { return {}; }
-    QString selectedCategoryAccent() const override { return QStringLiteral("#94a3b8"); }
-    bool selectedHasCategory() const noexcept override { return false; }
+    QString selectedTitle() const override { return id.isEmpty() ? QString{} : title; }
+    QString selectedDescription() const override { return description; }
+    QString selectedStatusText() const override { return statusText; }
+    viewmodel::TaskStatusVisual selectedStatusVisual() const noexcept override { return statusVisual; }
+    QString selectedPriorityText() const override { return priorityText; }
+    viewmodel::TaskPriorityVisual selectedPriorityVisual() const noexcept override { return priorityVisual; }
+    QString selectedDeadlineText() const override { return deadline; }
+    int selectedEstimatedMinutes() const noexcept override { return estimatedMinutes; }
+    QString selectedCreatedAtText() const override { return createdAt; }
+    QString selectedUpdatedAtText() const override { return updatedAt; }
+    QString selectedReasonText() const override { return reason; }
+    QString selectedBlockingReasonText() const override { return blockingReason; }
+    int selectedPredecessorCount() const noexcept override { return predecessorCount; }
+    int selectedUnlockCount() const noexcept override { return unlockCount; }
+    bool selectedCanEditTask() const noexcept override { return canEditTask; }
+    bool selectedCanEditDependencies() const noexcept override { return canEditDependencies; }
+    QString selectedCategoryName() const override { return categoryName; }
+    QString selectedCategoryAccent() const override { return categoryAccent; }
+    bool selectedHasCategory() const noexcept override { return hasCategory; }
+    bool selectedOverdue() const noexcept override { return overdue; }
     bool selectTask(const QString &value) override { ++selectCalls; id = value; emit selectionChanged(); return !id.isEmpty(); }
-    void clearSelection() override { id.clear(); emit selectionChanged(); }
-    QString id; int selectCalls{0};
+    void clearSelection() override { ++clearCalls; id.clear(); emit selectionChanged(); }
+    void pushProjection() { emit selectionChanged(); }
+    QString id;
+    QString title{QStringLiteral("契约任务")};
+    QString description{QStringLiteral("描述")};
+    QString statusText{QStringLiteral("待办")};
+    QString priorityText{QStringLiteral("高")};
+    QString deadline;
+    QString createdAt{QStringLiteral("2026-01-01 10:00")};
+    QString updatedAt{QStringLiteral("2026-01-01 10:00")};
+    QString reason{QStringLiteral("高优先")};
+    QString blockingReason;
+    QString categoryName;
+    QString categoryAccent{QStringLiteral("#94a3b8")};
+    int estimatedMinutes{30};
+    int predecessorCount{0};
+    int unlockCount{0};
+    int selectCalls{0};
+    int clearCalls{0};
+    viewmodel::TaskStatusVisual statusVisual{viewmodel::TaskStatusVisual::Todo};
+    viewmodel::TaskPriorityVisual priorityVisual{viewmodel::TaskPriorityVisual::High};
+    bool overdue{false}, hasCategory{false};
+    bool canEditTask{true}, canEditDependencies{true};
 };
 
 class FakeEditor final : public viewmodel::TaskEditorContract {
@@ -374,6 +401,7 @@ private slots:
     void themedHierarchyAndResponsiveEditorRemainStable();
     void pickerPresentationAndResponsiveLayoutRemainTyped();
     void taskCardRendersSemanticColorsAndTimeProjection();
+    void detailsDialogUsesThemedResponsiveVisualHierarchy();
 };
 
 void TaskWidgetsTest::initialBindingAndUserCommandsUseContracts()
@@ -1022,6 +1050,16 @@ void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
                                   categories, dependencies}};
     const view::widgets::WidgetTheme theme =
         view::widgets::WidgetTheme::fromAccentIndex(0);
+    QCOMPARE(theme.statusColor(viewmodel::TaskStatusVisual::InProgress),
+             theme.inProgress);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Low),
+             theme.textSecondary);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Normal),
+             theme.todo);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::High),
+             theme.warning);
+    QCOMPARE(theme.priorityColor(viewmodel::TaskPriorityVisual::Urgent),
+             theme.danger);
     page.setPalette(theme.palette());
     page.setStyleSheet(theme.styleSheet());
     page.resize(900, 650);
@@ -1061,7 +1099,8 @@ void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
         tasks.taskStatus = status;
         tasks.blocked = false;
         const QImage image = render();
-        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(status));
+        QCOMPARE(image.pixelColor(4, 69), theme.statusColor(
+            static_cast<viewmodel::TaskStatusVisual>(status)));
     }
     tasks.blocked = true;
     const QImage blockedImage = render();
@@ -1083,6 +1122,133 @@ void TaskWidgetsTest::taskCardRendersSemanticColorsAndTimeProjection()
     const QImage withEstimate = render();
     QVERIFY(withoutEstimate.copy(QRect{60, 68, 380, 22})
             != withEstimate.copy(QRect{60, 68, 380, 22}));
+}
+
+void TaskWidgetsTest::detailsDialogUsesThemedResponsiveVisualHierarchy()
+{
+    FakeDetails details;
+    details.description = QStringLiteral(
+        "这是一段较长的任务说明，用于验证详情内容根据文字自然增高，"
+        "并在窄窗口与较大字号下保持完整、可读且不会与时间信息重叠。");
+    details.deadline = QStringLiteral("2028-02-29 23:45");
+    details.estimatedMinutes = 90;
+    details.predecessorCount = 3;
+    details.unlockCount = 2;
+    details.hasCategory = true;
+    details.categoryName = QStringLiteral("学习");
+    details.categoryAccent = QStringLiteral("#7c3aed");
+    details.overdue = true;
+    details.blockingReason = QStringLiteral("等待“准备材料”完成或取消");
+
+    view::widgets::TaskDetailsDialog dialog{details};
+    const auto greenTheme = view::widgets::WidgetTheme::fromAccentIndex(0);
+    dialog.setPalette(greenTheme.palette());
+    dialog.setStyleSheet(greenTheme.styleSheet());
+    dialog.resize(640, 620);
+    QVERIFY(dialog.openTask(QString::fromLatin1(taskId)));
+    QTRY_VERIFY(dialog.isVisible());
+
+    auto *header = dialog.findChild<QFrame *>(QStringLiteral("taskDetailsHeader"));
+    auto *descriptionSection = dialog.findChild<QFrame *>(
+        QStringLiteral("taskDetailsDescriptionSection"));
+    auto *scheduleSection = dialog.findChild<QFrame *>(
+        QStringLiteral("taskDetailsScheduleSection"));
+    auto *insightSection = dialog.findChild<QFrame *>(
+        QStringLiteral("taskDetailsInsightSection"));
+    auto *footer = dialog.findChild<QFrame *>(QStringLiteral("taskDetailsFooter"));
+    QVERIFY(header && descriptionSection && scheduleSection && insightSection && footer);
+    auto *scroll = dialog.findChild<QScrollArea *>(
+        QStringLiteral("taskDetailsScrollView"));
+    QVERIFY(scroll);
+    QCOMPARE(scroll->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+    QCOMPARE(dialog.findChildren<QFrame *>(
+                 QStringLiteral("taskDetailsMetadataItem")).size(), 4);
+    QCOMPARE(dialog.findChildren<QFrame *>(
+                 QStringLiteral("taskDetailsMetric")).size(), 2);
+
+    auto *statusBadge = dialog.findChild<QLabel *>(
+        QStringLiteral("taskDetailsStatusBadge"));
+    auto *priorityBadge = dialog.findChild<QLabel *>(
+        QStringLiteral("taskDetailsPriorityBadge"));
+    auto *categoryBadge = dialog.findChild<QLabel *>(
+        QStringLiteral("taskDetailsCategoryBadge"));
+    auto *overdueBadge = dialog.findChild<QLabel *>(
+        QStringLiteral("taskDetailsOverdueBadge"));
+    QVERIFY(statusBadge && priorityBadge && categoryBadge && overdueBadge);
+    QVERIFY(statusBadge->styleSheet().contains(
+        greenTheme.statusColor(viewmodel::TaskStatusVisual::Todo).name()));
+    QVERIFY(priorityBadge->styleSheet().contains(
+        greenTheme.priorityColor(viewmodel::TaskPriorityVisual::High).name()));
+    QVERIFY(categoryBadge->styleSheet().contains(QStringLiteral("#7c3aed")));
+    QVERIFY(overdueBadge->isVisible());
+    QVERIFY(overdueBadge->styleSheet().contains(greenTheme.danger.name()));
+
+    auto *blockingBlock = dialog.findChild<QFrame *>(
+        QStringLiteral("taskDetailsBlockingBlock"));
+    auto *recommendationBlock = dialog.findChild<QFrame *>(
+        QStringLiteral("taskDetailsRecommendationBlock"));
+    QVERIFY(blockingBlock->isVisible());
+    QVERIFY(!recommendationBlock->isVisible());
+    QVERIFY(blockingBlock->styleSheet().contains(greenTheme.warning.name()));
+    details.blockingReason.clear();
+    details.pushProjection();
+    QVERIFY(!blockingBlock->isVisible());
+    QVERIFY(recommendationBlock->isVisible());
+
+    for (int value = 0; value <= 4; ++value) {
+        details.statusVisual = static_cast<viewmodel::TaskStatusVisual>(value);
+        details.pushProjection();
+        QVERIFY(statusBadge->styleSheet().contains(
+            greenTheme.statusColor(details.statusVisual).name()));
+    }
+    for (int value = 0; value <= 3; ++value) {
+        details.priorityVisual = static_cast<viewmodel::TaskPriorityVisual>(value);
+        details.pushProjection();
+        QVERIFY(priorityBadge->styleSheet().contains(
+            greenTheme.priorityColor(details.priorityVisual).name()));
+    }
+
+    auto fields = dialog.findChildren<QFrame *>(
+        QStringLiteral("taskDetailsMetadataItem"));
+    QCoreApplication::processEvents();
+    QCOMPARE(fields.at(0)->geometry().top(), fields.at(1)->geometry().top());
+    QCOMPARE(fields.at(2)->geometry().top(), fields.at(3)->geometry().top());
+    QFont enlarged = dialog.font();
+    enlarged.setPointSizeF(enlarged.pointSizeF() * 1.25);
+    dialog.setFont(enlarged);
+    dialog.resize(480, 500);
+    QCoreApplication::processEvents();
+    QVERIFY(fields.at(1)->geometry().top() > fields.at(0)->geometry().top());
+    QVERIFY(fields.at(2)->geometry().top() > fields.at(1)->geometry().top());
+    QVERIFY(fields.at(3)->geometry().top() > fields.at(2)->geometry().top());
+    QVERIFY(descriptionSection->geometry().bottom()
+            < scheduleSection->geometry().top());
+    QVERIFY(scheduleSection->geometry().bottom() < insightSection->geometry().top());
+
+    const auto blueTheme = view::widgets::WidgetTheme::fromAccentIndex(1);
+    details.statusVisual = viewmodel::TaskStatusVisual::InProgress;
+    dialog.setPalette(blueTheme.palette());
+    dialog.setStyleSheet(blueTheme.styleSheet());
+    details.pushProjection();
+    QCoreApplication::processEvents();
+    QVERIFY(statusBadge->styleSheet().contains(blueTheme.inProgress.name()));
+
+    QSignalSpy editSpy(&dialog, &view::widgets::TaskDetailsDialog::editRequested);
+    QTest::mouseClick(dialog.findChild<QPushButton *>(
+                          QStringLiteral("editSelectedTaskButton")),
+                      Qt::LeftButton);
+    QCOMPARE(editSpy.count(), 1);
+    QCOMPARE(editSpy.constFirst().constFirst().toString(),
+             QString::fromLatin1(taskId));
+    QCOMPARE(details.clearCalls, 1);
+
+    QVERIFY(dialog.openTask(QString::fromLatin1(taskId)));
+    QTRY_VERIFY(dialog.isVisible());
+    QTest::mouseClick(dialog.findChild<QPushButton *>(
+                          QStringLiteral("closeTaskDetailsButton")),
+                      Qt::LeftButton);
+    QCOMPARE(details.clearCalls, 2);
+    QCOMPARE(editSpy.count(), 1);
 }
 
 QTEST_MAIN(TaskWidgetsTest)

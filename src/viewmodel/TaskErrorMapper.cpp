@@ -1,9 +1,12 @@
 #include "TaskErrorMapper.h"
 
+#include "domain/TaskConstraints.h"
+
 namespace smartmate::viewmodel {
 
 QString taskErrorMessage(const model::TaskError error)
 {
+    // ViewModel 只翻译稳定错误枚举，不解析 Repository 的 detail 技术文本。
     using enum model::TaskError;
 
     switch (error) {
@@ -18,7 +21,9 @@ QString taskErrorMessage(const model::TaskError error)
     case InvalidDeadline:
         return QStringLiteral("截止时间无效。");
     case InvalidEstimate:
-        return QStringLiteral("预计用时必须为 1 至 525600 分钟。");
+        return QStringLiteral("预计用时必须为 %1 至 %2 分钟。")
+            .arg(model::TaskConstraints::minimumEstimatedMinutes)
+            .arg(model::TaskConstraints::maximumEstimatedMinutes);
     case InvalidPriority:
         return QStringLiteral("任务优先级无效。");
     case InvalidStatus:

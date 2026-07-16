@@ -3,8 +3,10 @@ add_library(smartmate_model STATIC
     domain/AppearanceSettings.cpp
     domain/Task.h
     domain/Task.cpp
+    domain/TaskActivityEvent.h
     domain/TaskCategory.h
     domain/TaskCategory.cpp
+    domain/TaskCategoryConstraints.h
     domain/TaskCommandAvailability.h
     domain/TaskConstraints.h
     domain/TaskCreationRequest.h
@@ -14,6 +16,7 @@ add_library(smartmate_model STATIC
     domain/TaskStateMachine.h
     domain/TaskStateMachine.cpp
     domain/TaskTypes.h
+    domain/UnicodeText.h
     dependencies/TaskDependencyGraph.h
     dependencies/TaskDependencyGraph.cpp
     planner/TaskOrderingPolicy.h
@@ -22,9 +25,11 @@ add_library(smartmate_model STATIC
     planner/TaskDeadlinePolicy.cpp
     planner/TaskCommandPolicy.h
     planner/TaskCommandPolicy.cpp
+    statistics/StatisticsTypes.h
     repositories/RepositoryException.h
     repositories/IAppearanceSettingsRepository.h
-    repositories/ITaskBatchTransitionRepository.h
+    repositories/ITaskActivityRepository.h
+    repositories/ITaskTransitionRepository.h
     repositories/ITaskCreationRepository.h
     repositories/ITaskDeletionRepository.h
     repositories/ITaskDependencyRepository.h
@@ -32,8 +37,17 @@ add_library(smartmate_model STATIC
     repositories/ITaskCategoryRepository.h
     services/TaskService.h
     services/TaskService.cpp
-    services/TaskServiceSupport.h
+    services/TaskServiceQueries.cpp
+    services/TaskServiceDependencyCommands.cpp
+    services/TaskServiceDraftCommands.cpp
+    services/TaskServiceTransitionCommands.cpp
+    services/internal/TaskServiceResultSupport.h
+    services/internal/TaskServiceResultSupport.cpp
+    services/internal/TaskServiceSnapshotSupport.h
+    services/internal/TaskServiceSnapshotSupport.cpp
     services/TaskResult.h
+    services/StatisticsService.h
+    services/StatisticsService.cpp
     services/TaskCategoryResult.h
     services/TaskCategoryService.h
     services/TaskCategoryService.cpp

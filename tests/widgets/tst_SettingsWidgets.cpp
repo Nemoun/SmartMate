@@ -124,6 +124,7 @@ private slots:
     void themeAndUiNotificationArePresentedByMainWindow();
     void previewRemainsReadableAtNarrowWidthAndLargeFont();
     void fontScaleOptionsApplyDistinctNonAccumulatingSizes();
+    void accentSwitchPreservesAppliedChildFont();
 };
 
 void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
@@ -140,19 +141,27 @@ void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
 
     auto *pages = window.findChild<QStackedWidget *>();
     QVERIFY(pages != nullptr);
+    QCOMPARE(pages->count(), 4);
     QCOMPARE(pages->currentIndex(), 0);
+    auto *statisticsNavigation =
+        requiredChild<QPushButton>(window, "statisticsNavigationButton");
+    QCOMPARE(statisticsNavigation->accessibleName(), QStringLiteral("统计"));
+    QTest::mouseClick(statisticsNavigation, Qt::LeftButton);
+    QCOMPARE(pages->currentIndex(), 2);
     QTest::mouseClick(requiredChild<QPushButton>(window, "settingsNavigationButton"),
                       Qt::LeftButton);
-    QCOMPARE(pages->currentIndex(), 2);
+    QCOMPARE(pages->currentIndex(), 3);
 
     window.show();
     window.resize(900, 620);
     QCoreApplication::processEvents();
     QCOMPARE(requiredChild<QFrame>(window, "navigationPanel")->width(), 64);
+    QCOMPARE(statisticsNavigation->toolTip(), QStringLiteral("统计"));
     window.resize(1180, 760);
     QCoreApplication::processEvents();
     QCOMPARE(requiredChild<QFrame>(window, "navigationPanel")->width(), 208);
-    QCOMPARE(pages->currentIndex(), 2);
+    QCOMPARE(statisticsNavigation->toolTip(), QString{});
+    QCOMPARE(pages->currentIndex(), 3);
     QVERIFY(requiredChild<QPushButton>(window, "settingsNavigationButton")->isChecked());
 }
 
@@ -264,6 +273,34 @@ void SettingsWidgetsTest::fontScaleOptionsApplyDistinctNonAccumulatingSizes()
     settings.replaceProjection(0, 0, 1);
     QCOMPARE(window.font().pointSizeF(), baseline * 1.10);
     QCOMPARE(settings.scaleSetCount, 0);
+}
+
+void SettingsWidgetsTest::accentSwitchPreservesAppliedChildFont()
+{
+    FakeAppearanceSettingsContract settings;
+    settings.familyIndex = 2;
+    settings.scaleIndex = 2;
+    MainWindow window{settings};
+    window.show();
+
+    QTest::mouseClick(requiredChild<QPushButton>(window, "settingsNavigationButton"),
+                      Qt::LeftButton);
+    auto *largeScale = requiredChild<QPushButton>(window, "fontScaleButton_2");
+    auto *reset = requiredChild<QPushButton>(window, "resetAppearanceButton");
+    auto *blueAccent = requiredChild<QPushButton>(window, "accentThemeButton_1");
+    QVERIFY(largeScale->isChecked());
+
+    QTest::mouseClick(blueAccent, Qt::LeftButton);
+    QCOMPARE(settings.accentIndex, 1);
+    QCOMPARE(settings.familyIndex, 2);
+    QCOMPARE(settings.scaleIndex, 2);
+    QVERIFY(largeScale->isChecked());
+
+    const QFont expected = smartmate::view::widgets::appearanceFont(
+        QApplication::font(), settings);
+    QCOMPARE(window.font(), expected);
+    QCOMPARE(reset->font().family(), expected.family());
+    QCOMPARE(reset->font().pointSizeF(), expected.pointSizeF());
 }
 
 QTEST_MAIN(SettingsWidgetsTest)
