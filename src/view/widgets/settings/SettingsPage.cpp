@@ -2,15 +2,18 @@
 
 #include "view/widgets/binding/WidgetBinding.h"
 #include "viewmodel/contracts/AppearanceSettingsContract.h"
+#include "viewmodel/contracts/DesktopPetSettingsContract.h"
 
 #include <QButtonGroup>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QFrame>
 #include <QLabel>
 #include <QLayout>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSizePolicy>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 namespace smartmate::view::widgets {
@@ -23,6 +26,8 @@ QLabel *createLabel(const QString &text, const char *objectName = nullptr)
         label->setObjectName(QString::fromLatin1(objectName));
     }
     label->setWordWrap(true);
+    // 自动换行标签必须向父布局报告真实高度，避免窄宽度或大字号时覆盖后续控件。
+    label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     return label;
 }
 
@@ -44,11 +49,29 @@ QPushButton *addIndexedButton(QButtonGroup &group,
 
 SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
                            QWidget *parent)
+    : SettingsPage(settings, nullptr, parent)
+{
+}
+
+SettingsPage::SettingsPage(
+    viewmodel::AppearanceSettingsContract &settings,
+    viewmodel::DesktopPetSettingsContract &desktopPetSettings,
+    QWidget *parent)
+    : SettingsPage(settings, &desktopPetSettings, parent)
+{
+}
+
+SettingsPage::SettingsPage(
+    viewmodel::AppearanceSettingsContract &settings,
+    viewmodel::DesktopPetSettingsContract *desktopPetSettings,
+    QWidget *parent)
     : QWidget(parent)
     , m_settings(settings)
+    , m_desktopPetSettings(desktopPetSettings)
     , m_accentButtons(new QButtonGroup(this))
     , m_fontFamilyComboBox(new QComboBox(this))
     , m_fontScaleButtons(new QButtonGroup(this))
+    , m_desktopPetCheckBox(nullptr)
 {
     setObjectName(QStringLiteral("settingsPage"));
     m_accentButtons->setExclusive(true);
@@ -80,7 +103,7 @@ SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(20, 20, 20, 20);
     cardLayout->setSpacing(12);
-    contentLayout->addWidget(card, 0, Qt::AlignLeft);
+    contentLayout->addWidget(card);
 
     cardLayout->addWidget(createLabel(tr("外观"), "sectionTitle"));
     cardLayout->addWidget(createLabel(tr("强调颜色")));
@@ -139,6 +162,39 @@ SettingsPage::SettingsPage(viewmodel::AppearanceSettingsContract &settings,
     resetButton->setObjectName(QStringLiteral("resetAppearanceButton"));
     resetLayout->addWidget(resetButton);
     cardLayout->addLayout(resetLayout);
+
+    if (m_desktopPetSettings != nullptr) {
+        auto *petCard = new QFrame;
+        petCard->setObjectName(QStringLiteral("desktopPetSettingsCard"));
+        petCard->setMaximumWidth(760);
+        petCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        auto *petLayout = new QVBoxLayout(petCard);
+        petLayout->setContentsMargins(20, 20, 20, 20);
+        petLayout->setSpacing(10);
+        petLayout->setSizeConstraint(QLayout::SetMinimumSize);
+        petLayout->addWidget(createLabel(tr("桌宠"), "sectionTitle"));
+        petLayout->addWidget(createLabel(
+            tr("在普通窗口显示趴卧的三花猫，最小化后显示可拖动的悬浮桌宠。"),
+            "secondaryText"));
+        m_desktopPetCheckBox = new QCheckBox{tr("启用三花猫桌宠"), petCard};
+        m_desktopPetCheckBox->setObjectName(
+            QStringLiteral("desktopPetEnabledCheckBox"));
+        petLayout->addWidget(m_desktopPetCheckBox);
+        contentLayout->addWidget(petCard);
+
+        const auto syncPetEnabled = [this] {
+            const QSignalBlocker blocker{m_desktopPetCheckBox};
+            m_desktopPetCheckBox->setChecked(m_desktopPetSettings->enabled());
+        };
+        connect(m_desktopPetSettings,
+                &viewmodel::DesktopPetSettingsContract::enabledChanged,
+                this, syncPetEnabled);
+        connect(m_desktopPetCheckBox, &QCheckBox::toggled, this,
+                [this](const bool enabled) {
+                    m_desktopPetSettings->setEnabled(enabled);
+                });
+        syncPetEnabled();
+    }
     contentLayout->addStretch();
 
     // 单向绑定会先读取当前 getter，再监听 appearanceChanged；页面打开时不会等待下一次通知。

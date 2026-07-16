@@ -1,9 +1,11 @@
 #include "view/widgets/MainWindow.h"
 #include "view/widgets/settings/SettingsPage.h"
 #include "view/widgets/theme/WidgetTheme.h"
+#include "viewmodel/contracts/DesktopPetSettingsContract.h"
 
 #include <QApplication>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QFrame>
 #include <QLabel>
 #include <QPushButton>
@@ -18,6 +20,7 @@ using smartmate::view::widgets::MainWindowDependencies;
 using smartmate::view::widgets::SettingsPage;
 using smartmate::view::widgets::WidgetTheme;
 using smartmate::viewmodel::AppearanceSettingsContract;
+using smartmate::viewmodel::DesktopPetSettingsContract;
 
 namespace {
 
@@ -104,6 +107,25 @@ public:
     int resetCount{0};
 };
 
+class FakeDesktopPetSettingsContract final : public DesktopPetSettingsContract {
+public:
+    bool enabled() const noexcept override { return enabledValue; }
+    bool hasFloatingPlacement() const noexcept override { return false; }
+    QString floatingScreenName() const override { return {}; }
+    qreal floatingXRatio() const noexcept override { return 0.0; }
+    qreal floatingYRatio() const noexcept override { return 0.0; }
+    void setEnabled(const bool value) override
+    {
+        enabledValue = value;
+        ++setEnabledCount;
+        emit enabledChanged();
+    }
+    void saveFloatingPlacement(const QString &, qreal, qreal) override {}
+
+    bool enabledValue{false};
+    int setEnabledCount{0};
+};
+
 template<typename Widget>
 Widget *requiredChild(QObject &parent, const char *objectName)
 {
@@ -125,6 +147,8 @@ private slots:
     void previewRemainsReadableAtNarrowWidthAndLargeFont();
     void fontScaleOptionsApplyDistinctNonAccumulatingSizes();
     void accentSwitchPreservesAppliedChildFont();
+    void desktopPetToggleUsesContractWithoutWriteBack();
+    void desktopPetCardRemainsReadableAtNarrowWidthAndLargeFont();
 };
 
 void SettingsWidgetsTest::initialStateAndNavigationAreSynchronized()
@@ -301,6 +325,59 @@ void SettingsWidgetsTest::accentSwitchPreservesAppliedChildFont()
     QCOMPARE(window.font(), expected);
     QCOMPARE(reset->font().family(), expected.family());
     QCOMPARE(reset->font().pointSizeF(), expected.pointSizeF());
+}
+
+void SettingsWidgetsTest::desktopPetToggleUsesContractWithoutWriteBack()
+{
+    FakeAppearanceSettingsContract appearance;
+    FakeDesktopPetSettingsContract pet;
+    pet.enabledValue = true;
+    SettingsPage page{appearance, pet};
+    auto *toggle = requiredChild<QCheckBox>(page, "desktopPetEnabledCheckBox");
+    QVERIFY(toggle->isChecked());
+    QCOMPARE(pet.setEnabledCount, 0);
+
+    toggle->click();
+    QVERIFY(!pet.enabledValue);
+    QCOMPARE(pet.setEnabledCount, 1);
+
+    pet.enabledValue = true;
+    emit pet.enabledChanged();
+    QVERIFY(toggle->isChecked());
+    QCOMPARE(pet.setEnabledCount, 1);
+}
+
+void SettingsWidgetsTest::desktopPetCardRemainsReadableAtNarrowWidthAndLargeFont()
+{
+    FakeAppearanceSettingsContract appearance;
+    FakeDesktopPetSettingsContract pet;
+    SettingsPage page{appearance, pet};
+    QFont enlarged = page.font();
+    enlarged.setPointSizeF(enlarged.pointSizeF() * 1.25);
+    page.setFont(enlarged);
+    page.resize(350, 620);
+    page.show();
+    QCoreApplication::processEvents();
+
+    auto *card = requiredChild<QFrame>(page, "desktopPetSettingsCard");
+    auto *toggle = requiredChild<QCheckBox>(page, "desktopPetEnabledCheckBox");
+    QLabel *description = nullptr;
+    const auto secondaryLabels = card->findChildren<QLabel *>(
+        QStringLiteral("secondaryText"));
+    for (QLabel *label : secondaryLabels) {
+        if (label->text().contains(QStringLiteral("普通窗口"))) {
+            description = label;
+            break;
+        }
+    }
+    QVERIFY(description != nullptr);
+    const QRect descriptionRect{description->mapTo(card, QPoint{}),
+                                description->size()};
+    const QRect toggleRect{toggle->mapTo(card, QPoint{}), toggle->size()};
+    QVERIFY(card->width() >= page.width() - 110);
+    QVERIFY(card->rect().contains(descriptionRect));
+    QVERIFY(card->rect().contains(toggleRect));
+    QVERIFY(descriptionRect.bottom() < toggleRect.top());
 }
 
 QTEST_MAIN(SettingsWidgetsTest)
