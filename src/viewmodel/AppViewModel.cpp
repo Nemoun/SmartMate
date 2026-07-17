@@ -1,5 +1,7 @@
 #include "AppViewModel.h"
 
+#include "services/FocusService.h"
+
 namespace smartmate::viewmodel {
 
 AppViewModel::AppViewModel(model::TaskService &taskService, QObject *parent)
@@ -90,6 +92,26 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
 }
 
 AppViewModel::AppViewModel(model::TaskService &taskService,
+                           model::FocusService &focusService,
+                           QObject *parent)
+    : QObject(parent)
+    , m_taskPlanSource(taskService)
+    , m_taskCategorySource()
+    , m_taskCategories(nullptr, m_taskPlanSource, m_taskCategorySource)
+    , m_taskList(taskService, m_taskPlanSource, m_taskCategorySource)
+    , m_taskFocus(m_taskPlanSource, m_taskCategorySource)
+    , m_taskDetails(m_taskPlanSource, m_taskCategorySource)
+    , m_taskEditor(taskService, m_taskCategorySource)
+    , m_taskDependencies(taskService, m_taskCategorySource)
+    , m_taskGraph(taskService, m_taskCategorySource)
+    , m_focus(std::make_unique<FocusViewModel>(focusService))
+    , m_appearanceSettings()
+{
+    connect(&focusService, &model::FocusService::focusChanged,
+            &m_taskPlanSource, &TaskPlanProjectionSource::refresh);
+}
+
+AppViewModel::AppViewModel(model::TaskService &taskService,
                            model::TaskCategoryService &categoryService,
                            model::StatisticsService &statisticsService,
                            model::AppearanceSettingsService &appearanceService,
@@ -108,6 +130,31 @@ AppViewModel::AppViewModel(model::TaskService &taskService,
                                                         taskService))
     , m_appearanceSettings(appearanceService)
 {
+}
+
+AppViewModel::AppViewModel(model::TaskService &taskService,
+                           model::TaskCategoryService &categoryService,
+                           model::StatisticsService &statisticsService,
+                           model::FocusService &focusService,
+                           model::AppearanceSettingsService &appearanceService,
+                           QObject *parent)
+    : QObject(parent)
+    , m_taskPlanSource(taskService, &categoryService)
+    , m_taskCategorySource(&categoryService)
+    , m_taskCategories(&categoryService, m_taskPlanSource, m_taskCategorySource)
+    , m_taskList(taskService, m_taskPlanSource, m_taskCategorySource)
+    , m_taskFocus(m_taskPlanSource, m_taskCategorySource)
+    , m_taskDetails(m_taskPlanSource, m_taskCategorySource)
+    , m_taskEditor(taskService, m_taskCategorySource)
+    , m_taskDependencies(taskService, m_taskCategorySource)
+    , m_taskGraph(taskService, m_taskCategorySource)
+    , m_statistics(std::make_unique<StatisticsViewModel>(statisticsService,
+                                                        taskService))
+    , m_focus(std::make_unique<FocusViewModel>(focusService))
+    , m_appearanceSettings(appearanceService)
+{
+    connect(&focusService, &model::FocusService::focusChanged,
+            &m_taskPlanSource, &TaskPlanProjectionSource::refresh);
 }
 
 TaskListViewModel *AppViewModel::taskList() noexcept
@@ -148,6 +195,11 @@ TaskCategoryViewModel *AppViewModel::taskCategories() noexcept
 StatisticsViewModel *AppViewModel::statistics() noexcept
 {
     return m_statistics.get();
+}
+
+FocusViewModel *AppViewModel::focus() noexcept
+{
+    return m_focus.get();
 }
 
 AppearanceSettingsViewModel *AppViewModel::appearanceSettings() noexcept

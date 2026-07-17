@@ -71,6 +71,8 @@ class FocusServiceTest final : public QObject {
 
 private slots:
     void requiresInitializationAndInProgressTask();
+    void snapshotProvidesStartCandidateAndAuthoritativeAvailability();
+    void snapshotRejectsMultipleInProgressTasks();
     void snapshotsTaskCategoryAndStartEvent();
     void pausesShortIntervalAndRequiresOneSecondToComplete();
     void sumsMultipleIntervalsAndCompletesPausedSession();
@@ -98,6 +100,77 @@ void FocusServiceTest::requiresInitializationAndInProgressTask()
              FocusError::TaskNotFound);
     QCOMPARE(service.startFocus(todoId).error,
              FocusError::TaskNotInProgress);
+}
+
+void FocusServiceTest::snapshotProvidesStartCandidateAndAuthoritativeAvailability()
+{
+    const TaskId taskId = QUuid::createUuid();
+    const TaskCategory category{QUuid::createUuid(),
+                                QStringLiteral("开发"),
+                                TaskCategoryColor::Teal,
+                                kBase,
+                                kBase};
+    FakeTaskRepository tasks{{makeTask(taskId, TaskStatus::InProgress,
+                                       category.id)}};
+    FakeTaskCategoryRepository categories{{category}};
+    FakeTaskActivityRepository activities;
+    FakeFocusSessionRepository focuses;
+    QDateTime now = kBase;
+    FocusService service{tasks, categories, activities, focuses,
+                         [&now] { return now; }, 1000};
+    QVERIFY(service.initialize().ok());
+
+    const auto ready = service.snapshot(0);
+    QVERIFY(ready.ok());
+    QVERIFY(ready.value->startCandidate.has_value());
+    QCOMPARE(ready.value->startCandidate->taskId, taskId);
+    QCOMPARE(ready.value->startCandidate->taskTitle,
+             QStringLiteral("编写专注服务"));
+    QCOMPARE(ready.value->startCandidate->estimatedMinutes,
+             std::optional{45});
+    QCOMPARE(ready.value->startCandidate->categoryName,
+             std::optional{category.name});
+    QVERIFY(ready.value->availability.canStart);
+    QVERIFY(!ready.value->availability.canPause);
+    QVERIFY(!ready.value->availability.canComplete);
+
+    const FocusSessionId sessionId =
+        service.startFocus(taskId).value->session.sessionId;
+    now = kBase.addMSecs(500);
+    const auto shortRunning = service.snapshot(0);
+    QVERIFY(shortRunning.ok());
+    QVERIFY(!shortRunning.value->startCandidate.has_value());
+    QVERIFY(shortRunning.value->availability.canPause);
+    QVERIFY(shortRunning.value->availability.canAbandon);
+    QVERIFY(!shortRunning.value->availability.canComplete);
+
+    now = kBase.addMSecs(1'500);
+    const auto completable = service.snapshot(0);
+    QVERIFY(completable.value->availability.canComplete);
+    QVERIFY(service.pauseFocus(sessionId).ok());
+    const auto paused = service.snapshot(0);
+    QVERIFY(paused.value->availability.canResume);
+    QVERIFY(paused.value->availability.canComplete);
+    QVERIFY(!paused.value->availability.canPause);
+}
+
+void FocusServiceTest::snapshotRejectsMultipleInProgressTasks()
+{
+    const TaskId firstId = QUuid::createUuid();
+    const TaskId secondId = QUuid::createUuid();
+    FakeTaskRepository tasks{{makeTask(firstId, TaskStatus::InProgress),
+                              makeTask(secondId, TaskStatus::InProgress)}};
+    FakeTaskCategoryRepository categories;
+    FakeTaskActivityRepository activities;
+    FakeFocusSessionRepository focuses;
+    QDateTime now = kBase;
+    FocusService service{tasks, categories, activities, focuses,
+                         [&now] { return now; }, 1000};
+    QVERIFY(service.initialize().ok());
+
+    const auto snapshot = service.snapshot();
+    QCOMPARE(snapshot.error, FocusError::StateConflict);
+    QVERIFY(!snapshot.value.has_value());
 }
 
 void FocusServiceTest::snapshotsTaskCategoryAndStartEvent()

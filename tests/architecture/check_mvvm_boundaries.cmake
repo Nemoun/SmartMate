@@ -99,6 +99,14 @@ else()
     endif()
 endif()
 
+# 第三阶段必须建立独立 Focus Contract/ViewModel，且不得把具体实现泄漏给 View。
+set(focus_contract "${ROOT_DIR}/src/viewmodel/contracts/FocusContract.h")
+set(focus_viewmodel "${ROOT_DIR}/src/viewmodel/FocusViewModel.h")
+if(NOT EXISTS "${focus_contract}" OR NOT EXISTS "${focus_viewmodel}")
+    record_violation("${ROOT_DIR}/src/viewmodel"
+        "Focus Contracts and FocusViewModel are required for stage 3")
+endif()
+
 scan_includes("${ROOT_DIR}/src/common" "Common"
     "model/" "domain/" "services/" "repositories/" "persistence/"
     "viewmodel" "contracts/" "view/"
@@ -107,7 +115,7 @@ scan_includes("${ROOT_DIR}/src/common" "Common"
 
 scan_includes("${ROOT_DIR}/src/viewmodel/contracts" "ViewModel Contracts"
     "domain/" "services/" "repositories/" "persistence/"
-    "appearance.*viewmodel" "task.*viewmodel" "appviewmodel"
+    "appearance.*viewmodel" "task.*viewmodel" "focus.*viewmodel" "appviewmodel"
     "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql"
     "qtwidgets" "qwidget" "qdialog" "qgraphics"
     "qtcharts" "qchart" "qbarseries" "qpieseries" "qhorizontalbarseries")
@@ -138,6 +146,7 @@ endforeach()
 scan_includes("${ROOT_DIR}/src/view/widgets" "Qt Widgets View"
     "domain/" "services/" "repositories/" "persistence/"
     "appviewmodel" "appearance.*viewmodel\\.h" "task.*viewmodel\\.h"
+    "focusviewmodel\\.h"
     "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql" "qsettings")
 
 # include 检查之外，再验证 CMake 链接关系，避免通过传递依赖绕过边界。

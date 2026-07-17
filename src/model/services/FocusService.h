@@ -41,7 +41,7 @@ public:
 
     /// 恢复异常 Running 会话并清理不足一秒的遗留活动会话；可重复调用。
     [[nodiscard]] FocusOperationResult initialize();
-    /// 返回活动会话与最近完成记录；limit 非正时历史列表为空。
+    /// 返回开始候选、权威命令资格、活动会话与最近完成记录；limit 非正时历史列表为空。
     [[nodiscard]] FocusSnapshotResult snapshot(int limit = 50) const;
 
     [[nodiscard]] FocusRecordResult startFocus(const TaskId &taskId);

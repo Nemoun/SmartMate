@@ -274,6 +274,23 @@ target_link_libraries(tst_statistics_viewmodel
 )
 add_test(NAME viewmodel.statistics COMMAND tst_statistics_viewmodel)
 
+qt_add_executable(tst_focus_viewmodel
+    viewmodel/tst_FocusViewModel.cpp
+    fakes/FakeFocusSessionRepository.h
+    fakes/FakeTaskActivityRepository.h
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+    fakes/FakeTaskBatchTransitionRepository.h
+    fakes/FakeTaskDeletionRepository.h
+    fakes/FakeTaskCategoryRepository.h
+)
+target_include_directories(tst_focus_viewmodel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_focus_viewmodel
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.focus COMMAND tst_focus_viewmodel)
+
 qt_add_executable(tst_settings_widgets
     widgets/tst_SettingsWidgets.cpp
 )
@@ -444,6 +461,7 @@ set(runtime_tests
     viewmodel.desktop_pet_settings
     viewmodel.contracts
     viewmodel.statistics
+    viewmodel.focus
     view.widgets_settings
     view.widgets_desktop_pet
     view.widgets_tasks

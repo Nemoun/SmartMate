@@ -8,6 +8,7 @@
 #include "TaskListViewModel.h"
 #include "TaskFocusViewModel.h"
 #include "TaskDetailsViewModel.h"
+#include "FocusViewModel.h"
 #include "StatisticsViewModel.h"
 
 #include <QObject>
@@ -19,6 +20,7 @@ class TaskService;
 class AppearanceSettingsService;
 class TaskCategoryService;
 class StatisticsService;
+class FocusService;
 }
 
 namespace smartmate::viewmodel {
@@ -44,8 +46,17 @@ public:
                  model::StatisticsService &statisticsService,
                  QObject *parent = nullptr);
     AppViewModel(model::TaskService &taskService,
+                 model::FocusService &focusService,
+                 QObject *parent = nullptr);
+    AppViewModel(model::TaskService &taskService,
                  model::TaskCategoryService &categoryService,
                  model::StatisticsService &statisticsService,
+                 model::AppearanceSettingsService &appearanceService,
+                 QObject *parent = nullptr);
+    AppViewModel(model::TaskService &taskService,
+                 model::TaskCategoryService &categoryService,
+                 model::StatisticsService &statisticsService,
+                 model::FocusService &focusService,
                  model::AppearanceSettingsService &appearanceService,
                  QObject *parent = nullptr);
 
@@ -59,6 +70,8 @@ public:
     [[nodiscard]] TaskCategoryViewModel *taskCategories() noexcept;
     /// 兼容构造未注入 StatisticsService 时返回空；正式统计构造保证地址稳定且非空。
     [[nodiscard]] StatisticsViewModel *statistics() noexcept;
+    /// 未注入 FocusService 时返回空；下一阶段正式组合根将切换到完整构造。
+    [[nodiscard]] FocusViewModel *focus() noexcept;
     [[nodiscard]] AppearanceSettingsViewModel *appearanceSettings() noexcept;
 
 private:
@@ -74,6 +87,7 @@ private:
     TaskDependencyViewModel m_taskDependencies;
     TaskGraphViewModel m_taskGraph;
     std::unique_ptr<StatisticsViewModel> m_statistics;
+    std::unique_ptr<FocusViewModel> m_focus;
     AppearanceSettingsViewModel m_appearanceSettings;
 };
 

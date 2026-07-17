@@ -1,5 +1,7 @@
 #include "AppearanceSettingsViewModel.h"
 #include "DesktopPetSettingsViewModel.h"
+#include "FocusProjectionModels.h"
+#include "FocusViewModel.h"
 #include "TaskCategoryViewModel.h"
 #include "TaskDependencyViewModel.h"
 #include "TaskEditorViewModel.h"
@@ -22,6 +24,7 @@
 #include "services/TaskService.h"
 #include "viewmodel/contracts/AppearanceSettingsContract.h"
 #include "viewmodel/contracts/DesktopPetSettingsContract.h"
+#include "viewmodel/contracts/FocusContract.h"
 #include "viewmodel/contracts/TaskCategoryContract.h"
 #include "viewmodel/contracts/TaskDependencyContract.h"
 #include "viewmodel/contracts/TaskEditorContract.h"
@@ -44,6 +47,8 @@ using namespace smartmate;
 
 static_assert(std::is_abstract_v<viewmodel::AppearanceSettingsContract>);
 static_assert(std::is_abstract_v<viewmodel::DesktopPetSettingsContract>);
+static_assert(std::is_abstract_v<viewmodel::FocusContract>);
+static_assert(std::is_abstract_v<viewmodel::FocusHistoryContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskCategoryContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskDependencyContract>);
 static_assert(std::is_abstract_v<viewmodel::TaskEditorContract>);
@@ -58,6 +63,8 @@ static_assert(std::is_abstract_v<viewmodel::StatisticsHealthContract>);
 
 static_assert(std::has_virtual_destructor_v<viewmodel::AppearanceSettingsContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::DesktopPetSettingsContract>);
+static_assert(std::has_virtual_destructor_v<viewmodel::FocusContract>);
+static_assert(std::has_virtual_destructor_v<viewmodel::FocusHistoryContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskCategoryContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskDependencyContract>);
 static_assert(std::has_virtual_destructor_v<viewmodel::TaskEditorContract>);
@@ -74,6 +81,10 @@ static_assert(std::is_base_of_v<viewmodel::AppearanceSettingsContract,
                                 viewmodel::AppearanceSettingsViewModel>);
 static_assert(std::is_base_of_v<viewmodel::DesktopPetSettingsContract,
                                 viewmodel::DesktopPetSettingsViewModel>);
+static_assert(std::is_base_of_v<viewmodel::FocusContract,
+                                viewmodel::FocusViewModel>);
+static_assert(std::is_base_of_v<viewmodel::FocusHistoryContract,
+                                viewmodel::FocusHistoryListModel>);
 static_assert(std::is_base_of_v<viewmodel::TaskCategoryContract,
                                 viewmodel::TaskCategoryViewModel>);
 static_assert(std::is_base_of_v<viewmodel::TaskDependencyContract,
@@ -264,6 +275,17 @@ void ViewModelContractsTest::concreteMetaObjectsExposeInheritedQmlApi()
     QVERIFY(hasMetaMethod(statisticsMeta, QByteArrayLiteral("reload")));
     QVERIFY(hasMetaMethod(statisticsMeta,
                           QByteArrayLiteral("notificationRaised")));
+
+    const QMetaObject &focusSessionMeta =
+        viewmodel::FocusViewModel::staticMetaObject;
+    QVERIFY(focusSessionMeta.indexOfProperty("pageState") >= 0);
+    QVERIFY(focusSessionMeta.indexOfProperty("history") >= 0);
+    QVERIFY(focusSessionMeta.indexOfProperty("hasStorageWarning") >= 0);
+    QVERIFY(focusSessionMeta.indexOfEnumerator("PageState") >= 0);
+    QVERIFY(focusSessionMeta.indexOfEnumerator("CategoryColor") >= 0);
+    QVERIFY(hasMetaMethod(focusSessionMeta, QByteArrayLiteral("startFocus")));
+    QVERIFY(hasMetaMethod(focusSessionMeta, QByteArrayLiteral("completeFocus")));
+    QVERIFY(hasMetaMethod(focusSessionMeta, QByteArrayLiteral("reload")));
 }
 
 void ViewModelContractsTest::listImplementationsRespectTheItemModelProtocol()
@@ -279,6 +301,7 @@ void ViewModelContractsTest::listImplementationsRespectTheItemModelProtocol()
                                          fixture.categorySource};
     viewmodel::TaskListViewModel list{fixture.service, fixture.planSource,
                                       fixture.categorySource};
+    viewmodel::FocusHistoryListModel focusHistory;
 
     QAbstractItemModelTester categoryTester{
         &category, QAbstractItemModelTester::FailureReportingMode::QtTest};
@@ -298,6 +321,8 @@ void ViewModelContractsTest::listImplementationsRespectTheItemModelProtocol()
         QAbstractItemModelTester::FailureReportingMode::QtTest};
     QAbstractItemModelTester listTester{
         &list, QAbstractItemModelTester::FailureReportingMode::QtTest};
+    QAbstractItemModelTester focusHistoryTester{
+        &focusHistory, QAbstractItemModelTester::FailureReportingMode::QtTest};
 
     QCOMPARE(category.rowCount(), 0);
     QCOMPARE(dependency.rowCount(), 0);
@@ -310,6 +335,10 @@ void ViewModelContractsTest::listImplementationsRespectTheItemModelProtocol()
                  viewmodel::TaskGraphContract::RelationTaskIdRole),
              QByteArrayLiteral("taskId"));
     QCOMPARE(list.rowCount(), 0);
+    QCOMPARE(focusHistory.rowCount(), 0);
+    QCOMPARE(focusHistory.roleNames().value(
+                 viewmodel::FocusHistoryContract::SessionIdRole),
+             QByteArrayLiteral("sessionId"));
 }
 
 void ViewModelContractsTest::failuresRaiseRepeatableTypedNotifications()

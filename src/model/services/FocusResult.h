@@ -24,6 +24,34 @@ enum class FocusError : int {
     PersistenceFailure,
 };
 
+/// 尚无活动会话时可以开始专注的唯一进行中任务快照。
+///
+/// 类别字段与 FocusSession 一样必须同时存在或同时为空，避免 ViewModel 再查询
+/// Repository 或拼接当前类别事实。
+struct FocusStartCandidate final {
+    TaskId taskId;
+    QString taskTitle;
+    std::optional<int> estimatedMinutes;
+    std::optional<TaskCategoryId> categoryId;
+    std::optional<QString> categoryName;
+    std::optional<TaskCategoryColor> categoryColor;
+
+    friend bool operator==(const FocusStartCandidate &,
+                           const FocusStartCandidate &) = default;
+};
+
+/// 同一 FocusSnapshot 下由 Model 计算的命令资格；ViewModel 只能投影。
+struct FocusCommandAvailability final {
+    bool canStart{false};
+    bool canPause{false};
+    bool canResume{false};
+    bool canComplete{false};
+    bool canAbandon{false};
+
+    friend bool operator==(const FocusCommandAvailability &,
+                           const FocusCommandAvailability &) = default;
+};
+
 /// 一次会话及其原始时间段在查询时刻的 Model 聚合结果。
 struct FocusRecord final {
     FocusSession session;
@@ -36,8 +64,11 @@ struct FocusRecord final {
 
 /// 专注页面未来所需的完整只读快照；最近记录只包含 Completed 会话。
 struct FocusSnapshot final {
+    /// 仅在没有活动会话且恰好存在一个进行中任务时有值。
+    std::optional<FocusStartCandidate> startCandidate;
     std::optional<FocusRecord> activeRecord;
     QList<FocusRecord> recentCompletedRecords;
+    FocusCommandAvailability availability;
 
     friend bool operator==(const FocusSnapshot &, const FocusSnapshot &) = default;
 };

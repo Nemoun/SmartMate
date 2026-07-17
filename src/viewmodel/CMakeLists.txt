@@ -1,6 +1,12 @@
 add_library(smartmate_viewmodel STATIC
     AppViewModel.h
     AppViewModel.cpp
+    FocusViewModel.h
+    FocusViewModel.cpp
+    FocusProjectionModels.h
+    FocusProjectionModels.cpp
+    FocusErrorMapper.h
+    FocusErrorMapper.cpp
     StatisticsViewModel.h
     StatisticsViewModel.cpp
     StatisticsProjectionModels.h

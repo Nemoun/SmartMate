@@ -144,8 +144,53 @@ FocusSnapshotResult FocusService::snapshot(const int limit) const
                 QStringLiteral("Focus clock returned an invalid UTC time."));
         }
         FocusSnapshot result;
+        const QList<Task> tasks = m_taskRepository.findAll();
+        const auto inProgressCount = std::count_if(
+            tasks.cbegin(), tasks.cend(), [](const Task &task) {
+                return task.status() == TaskStatus::InProgress;
+            });
+        if (inProgressCount > 1) {
+            return FocusSnapshotResult::failure(
+                FocusError::StateConflict,
+                QStringLiteral("Multiple in-progress tasks prevent focus selection."));
+        }
         if (const auto active = m_focusRepository.findActiveFocusSession()) {
             result.activeRecord = loadRecord(*active, currentUtc);
+            result.availability.canPause =
+                active->state == FocusSessionState::Running;
+            result.availability.canResume =
+                active->state == FocusSessionState::Paused;
+            result.availability.canComplete =
+                result.activeRecord->focusedMilliseconds
+                >= minimumCompletedDurationMs;
+            result.availability.canAbandon =
+                active->state == FocusSessionState::Running
+                || active->state == FocusSessionState::Paused;
+        } else {
+            const auto candidate = std::find_if(
+                tasks.cbegin(), tasks.cend(), [](const Task &task) {
+                    return task.status() == TaskStatus::InProgress;
+                });
+            if (candidate != tasks.cend()) {
+                FocusStartCandidate projected;
+                projected.taskId = candidate->id();
+                projected.taskTitle = candidate->title();
+                projected.estimatedMinutes = candidate->estimatedMinutes();
+                if (candidate->categoryId().has_value()) {
+                    const auto category = m_categoryRepository.findCategoryById(
+                        *candidate->categoryId());
+                    if (!category.has_value()) {
+                        return FocusSnapshotResult::failure(
+                            FocusError::StateConflict,
+                            QStringLiteral("Focus candidate references a missing category."));
+                    }
+                    projected.categoryId = category->id;
+                    projected.categoryName = category->name;
+                    projected.categoryColor = category->color;
+                }
+                result.startCandidate = std::move(projected);
+                result.availability.canStart = true;
+            }
         }
         const QList<FocusSession> completed =
             m_focusRepository.findRecentCompletedFocusSessions(limit);
