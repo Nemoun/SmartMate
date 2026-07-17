@@ -21,6 +21,11 @@ public:
     /// 返回指定 UTC 时刻前最近一条完成事件；仅用于判断是否存在完成历史。
     [[nodiscard]] virtual std::optional<TaskActivityEvent> findLatestCompletionBefore(
         const QDateTime &endExclusiveUtc) const = 0;
+
+    /// 返回任务在指定 UTC 时刻前最近一条 Start 事件；旧数据没有事件时返回空值。
+    [[nodiscard]] virtual std::optional<TaskActivityEvent> findLatestStartForTaskBefore(
+        const TaskId &taskId,
+        const QDateTime &endExclusiveUtc) const = 0;
 };
 
 } // namespace smartmate::model

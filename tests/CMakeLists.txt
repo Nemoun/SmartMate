@@ -138,6 +138,20 @@ add_test(
     COMMAND tst_sqlite_task_repository
 )
 
+qt_add_executable(tst_sqlite_focus_session_repository
+    persistence/tst_SqliteFocusSessionRepository.cpp
+)
+target_link_libraries(tst_sqlite_focus_session_repository
+    PRIVATE
+        smartmate_persistence
+        Qt6::Sql
+        Qt6::Test
+)
+add_test(
+    NAME persistence.sqlite_focus_session_repository
+    COMMAND tst_sqlite_focus_session_repository
+)
+
 qt_add_executable(tst_qsettings_appearance_repository
     persistence/tst_QSettingsAppearanceRepository.cpp
 )
@@ -400,6 +414,7 @@ set(runtime_tests
     model.statistics_service
     model.desktop_pet_settings
     persistence.sqlite_task_repository
+    persistence.sqlite_focus_session_repository
     persistence.appearance_settings
     persistence.desktop_pet_settings
     viewmodel.task_viewmodels

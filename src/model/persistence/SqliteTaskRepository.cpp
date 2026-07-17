@@ -95,9 +95,9 @@ void SqliteTaskRepository::initializeSchema()
     // user_version是迁移入口；旧程序拒绝更高版本，避免误写新Schema。
     const int schemaVersion = versionQuery.value(0).toInt();
     versionQuery.finish();
-    if (schemaVersion > 4) {
+    if (schemaVersion > 5) {
         throwPersistenceError(
-            QStringLiteral("SQLite schema version %1 is newer than supported version 4")
+            QStringLiteral("SQLite schema version %1 is newer than supported version 5")
                 .arg(schemaVersion));
     }
 
@@ -241,6 +241,84 @@ void SqliteTaskRepository::initializeSchema()
                 "CREATE INDEX IF NOT EXISTS idx_task_activity_events_task_occurred "
                 "ON task_activity_events(task_id, occurred_at_utc_ms, id)"));
 
+        // v5 保存专注会话元数据与连续有效时间段。会话不保存汇总时长，后续由 Model
+        // 对区间求和；active_marker 只承担跨状态的全库唯一活动会话约束。
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE TABLE IF NOT EXISTS focus_sessions ("
+                "id TEXT PRIMARY KEY NOT NULL, "
+                "task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, "
+                "state TEXT NOT NULL CHECK (state IN ('running', 'paused', 'completed')), "
+                "active_marker INTEGER NULL CHECK (active_marker IS NULL OR active_marker = 1), "
+                "started_at_utc_ms INTEGER NOT NULL CHECK (started_at_utc_ms >= 0), "
+                "ended_at_utc_ms INTEGER NULL, "
+                "task_title_snapshot TEXT NOT NULL, "
+                "estimated_minutes_snapshot INTEGER NULL CHECK ("
+                "estimated_minutes_snapshot IS NULL OR "
+                "estimated_minutes_snapshot BETWEEN 1 AND 525600), "
+                "category_id_snapshot TEXT NULL, "
+                "category_name_snapshot TEXT NULL, "
+                "category_color_snapshot TEXT NULL CHECK ("
+                "category_color_snapshot IS NULL OR category_color_snapshot IN ("
+                "'blue', 'teal', 'green', 'amber', 'orange', 'rose', 'violet', 'slate')), "
+                "task_start_event_id TEXT NULL REFERENCES task_activity_events(id) "
+                "ON DELETE SET NULL, "
+                "CHECK (length(trim(task_title_snapshot)) BETWEEN 1 AND 200), "
+                "CHECK ((state IN ('running', 'paused') AND active_marker = 1 "
+                "        AND ended_at_utc_ms IS NULL) OR "
+                "       (state = 'completed' AND active_marker IS NULL "
+                "        AND ended_at_utc_ms IS NOT NULL "
+                "        AND ended_at_utc_ms >= started_at_utc_ms)), "
+                "CHECK ((category_id_snapshot IS NULL "
+                "        AND category_name_snapshot IS NULL "
+                "        AND category_color_snapshot IS NULL) OR "
+                "       (category_id_snapshot IS NOT NULL "
+                "        AND length(trim(category_name_snapshot)) >= 1 "
+                "        AND category_color_snapshot IS NOT NULL))"
+                ")"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_focus_sessions_single_active "
+                "ON focus_sessions(active_marker) WHERE active_marker = 1"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE INDEX IF NOT EXISTS idx_focus_sessions_task_ended "
+                "ON focus_sessions(task_id, ended_at_utc_ms DESC, id DESC)"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE INDEX IF NOT EXISTS idx_focus_sessions_state_ended "
+                "ON focus_sessions(state, ended_at_utc_ms DESC, id DESC)"));
+
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE TABLE IF NOT EXISTS focus_intervals ("
+                "session_id TEXT NOT NULL REFERENCES focus_sessions(id) ON DELETE CASCADE, "
+                "sequence INTEGER NOT NULL CHECK (sequence >= 0), "
+                "started_at_utc_ms INTEGER NOT NULL CHECK (started_at_utc_ms >= 0), "
+                "ended_at_utc_ms INTEGER NULL, "
+                "checkpoint_at_utc_ms INTEGER NOT NULL, "
+                "PRIMARY KEY (session_id, sequence), "
+                "CHECK (checkpoint_at_utc_ms >= started_at_utc_ms), "
+                "CHECK (ended_at_utc_ms IS NULL OR "
+                "       (ended_at_utc_ms >= checkpoint_at_utc_ms "
+                "        AND ended_at_utc_ms >= started_at_utc_ms))"
+                ")"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_focus_intervals_single_open "
+                "ON focus_intervals(session_id) WHERE ended_at_utc_ms IS NULL"));
+        executeStatement(
+            database,
+            QStringLiteral(
+                "CREATE INDEX IF NOT EXISTS idx_focus_intervals_started "
+                "ON focus_intervals(started_at_utc_ms, session_id, sequence)"));
+
         // SQLite不能用普通约束表达有向无环图；递归CTE从新边的后继出发，
         // 若能到达其前驱，插入该边就会闭合一个环并被中止。
         executeStatement(
@@ -265,8 +343,8 @@ void SqliteTaskRepository::initializeSchema()
                 "  SELECT RAISE(ABORT, 'task dependency would create a cycle'); "
                 "END"));
 
-        if (schemaVersion < 4) {
-            executeStatement(database, QStringLiteral("PRAGMA user_version = 4"));
+        if (schemaVersion < 5) {
+            executeStatement(database, QStringLiteral("PRAGMA user_version = 5"));
         }
 
         if (!database.commit()) {

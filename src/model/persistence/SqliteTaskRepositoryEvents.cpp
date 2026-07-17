@@ -101,4 +101,27 @@ std::optional<TaskActivityEvent> SqliteTaskRepository::findLatestCompletionBefor
     return eventFromQuery(query);
 }
 
+std::optional<TaskActivityEvent> SqliteTaskRepository::findLatestStartForTaskBefore(
+    const TaskId &taskId,
+    const QDateTime &endExclusiveUtc) const
+{
+    auto database = QSqlDatabase::database(m_connectionName, false);
+    QSqlQuery query(database);
+    query.prepare(eventSelectColumns()
+                  + QStringLiteral(
+                      "WHERE task_id = :task_id AND transition = 'start' "
+                      "AND occurred_at_utc_ms < :end_ms "
+                      "ORDER BY occurred_at_utc_ms DESC, id DESC LIMIT 1"));
+    query.bindValue(QStringLiteral(":task_id"),
+                    taskId.toString(QUuid::WithoutBraces));
+    query.bindValue(QStringLiteral(":end_ms"),
+                    endExclusiveUtc.toUTC().toMSecsSinceEpoch());
+    if (!query.exec()) {
+        sqlite_task_repository_detail::throwDatabaseError(
+            QStringLiteral("Cannot query latest task start event"), query.lastError());
+    }
+    if (!query.next()) return std::nullopt;
+    return eventFromQuery(query);
+}
+
 } // namespace smartmate::model::persistence

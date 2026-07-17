@@ -69,6 +69,22 @@ scan_includes("${ROOT_DIR}/src/model/persistence" "Model persistence"
     "qtquick" "qquick" "qtqml" "qqml"
     "viewmodel" "view/")
 
+# 专注第一阶段必须通过普通领域事实和窄 Repository 端口接入 SQLite，
+# 不得把会话存储退化为 Service 直连具体适配器。
+set(focus_domain "${ROOT_DIR}/src/model/domain/FocusSession.h")
+set(focus_repository "${ROOT_DIR}/src/model/repositories/IFocusSessionRepository.h")
+set(sqlite_repository_header "${ROOT_DIR}/src/model/persistence/SqliteTaskRepository.h")
+if(NOT EXISTS "${focus_domain}" OR NOT EXISTS "${focus_repository}")
+    record_violation("${ROOT_DIR}/src/model"
+        "Focus persistence requires plain domain facts and an abstract Repository port")
+elseif(EXISTS "${sqlite_repository_header}")
+    file(READ "${sqlite_repository_header}" sqlite_repository_contents)
+    if(NOT sqlite_repository_contents MATCHES "public IFocusSessionRepository")
+        record_violation("${sqlite_repository_header}"
+            "SqliteTaskRepository must implement the focus Repository port")
+    endif()
+endif()
+
 scan_includes("${ROOT_DIR}/src/common" "Common"
     "model/" "domain/" "services/" "repositories/" "persistence/"
     "viewmodel" "contracts/" "view/"
