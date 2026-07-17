@@ -332,6 +332,14 @@ TaskBatchResult TaskService::applyBatchTransition(
         // 所有目标和最终图一次验证完成后，才通过批量端口原子写入整组状态变化。
         const TaskTransitionWriteResult writeResult =
             m_transitionRepository.applyTransitionsAtomically(writes);
+        if (!writeResult.activeFocusTaskIds.isEmpty()) {
+            QList<TaskId> focusConflicts = writeResult.activeFocusTaskIds;
+            normalizeIds(focusConflicts);
+            return TaskBatchResult::failure(
+                TaskError::ActiveFocusSession,
+                QStringLiteral("Active focus prevents the selected task transition."),
+                TaskErrorContext{{}, std::move(focusConflicts), {}});
+        }
         if (!writeResult.conflictingTaskIds.isEmpty()) {
             QList<TaskId> conflicts = writeResult.conflictingTaskIds;
             normalizeIds(conflicts);
@@ -377,6 +385,19 @@ TaskResult TaskService::applyTransition(const TaskId &id,
                 TaskError::InvalidTaskTransition,
                 QStringLiteral("The task state does not allow this transition."),
                 TaskErrorContext{{}, {id}, {}});
+        }
+
+        if (current->status() == TaskStatus::InProgress
+            && *targetStatus != TaskStatus::InProgress) {
+            const auto activeFocus = m_focusRepository != nullptr
+                ? m_focusRepository->findActiveFocusSession()
+                : std::optional<FocusSession>{};
+            if (activeFocus.has_value() && activeFocus->taskId == id) {
+                return TaskResult::failure(
+                    TaskError::ActiveFocusSession,
+                    QStringLiteral("Active focus must end before leaving InProgress."),
+                    TaskErrorContext{{}, {id}, {}});
+            }
         }
 
         if (*targetStatus == TaskStatus::InProgress) {
@@ -440,6 +461,12 @@ TaskResult TaskService::applyTransition(const TaskId &id,
                                           *targetStatus,
                                           nowUtc,
                                           category)}});
+            if (!writeResult.activeFocusTaskIds.isEmpty()) {
+                return TaskResult::failure(
+                    TaskError::ActiveFocusSession,
+                    QStringLiteral("Focus became active before the task transition write."),
+                    TaskErrorContext{{}, writeResult.activeFocusTaskIds, {}});
+            }
             if (!writeResult.conflictingTaskIds.isEmpty()) {
                 return TaskResult::failure(
                     TaskError::InvalidTaskTransition,

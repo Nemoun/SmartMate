@@ -62,6 +62,8 @@ enum class TaskError {
     NotFound,
     /// 已有其他任务进行中，或并发写入造成冲突。
     InProgressConflict,
+    /// 目标任务存在 Running 或 Paused 专注，不能完成或取消。
+    ActiveFocusSession,
     /// Repository 读写或事务执行失败。
     PersistenceFailure,
 };

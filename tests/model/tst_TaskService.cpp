@@ -4,6 +4,7 @@
 #include "fakes/FakeTaskBatchTransitionRepository.h"
 #include "fakes/FakeTaskDeletionRepository.h"
 #include "fakes/FakeTaskCategoryRepository.h"
+#include "fakes/FakeFocusSessionRepository.h"
 
 #include "domain/Task.h"
 #include "domain/TaskConstraints.h"
@@ -19,6 +20,8 @@
 #include <utility>
 
 using smartmate::model::Task;
+using smartmate::model::FocusSession;
+using smartmate::model::FocusSessionState;
 using smartmate::model::TaskCategory;
 using smartmate::model::TaskCategoryColor;
 using smartmate::model::TaskCategoryId;
@@ -36,6 +39,7 @@ using smartmate::tests::FakeTaskBatchTransitionRepository;
 using smartmate::tests::FakeTaskDeletionRepository;
 using smartmate::tests::FakeTaskCategoryRepository;
 using smartmate::tests::FakeTaskRepository;
+using smartmate::tests::FakeFocusSessionRepository;
 
 namespace {
 
@@ -124,6 +128,8 @@ private slots:
     void rejectsDependencyEditContextForNonTodoTarget();
     void keepsPlanAndGraphCommandAvailabilityConsistent();
     void recordsImmutableActivityEventForEverySuccessfulTransition();
+    void activeFocusDisablesAndRejectsTaskExitCommands();
+    void mapsAtomicFocusRaceWithoutWritingOrNotifying();
 };
 
 void TaskServiceTest::listsAndFindsTasks()
@@ -1591,6 +1597,72 @@ void TaskServiceTest::recordsImmutableActivityEventForEverySuccessfulTransition(
              std::optional<QString>{category.name});
     QCOMPARE(first.categoryColorSnapshot,
              std::optional<TaskCategoryColor>{category.color});
+}
+
+void TaskServiceTest::activeFocusDisablesAndRejectsTaskExitCommands()
+{
+    const Task focusedTask = storedTask(TaskStatus::InProgress);
+    const Task otherTask = storedTask(TaskStatus::Todo);
+    FakeTaskRepository repository{{focusedTask, otherTask}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    FakeTaskBatchTransitionRepository transitionRepository{repository};
+    FakeTaskDeletionRepository deletion{repository, dependencyRepository};
+    FakeTaskCategoryRepository categories;
+    FakeFocusSessionRepository focuses;
+    FocusSession session;
+    session.sessionId = QUuid::createUuid();
+    session.taskId = focusedTask.id();
+    session.state = FocusSessionState::Paused;
+    session.startedAtUtc = timestamp();
+    session.taskTitleSnapshot = focusedTask.title();
+    focuses.seed(session,
+                 {{session.sessionId, 0, timestamp(), timestamp().addSecs(2),
+                   timestamp().addSecs(2)}});
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        transitionRepository, deletion, categories, &focuses};
+    QSignalSpy changed{&service, &TaskService::tasksChanged};
+
+    const auto plan = service.listRecommendedTasks();
+    QVERIFY(plan.ok());
+    const auto focused = std::find_if(
+        plan.value->cbegin(), plan.value->cend(), [&](const auto &planned) {
+            return planned.task.id() == focusedTask.id();
+        });
+    QVERIFY(focused != plan.value->cend());
+    QVERIFY(!focused->availability.canComplete);
+    QVERIFY(!focused->availability.canCancel);
+    QCOMPARE(service.completeTask(focusedTask.id()).error,
+             TaskError::ActiveFocusSession);
+    QCOMPARE(service.cancelTask(focusedTask.id()).error,
+             TaskError::ActiveFocusSession);
+    QCOMPARE(transitionRepository.callCount(), 0);
+    QCOMPARE(changed.count(), 0);
+}
+
+void TaskServiceTest::mapsAtomicFocusRaceWithoutWritingOrNotifying()
+{
+    const Task focusedTask = storedTask(TaskStatus::InProgress);
+    FakeTaskRepository repository{{focusedTask}};
+    FakeTaskDependencyRepository dependencyRepository;
+    FakeTaskCreationRepository creationRepository{repository, dependencyRepository};
+    FakeTaskBatchTransitionRepository transitionRepository{repository};
+    FakeTaskDeletionRepository deletion{repository, dependencyRepository};
+    FakeTaskCategoryRepository categories;
+    FakeFocusSessionRepository focuses;
+    transitionRepository.setResult(
+        {0, 0, {}, {focusedTask.id()}});
+    TaskService service{repository, dependencyRepository, creationRepository,
+                        transitionRepository, deletion, categories, &focuses};
+    QSignalSpy changed{&service, &TaskService::tasksChanged};
+
+    const auto result = service.completeTask(focusedTask.id());
+    QCOMPARE(result.error, TaskError::ActiveFocusSession);
+    QCOMPARE(result.context.conflictingTaskIds,
+             QList<TaskId>{focusedTask.id()});
+    QCOMPARE(repository.tasks().first().status(), TaskStatus::InProgress);
+    QVERIFY(transitionRepository.events().isEmpty());
+    QCOMPARE(changed.count(), 0);
 }
 
 QTEST_APPLESS_MAIN(TaskServiceTest)

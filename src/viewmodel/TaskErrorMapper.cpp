@@ -58,6 +58,8 @@ QString taskErrorMessage(const model::TaskError error)
         return QStringLiteral("任务不存在或已无法访问。");
     case InProgressConflict:
         return QStringLiteral("已有任务正在进行，请先完成或取消它。");
+    case ActiveFocusSession:
+        return QStringLiteral("请先完成或放弃当前专注，再完成或取消任务。");
     case PersistenceFailure:
         return QStringLiteral("任务数据访问失败，请稍后重试。");
     }

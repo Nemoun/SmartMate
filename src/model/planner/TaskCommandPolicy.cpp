@@ -76,7 +76,8 @@ namespace {
 
 QHash<TaskId, TaskCommandAvailability> taskCommandAvailabilities(
     const QList<Task> &tasks,
-    const QList<TaskDependency> &dependencies)
+    const QList<TaskDependency> &dependencies,
+    const std::optional<TaskId> activeFocusTaskId)
 {
     const TaskDependencyGraph graph{tasks, dependencies};
     // 单进行中约束是全局资格，不能只查看当前任务自身状态。
@@ -95,10 +96,13 @@ QHash<TaskId, TaskCommandAvailability> taskCommandAvailabilities(
         availability.canEditDependencies = task.status() == TaskStatus::Todo;
         availability.canStart = TaskStateMachine::canApply(task, TaskTransition::Start)
             && !dependencyState.blocked && !hasInProgress;
+        const bool protectedByFocus = activeFocusTaskId.has_value()
+            && *activeFocusTaskId == task.id();
         availability.canCancel = TaskStateMachine::canApply(
-            task, TaskTransition::Cancel);
+            task, TaskTransition::Cancel) && !protectedByFocus;
         availability.canComplete = TaskStateMachine::canApply(
-            task, TaskTransition::Complete) && !dependencyState.blocked;
+            task, TaskTransition::Complete) && !dependencyState.blocked
+            && !protectedByFocus;
         availability.canRedo = transitionPreservesDependencies(
             tasks, dependencies, task, TaskTransition::Redo);
         availability.canArchive = TaskStateMachine::canApply(

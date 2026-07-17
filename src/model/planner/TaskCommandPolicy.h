@@ -7,12 +7,15 @@
 #include <QHash>
 #include <QList>
 
+#include <optional>
+
 namespace smartmate::model {
 
 /// 基于同一份任务与依赖快照统一计算展示用命令资格，不访问 Repository。
 /// 资格可能在下一次写入前过期，因此 TaskService 执行命令时仍须重新读取并复核。
 [[nodiscard]] QHash<TaskId, TaskCommandAvailability> taskCommandAvailabilities(
     const QList<Task> &tasks,
-    const QList<TaskDependency> &dependencies);
+    const QList<TaskDependency> &dependencies,
+    std::optional<TaskId> activeFocusTaskId = std::nullopt);
 
 } // namespace smartmate::model

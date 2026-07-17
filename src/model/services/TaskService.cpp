@@ -10,6 +10,7 @@ TaskService::TaskService(ITaskRepository &repository,
                          ITaskTransitionRepository &transitionRepository,
                          ITaskDeletionRepository &deletionRepository,
                          ITaskCategoryRepository &categoryRepository,
+                         IFocusSessionRepository *focusRepository,
                          QObject *parent)
     : QObject(parent)
     , m_repository(repository)
@@ -18,6 +19,7 @@ TaskService::TaskService(ITaskRepository &repository,
     , m_transitionRepository(transitionRepository)
     , m_deletionRepository(deletionRepository)
     , m_categoryRepository(categoryRepository)
+    , m_focusRepository(focusRepository)
 {
 }
 

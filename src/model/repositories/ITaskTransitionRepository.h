@@ -33,6 +33,8 @@ struct TaskTransitionWriteResult final {
     int updatedTaskCount{0};
     int insertedEventCount{0};
     QList<TaskId> conflictingTaskIds;
+    /// 活动 Running/Paused 专注阻止离开 InProgress 的任务；存在时整批回滚。
+    QList<TaskId> activeFocusTaskIds;
 
     TaskTransitionWriteResult() = default;
     TaskTransitionWriteResult(int updatedCount, QList<TaskId> conflicts)
@@ -43,10 +45,12 @@ struct TaskTransitionWriteResult final {
     }
     TaskTransitionWriteResult(int updatedCount,
                               int insertedCount,
-                              QList<TaskId> conflicts)
+                              QList<TaskId> conflicts,
+                              QList<TaskId> focusConflicts = {})
         : updatedTaskCount(updatedCount)
         , insertedEventCount(insertedCount)
         , conflictingTaskIds(std::move(conflicts))
+        , activeFocusTaskIds(std::move(focusConflicts))
     {
     }
 };

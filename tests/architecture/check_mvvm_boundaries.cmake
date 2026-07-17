@@ -85,6 +85,20 @@ elseif(EXISTS "${sqlite_repository_header}")
     endif()
 endif()
 
+set(focus_service "${ROOT_DIR}/src/model/services/FocusService.h")
+if(NOT EXISTS "${focus_service}")
+    record_violation("${ROOT_DIR}/src/model/services"
+        "FocusService is required for focus lifecycle business rules")
+else()
+    file(READ "${focus_service}" focus_service_contents)
+    string(TOLOWER "${focus_service_contents}" focus_service_lower)
+    if(focus_service_lower MATCHES
+       "#[ \\t]*include[^\\r\\n]*(qsql|persistence/|viewmodel|qwidget|qml|quick|charts)")
+        record_violation("${focus_service}"
+            "FocusService may depend only on Model Repository ports and Qt Core")
+    endif()
+endif()
+
 scan_includes("${ROOT_DIR}/src/common" "Common"
     "model/" "domain/" "services/" "repositories/" "persistence/"
     "viewmodel" "contracts/" "view/"
@@ -344,6 +358,13 @@ if(EXISTS "${app_bootstrapper_header}" AND EXISTS "${app_bootstrapper_source}")
        OR NOT app_bootstrapper_lower MATCHES "statistics\(\)")
         record_violation("${app_bootstrapper_source}"
             "The app composition root must own StatisticsService and inject StatisticsContract")
+    endif()
+    if(NOT app_bootstrapper_lower MATCHES "focusservice"
+       OR NOT app_bootstrapper_lower MATCHES "m_focusservice"
+       OR NOT app_bootstrapper_lower MATCHES "initialize"
+       OR NOT app_bootstrapper_lower MATCHES "prepareforshutdown")
+        record_violation("${app_bootstrapper_source}"
+            "The app composition root must own and initialize FocusService and prepare it for shutdown")
     endif()
 endif()
 

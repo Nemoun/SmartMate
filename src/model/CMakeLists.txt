@@ -62,6 +62,9 @@ add_library(smartmate_model STATIC
     services/AppearanceSettingsService.cpp
     services/DesktopPetSettingsService.h
     services/DesktopPetSettingsService.cpp
+    services/FocusResult.h
+    services/FocusService.h
+    services/FocusService.cpp
 )
 
 target_include_directories(smartmate_model

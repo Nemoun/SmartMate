@@ -168,6 +168,7 @@ private slots:
     void preservesStateOnConflictsAndSqlFailure();
     void recoversInterruptedSessionAndOrdersRecentHistory();
     void keepsFocusFactsAfterDatabaseReopen();
+    void activeFocusAtomicallyProtectsTaskTransitions();
     void cascadesFocusFactsWhenArchivedTaskIsPermanentlyDeleted();
 };
 
@@ -513,6 +514,62 @@ void SqliteFocusSessionRepositoryTest::keepsFocusFactsAfterDatabaseReopen()
         QCOMPARE(intervals.first().endedAtUtc, std::optional{completedAt});
         QCOMPARE(reopened.findRecentCompletedFocusSessions(50).size(), 1);
     }
+}
+
+void SqliteFocusSessionRepositoryTest::activeFocusAtomicallyProtectsTaskTransitions()
+{
+    SqliteTaskRepository repository(QStringLiteral(":memory:"));
+    const TaskId focusedTaskId = QUuid::createUuid();
+    const TaskId otherTaskId = QUuid::createUuid();
+    repository.insert(makeTask(focusedTaskId));
+    repository.insert(makeTask(otherTaskId));
+    startTask(repository, focusedTaskId);
+    const FocusSession session = makeSession(
+        QUuid::createUuid(), focusedTaskId, kFocusStarted);
+    QVERIFY(repository.startFocusSessionAtomically(session).ok());
+
+    const TaskTransitionWrite completeFocused = transitionWrite(
+        focusedTaskId,
+        TaskStatus::InProgress,
+        TaskStatus::Done,
+        TaskTransition::Complete,
+        kFocusStarted.addSecs(10));
+    const TaskTransitionWrite cancelOther = transitionWrite(
+        otherTaskId,
+        TaskStatus::Todo,
+        TaskStatus::Cancelled,
+        TaskTransition::Cancel,
+        kFocusStarted.addSecs(10));
+    const auto runningConflict = repository.applyTransitionsAtomically(
+        {cancelOther, completeFocused});
+    QCOMPARE(runningConflict.updatedTaskCount, 0);
+    QCOMPARE(runningConflict.insertedEventCount, 0);
+    QCOMPARE(runningConflict.activeFocusTaskIds,
+             QList<TaskId>{focusedTaskId});
+    QCOMPARE(repository.findById(focusedTaskId)->status(),
+             TaskStatus::InProgress);
+    QCOMPARE(repository.findById(otherTaskId)->status(), TaskStatus::Todo);
+
+    QVERIFY(repository.pauseFocusSessionAtomically(
+        session.sessionId,
+        FocusSessionState::Running,
+        kFocusStarted.addSecs(12)).ok());
+    const auto pausedConflict = repository.applyTransitionsAtomically(
+        {completeFocused});
+    QCOMPARE(pausedConflict.activeFocusTaskIds,
+             QList<TaskId>{focusedTaskId});
+    QCOMPARE(repository.findById(focusedTaskId)->status(),
+             TaskStatus::InProgress);
+
+    QVERIFY(repository.abandonFocusSessionAtomically(
+        session.sessionId, FocusSessionState::Paused).ok());
+    const auto completed = repository.applyTransitionsAtomically(
+        {completeFocused});
+    QCOMPARE(completed.updatedTaskCount, 1);
+    QCOMPARE(completed.insertedEventCount, 1);
+    QVERIFY(completed.activeFocusTaskIds.isEmpty());
+    QCOMPARE(repository.findById(focusedTaskId)->status(), TaskStatus::Done);
+    QCOMPARE(repository.findById(otherTaskId)->status(), TaskStatus::Todo);
 }
 
 void SqliteFocusSessionRepositoryTest::cascadesFocusFactsWhenArchivedTaskIsPermanentlyDeleted()
