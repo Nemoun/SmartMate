@@ -328,7 +328,7 @@ void SqliteTaskRepositoryTest::initializesSchemaIdempotently()
         QSqlQuery versionQuery(database);
         QVERIFY(versionQuery.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(versionQuery.next());
-        QCOMPARE(versionQuery.value(0).toInt(), 4);
+        QCOMPARE(versionQuery.value(0).toInt(), 5);
 
         QSqlQuery indexQuery(database);
         QVERIFY(indexQuery.exec(QStringLiteral(
@@ -504,7 +504,7 @@ void SqliteTaskRepositoryTest::migratesVersionOneWithoutChangingTaskData()
         QSqlQuery versionQuery(database);
         QVERIFY(versionQuery.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(versionQuery.next());
-        QCOMPARE(versionQuery.value(0).toInt(), 4);
+        QCOMPARE(versionQuery.value(0).toInt(), 5);
 
         QSqlQuery foreignKeyQuery(database);
         QVERIFY(foreignKeyQuery.exec(QStringLiteral(
@@ -555,7 +555,7 @@ void SqliteTaskRepositoryTest::migratesVersionTwoWithoutChangingTasksOrDependenc
         QSqlQuery query(database);
         QVERIFY(query.exec(QStringLiteral("PRAGMA user_version")));
         QVERIFY(query.next());
-        QCOMPARE(query.value(0).toInt(), 4);
+        QCOMPARE(query.value(0).toInt(), 5);
         QVERIFY(query.exec(QStringLiteral("PRAGMA table_info(tasks)")));
         bool categoryColumnFound = false;
         while (query.next()) {
@@ -636,7 +636,7 @@ void SqliteTaskRepositoryTest::rejectsFutureSchemaVersion()
         database.setDatabaseName(databasePath);
         QVERIFY(database.open());
         QSqlQuery query(database);
-        QVERIFY(query.exec(QStringLiteral("PRAGMA user_version = 5")));
+        QVERIFY(query.exec(QStringLiteral("PRAGMA user_version = 6")));
         database.close();
     }
     QSqlDatabase::removeDatabase(connectionName);

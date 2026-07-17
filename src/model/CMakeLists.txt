@@ -3,6 +3,7 @@ add_library(smartmate_model STATIC
     domain/AppearanceSettings.cpp
     domain/DesktopPetSettings.h
     domain/DesktopPetSettings.cpp
+    domain/FocusSession.h
     domain/Task.h
     domain/Task.cpp
     domain/TaskActivityEvent.h
@@ -31,6 +32,7 @@ add_library(smartmate_model STATIC
     repositories/RepositoryException.h
     repositories/IAppearanceSettingsRepository.h
     repositories/IDesktopPetSettingsRepository.h
+    repositories/IFocusSessionRepository.h
     repositories/ITaskActivityRepository.h
     repositories/ITaskTransitionRepository.h
     repositories/ITaskCreationRepository.h
@@ -60,6 +62,9 @@ add_library(smartmate_model STATIC
     services/AppearanceSettingsService.cpp
     services/DesktopPetSettingsService.h
     services/DesktopPetSettingsService.cpp
+    services/FocusResult.h
+    services/FocusService.h
+    services/FocusService.cpp
 )
 
 target_include_directories(smartmate_model

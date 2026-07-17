@@ -7,6 +7,7 @@
 #include "repositories/ITaskCategoryRepository.h"
 #include "repositories/ITaskDeletionRepository.h"
 #include "repositories/ITaskDependencyRepository.h"
+#include "repositories/IFocusSessionRepository.h"
 #include "repositories/ITaskRepository.h"
 #include "services/TaskResult.h"
 
@@ -31,6 +32,7 @@ public:
                 ITaskTransitionRepository &transitionRepository,
                 ITaskDeletionRepository &deletionRepository,
                 ITaskCategoryRepository &categoryRepository,
+                IFocusSessionRepository *focusRepository = nullptr,
                 QObject *parent = nullptr);
 
     /// 执行无副作用的权威业务校验：不访问 Repository，也不发出状态通知。
@@ -117,6 +119,8 @@ private:
     ITaskDeletionRepository &m_deletionRepository;
     /// 仅用于验证任务草稿中的稳定类别 ID 和分类图查询，不承担类别生命周期命令。
     ITaskCategoryRepository &m_categoryRepository;
+    /// 读取活动专注以投影命令资格并在完成/取消前提供友好业务错误。
+    IFocusSessionRepository *m_focusRepository{nullptr};
 };
 
 } // namespace smartmate::model

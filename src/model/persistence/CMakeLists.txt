@@ -10,6 +10,7 @@ add_library(smartmate_persistence STATIC
     SqliteTaskRepositoryAtomicCommands.cpp
     SqliteTaskRepositoryCategories.cpp
     SqliteTaskRepositoryEvents.cpp
+    SqliteTaskRepositoryFocus.cpp
     QSettingsAppearanceRepository.h
     QSettingsAppearanceRepository.cpp
     QSettingsDesktopPetRepository.h

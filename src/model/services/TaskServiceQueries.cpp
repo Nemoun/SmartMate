@@ -73,7 +73,14 @@ TaskPlanResult TaskService::listRecommendedTasks() const
         QList<PlannedTask> plan = orderTasks(
             tasks, dependencies, QDateTime::currentDateTimeUtc());
         // 命令资格与排序理由均由同一份 Model 快照计算，避免界面显示与执行条件分裂。
-        const auto availabilities = taskCommandAvailabilities(tasks, dependencies);
+        const auto activeFocus = m_focusRepository != nullptr
+            ? m_focusRepository->findActiveFocusSession()
+            : std::optional<FocusSession>{};
+        const std::optional<TaskId> activeFocusTaskId = activeFocus.has_value()
+            ? std::optional<TaskId>{activeFocus->taskId}
+            : std::nullopt;
+        const auto availabilities = taskCommandAvailabilities(
+            tasks, dependencies, activeFocusTaskId);
         for (PlannedTask &planned : plan) {
             planned.availability = availabilities.value(planned.task.id());
         }
@@ -263,7 +270,15 @@ TaskGraphResult TaskService::taskGraphSnapshot(const TaskGraphQuery &query) cons
         const QList<PlannedTask> recommended = orderTasks(
             tasks, dependencies, QDateTime::currentDateTimeUtc());
         // 排名、闭包和命令资格仍基于完整业务图；类别裁剪只影响展示范围。
-        const auto availabilities = taskCommandAvailabilities(tasks, dependencies);
+        const auto graphActiveFocus = m_focusRepository != nullptr
+            ? m_focusRepository->findActiveFocusSession()
+            : std::optional<FocusSession>{};
+        const auto availabilities = taskCommandAvailabilities(
+            tasks,
+            dependencies,
+            graphActiveFocus.has_value()
+                ? std::optional<TaskId>{graphActiveFocus->taskId}
+                : std::nullopt);
         snapshot.nodes.reserve(visibleIds.size());
         for (const PlannedTask &plannedTask : recommended) {
             if (!visibleIds.contains(plannedTask.task.id())) {

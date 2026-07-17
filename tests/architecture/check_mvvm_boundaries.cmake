@@ -69,6 +69,46 @@ scan_includes("${ROOT_DIR}/src/model/persistence" "Model persistence"
     "qtquick" "qquick" "qtqml" "qqml"
     "viewmodel" "view/")
 
+# 专注第一阶段必须通过普通领域事实和窄 Repository 端口接入 SQLite，
+# 不得把会话存储退化为 Service 直连具体适配器。
+set(focus_domain "${ROOT_DIR}/src/model/domain/FocusSession.h")
+set(focus_repository "${ROOT_DIR}/src/model/repositories/IFocusSessionRepository.h")
+set(sqlite_repository_header "${ROOT_DIR}/src/model/persistence/SqliteTaskRepository.h")
+if(NOT EXISTS "${focus_domain}" OR NOT EXISTS "${focus_repository}")
+    record_violation("${ROOT_DIR}/src/model"
+        "Focus persistence requires plain domain facts and an abstract Repository port")
+elseif(EXISTS "${sqlite_repository_header}")
+    file(READ "${sqlite_repository_header}" sqlite_repository_contents)
+    if(NOT sqlite_repository_contents MATCHES "public IFocusSessionRepository")
+        record_violation("${sqlite_repository_header}"
+            "SqliteTaskRepository must implement the focus Repository port")
+    endif()
+endif()
+
+set(focus_service "${ROOT_DIR}/src/model/services/FocusService.h")
+if(NOT EXISTS "${focus_service}")
+    record_violation("${ROOT_DIR}/src/model/services"
+        "FocusService is required for focus lifecycle business rules")
+else()
+    file(READ "${focus_service}" focus_service_contents)
+    string(TOLOWER "${focus_service_contents}" focus_service_lower)
+    if(focus_service_lower MATCHES
+       "#[ \\t]*include[^\\r\\n]*(qsql|persistence/|viewmodel|qwidget|qml|quick|charts)")
+        record_violation("${focus_service}"
+            "FocusService may depend only on Model Repository ports and Qt Core")
+    endif()
+endif()
+
+# 第四阶段必须建立独立 Focus Contract/ViewModel/Page，且不得把具体实现泄漏给 View。
+set(focus_contract "${ROOT_DIR}/src/viewmodel/contracts/FocusContract.h")
+set(focus_viewmodel "${ROOT_DIR}/src/viewmodel/FocusViewModel.h")
+set(focus_page "${ROOT_DIR}/src/view/widgets/focus/FocusPage.h")
+if(NOT EXISTS "${focus_contract}" OR NOT EXISTS "${focus_viewmodel}"
+   OR NOT EXISTS "${focus_page}")
+    record_violation("${ROOT_DIR}/src/viewmodel"
+        "Focus Contracts, FocusViewModel, and FocusPage are required for stage 4")
+endif()
+
 scan_includes("${ROOT_DIR}/src/common" "Common"
     "model/" "domain/" "services/" "repositories/" "persistence/"
     "viewmodel" "contracts/" "view/"
@@ -77,7 +117,7 @@ scan_includes("${ROOT_DIR}/src/common" "Common"
 
 scan_includes("${ROOT_DIR}/src/viewmodel/contracts" "ViewModel Contracts"
     "domain/" "services/" "repositories/" "persistence/"
-    "appearance.*viewmodel" "task.*viewmodel" "appviewmodel"
+    "appearance.*viewmodel" "task.*viewmodel" "focus.*viewmodel" "appviewmodel"
     "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql"
     "qtwidgets" "qwidget" "qdialog" "qgraphics"
     "qtcharts" "qchart" "qbarseries" "qpieseries" "qhorizontalbarseries")
@@ -108,6 +148,7 @@ endforeach()
 scan_includes("${ROOT_DIR}/src/view/widgets" "Qt Widgets View"
     "domain/" "services/" "repositories/" "persistence/"
     "appviewmodel" "appearance.*viewmodel\\.h" "task.*viewmodel\\.h"
+    "focusviewmodel\\.h"
     "qtquick" "qquick" "qtqml" "qqml" "qtsql" "qsql" "qsettings")
 
 # include 检查之外，再验证 CMake 链接关系，避免通过传递依赖绕过边界。
@@ -313,6 +354,11 @@ if(EXISTS "${main_window_dependencies}")
         record_violation("${main_window_dependencies}"
             "MainWindow must receive the statistics page through StatisticsContract")
     endif()
+    if(NOT main_window_dependencies_lower MATCHES "focuscontract"
+       OR NOT main_window_dependencies_lower MATCHES "focus")
+        record_violation("${main_window_dependencies}"
+            "MainWindow must receive the focus page through FocusContract")
+    endif()
 endif()
 
 set(app_bootstrapper_header "${ROOT_DIR}/src/app/AppBootstrapper.h")
@@ -328,6 +374,14 @@ if(EXISTS "${app_bootstrapper_header}" AND EXISTS "${app_bootstrapper_source}")
        OR NOT app_bootstrapper_lower MATCHES "statistics\(\)")
         record_violation("${app_bootstrapper_source}"
             "The app composition root must own StatisticsService and inject StatisticsContract")
+    endif()
+    if(NOT app_bootstrapper_lower MATCHES "focusservice"
+       OR NOT app_bootstrapper_lower MATCHES "m_focusservice"
+       OR NOT app_bootstrapper_lower MATCHES "initialize"
+       OR NOT app_bootstrapper_lower MATCHES "focus\(\)"
+       OR NOT app_bootstrapper_lower MATCHES "prepareforshutdown")
+        record_violation("${app_bootstrapper_source}"
+            "The app composition root must own FocusService, inject FocusContract, and handle lifecycle")
     endif()
 endif()
 

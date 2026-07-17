@@ -104,6 +104,17 @@ target_link_libraries(tst_task_ordering
 
 add_test(NAME model.task_ordering COMMAND tst_task_ordering)
 
+qt_add_executable(tst_focus_service
+    model/tst_FocusService.cpp
+    fakes/FakeFocusSessionRepository.h
+    fakes/FakeTaskActivityRepository.h
+    fakes/FakeTaskCategoryRepository.h
+    fakes/FakeTaskRepository.h
+)
+target_include_directories(tst_focus_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_focus_service PRIVATE smartmate_model Qt6::Test)
+add_test(NAME model.focus_service COMMAND tst_focus_service)
+
 qt_add_executable(tst_statistics_service
     model/tst_StatisticsService.cpp
     fakes/FakeTaskActivityRepository.h
@@ -136,6 +147,20 @@ target_link_libraries(tst_sqlite_task_repository
 add_test(
     NAME persistence.sqlite_task_repository
     COMMAND tst_sqlite_task_repository
+)
+
+qt_add_executable(tst_sqlite_focus_session_repository
+    persistence/tst_SqliteFocusSessionRepository.cpp
+)
+target_link_libraries(tst_sqlite_focus_session_repository
+    PRIVATE
+        smartmate_persistence
+        Qt6::Sql
+        Qt6::Test
+)
+add_test(
+    NAME persistence.sqlite_focus_session_repository
+    COMMAND tst_sqlite_focus_session_repository
 )
 
 qt_add_executable(tst_qsettings_appearance_repository
@@ -249,6 +274,23 @@ target_link_libraries(tst_statistics_viewmodel
 )
 add_test(NAME viewmodel.statistics COMMAND tst_statistics_viewmodel)
 
+qt_add_executable(tst_focus_viewmodel
+    viewmodel/tst_FocusViewModel.cpp
+    fakes/FakeFocusSessionRepository.h
+    fakes/FakeTaskActivityRepository.h
+    fakes/FakeTaskRepository.h
+    fakes/FakeTaskDependencyRepository.h
+    fakes/FakeTaskCreationRepository.h
+    fakes/FakeTaskBatchTransitionRepository.h
+    fakes/FakeTaskDeletionRepository.h
+    fakes/FakeTaskCategoryRepository.h
+)
+target_include_directories(tst_focus_viewmodel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tst_focus_viewmodel
+    PRIVATE smartmate_viewmodel Qt6::Test
+)
+add_test(NAME viewmodel.focus COMMAND tst_focus_viewmodel)
+
 qt_add_executable(tst_settings_widgets
     widgets/tst_SettingsWidgets.cpp
 )
@@ -293,6 +335,16 @@ target_link_libraries(tst_statistics_widgets
 add_test(NAME view.widgets_statistics
     COMMAND tst_statistics_widgets -platform offscreen)
 set_tests_properties(view.widgets_statistics PROPERTIES TIMEOUT 20)
+
+qt_add_executable(tst_focus_widgets
+    widgets/tst_FocusWidgets.cpp
+)
+target_link_libraries(tst_focus_widgets
+    PRIVATE smartmate_widgets Qt6::Test
+)
+add_test(NAME view.widgets_focus
+    COMMAND tst_focus_widgets -platform offscreen)
+set_tests_properties(view.widgets_focus PROPERTIES TIMEOUT 20)
 
 qt_add_executable(tst_widgets_appearance_flow
     integration/tst_WidgetsAppearanceFlow.cpp
@@ -348,6 +400,20 @@ add_test(NAME integration.widgets_statistics
     COMMAND tst_widgets_statistics_flow -platform offscreen)
 set_tests_properties(integration.widgets_statistics PROPERTIES TIMEOUT 30)
 
+qt_add_executable(tst_widgets_focus_flow
+    integration/tst_WidgetsFocusFlow.cpp
+)
+target_link_libraries(tst_widgets_focus_flow
+    PRIVATE
+        smartmate_widgets
+        smartmate_persistence
+        smartmate_viewmodel
+        Qt6::Test
+)
+add_test(NAME integration.widgets_focus
+    COMMAND tst_widgets_focus_flow -platform offscreen)
+set_tests_properties(integration.widgets_focus PROPERTIES TIMEOUT 30)
+
 qt_add_executable(tst_widgets_desktop_pet_flow
     integration/tst_WidgetsDesktopPetFlow.cpp
     fakes/FakeAppearanceSettingsRepository.h
@@ -375,6 +441,14 @@ target_link_libraries(tst_task_creation_flow
 
 add_test(NAME integration.task_creation_flow COMMAND tst_task_creation_flow)
 
+qt_add_executable(tst_focus_app_lifecycle
+    integration/tst_FocusAppLifecycle.cpp
+)
+target_link_libraries(tst_focus_app_lifecycle
+    PRIVATE smartmate_app_core smartmate_persistence Qt6::Test
+)
+add_test(NAME integration.focus_app_lifecycle COMMAND tst_focus_app_lifecycle)
+
 add_test(
     NAME view.application_bootstrap
     COMMAND SmartMate --smoke-test -platform offscreen
@@ -397,9 +471,11 @@ set(runtime_tests
     model.task_dependency_cancellation
     model.task_state_transitions
     model.task_ordering
+    model.focus_service
     model.statistics_service
     model.desktop_pet_settings
     persistence.sqlite_task_repository
+    persistence.sqlite_focus_session_repository
     persistence.appearance_settings
     persistence.desktop_pet_settings
     viewmodel.task_viewmodels
@@ -409,18 +485,22 @@ set(runtime_tests
     viewmodel.desktop_pet_settings
     viewmodel.contracts
     viewmodel.statistics
+    viewmodel.focus
     view.widgets_settings
     view.widgets_desktop_pet
     view.widgets_tasks
     view.widgets_graph
     view.widgets_statistics
+    view.widgets_focus
     integration.widgets_appearance
     integration.widgets_tasks
     integration.widgets_category_dependencies
     integration.widgets_graph
     integration.widgets_statistics
+    integration.widgets_focus
     integration.widgets_desktop_pet
     integration.task_creation_flow
+    integration.focus_app_lifecycle
     view.application_bootstrap
 )
 set_tests_properties(

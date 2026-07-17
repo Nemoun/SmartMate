@@ -31,7 +31,9 @@ int main(int argc, char *argv[])
             QTimer::singleShot(0, &application, &QCoreApplication::quit);
         }
 
-        return application.exec();
+        const int exitCode = application.exec();
+        bootstrapper.prepareForShutdown();
+        return exitCode;
     } catch (const std::exception &error) {
         // 启动阶段无法建立完整对象图时立即失败，避免展示不可用的半初始化窗口。
         qCritical("SmartMate startup failed: %s", error.what());

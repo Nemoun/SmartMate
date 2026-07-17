@@ -7,6 +7,7 @@
 #include "persistence/QSettingsDesktopPetRepository.h"
 #include "services/AppearanceSettingsService.h"
 #include "services/DesktopPetSettingsService.h"
+#include "services/FocusService.h"
 #include "services/TaskCategoryService.h"
 #include "services/TaskService.h"
 #include "services/StatisticsService.h"
@@ -14,6 +15,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QObject>
 #include <QString>
 #include <QTimeZone>
 
@@ -25,6 +27,10 @@ namespace smartmate::app {
 AppBootstrapper::AppBootstrapper(QString databasePath)
     : m_taskRepository(
           std::make_unique<model::persistence::SqliteTaskRepository>(std::move(databasePath)))
+    , m_focusService(
+          std::make_unique<model::FocusService>(
+              *m_taskRepository, *m_taskRepository,
+              *m_taskRepository, *m_taskRepository))
     , m_taskService(
           std::make_unique<model::TaskService>(
               *m_taskRepository,
@@ -32,7 +38,8 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
               *m_taskRepository,
               *m_taskRepository,
               *m_taskRepository,
-              *m_taskRepository))
+              *m_taskRepository,
+              m_taskRepository.get()))
     , m_taskCategoryService(
           std::make_unique<model::TaskCategoryService>(*m_taskRepository))
     , m_statisticsService(
@@ -48,6 +55,23 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
           std::make_unique<model::DesktopPetSettingsService>(
               *m_desktopPetRepository))
 {
+    QObject::connect(m_focusService.get(),
+                     &model::FocusService::backgroundFailureRaised,
+                     m_focusService.get(),
+                     [](const model::FocusError error, const QString &detail) {
+                         qWarning("SmartMate focus checkpoint failed (%d): %s",
+                                  static_cast<int>(error),
+                                  qPrintable(detail));
+                     });
+    const model::FocusOperationResult focusInitialization =
+        m_focusService->initialize();
+    if (!focusInitialization.ok()) {
+        const QByteArray detail = focusInitialization.detail.toUtf8();
+        throw std::runtime_error(detail.isEmpty()
+                                     ? "Unable to initialize SmartMate focus sessions"
+                                     : detail.constData());
+    }
+
     // 在创建 ViewModel 和界面前验证任务数据源，避免应用带着失效 Service 启动。
     const model::TaskListResult initialTasks = m_taskService->listTasks();
     if (!initialTasks.ok()) {
@@ -92,7 +116,7 @@ AppBootstrapper::AppBootstrapper(QString databasePath)
     // 所有数据源就绪后再创建展示层，保证子 ViewModel 构造时可以安全加载初始投影。
     m_appViewModel = std::make_unique<viewmodel::AppViewModel>(
         *m_taskService, *m_taskCategoryService,
-        *m_statisticsService, *m_appearanceService);
+        *m_statisticsService, *m_focusService, *m_appearanceService);
     m_desktopPetViewModel =
         std::make_unique<viewmodel::DesktopPetSettingsViewModel>(
             *m_desktopPetService);
@@ -112,7 +136,19 @@ view::widgets::MainWindowDependencies AppBootstrapper::widgetDependencies() noex
             *m_appViewModel->taskCategories(),
             *m_appViewModel->taskDependencies(),
             *m_appViewModel->taskGraph(),
+            *m_appViewModel->focus(),
             *m_appViewModel->statistics()};
+}
+
+void AppBootstrapper::prepareForShutdown() noexcept
+{
+    if (!m_focusService) return;
+    const model::FocusOperationResult result = m_focusService->prepareForShutdown();
+    if (!result.ok()) {
+        qWarning("SmartMate focus shutdown preparation failed (%d): %s",
+                 static_cast<int>(result.error),
+                 qPrintable(result.detail));
+    }
 }
 
 } // namespace smartmate::app

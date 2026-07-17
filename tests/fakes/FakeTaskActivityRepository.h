@@ -56,6 +56,29 @@ public:
         return latest;
     }
 
+    [[nodiscard]] std::optional<model::TaskActivityEvent>
+    findLatestStartForTaskBefore(
+        const model::TaskId &taskId,
+        const QDateTime &endExclusiveUtc) const override
+    {
+        throwIfNeeded();
+        std::optional<model::TaskActivityEvent> latest;
+        for (const auto &event : m_events) {
+            if (event.taskId != taskId
+                || event.transition != model::TaskTransition::Start
+                || event.occurredAtUtc >= endExclusiveUtc) {
+                continue;
+            }
+            if (!latest.has_value()
+                || latest->occurredAtUtc < event.occurredAtUtc
+                || (latest->occurredAtUtc == event.occurredAtUtc
+                    && latest->eventId.toString() < event.eventId.toString())) {
+                latest = event;
+            }
+        }
+        return latest;
+    }
+
     void setReadFailure(const bool enabled) noexcept { m_failReads = enabled; }
     void setEvents(QList<model::TaskActivityEvent> events)
     {

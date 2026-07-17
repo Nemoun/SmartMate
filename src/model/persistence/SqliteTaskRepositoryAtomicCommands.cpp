@@ -109,6 +109,36 @@ TaskTransitionWriteResult SqliteTaskRepository::applyTransitionsAtomically(
     }
 
     try {
+        // 活动专注与任务状态必须在同一事务快照内检查。Service 的预检用于友好反馈，
+        // 这里负责封堵预检后新建专注造成的并发窗口。
+        QSqlQuery focusQuery(database);
+        if (!focusQuery.exec(QStringLiteral(
+                "SELECT task_id FROM focus_sessions "
+                "WHERE active_marker = 1 LIMIT 1"))) {
+            throwDatabaseError(QStringLiteral("Cannot validate active focus transition"),
+                               focusQuery.lastError());
+        }
+        if (focusQuery.next()) {
+            const TaskId focusedTaskId{focusQuery.value(0).toString()};
+            QList<TaskId> focusConflicts;
+            for (const TaskTransitionWrite &write : writes) {
+                const TaskStateChange &change = write.stateChange;
+                if (change.taskId == focusedTaskId
+                    && change.expectedStatus == TaskStatus::InProgress
+                    && change.targetStatus != TaskStatus::InProgress) {
+                    focusConflicts.append(change.taskId);
+                }
+            }
+            if (!focusConflicts.isEmpty()) {
+                if (!database.rollback()) {
+                    throwDatabaseError(
+                        QStringLiteral("Cannot roll back focus-protected task transition"),
+                        database.lastError());
+                }
+                return {0, 0, {}, std::move(focusConflicts)};
+            }
+        }
+
         // expected_status 是 Service 预检与真正写入之间的并发防线；一个任务冲突时，
         // 先收集全部冲突 ID，再回滚此前已执行的更新，绝不产生部分成功。
         QSqlQuery updateQuery(database);

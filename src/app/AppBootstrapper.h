@@ -8,6 +8,7 @@ namespace smartmate::model {
 class TaskService;
 class TaskCategoryService;
 class StatisticsService;
+class FocusService;
 class AppearanceSettingsService;
 class DesktopPetSettingsService;
 
@@ -40,12 +41,16 @@ public:
     /// 将具体 ViewModel 向上转换为主窗口所需的抽象 Contract 引用。
     /// 返回值不拥有对象，必须在本组合根和 AppViewModel 存活期间使用。
     [[nodiscard]] view::widgets::MainWindowDependencies widgetDependencies() noexcept;
+    /// 事件循环结束后执行专注正常退出策略；失败只记录日志，不阻止进程退出。
+    void prepareForShutdown() noexcept;
 
 private:
     // 成员按依赖顺序声明。C++ 会逆序析构，因此 ViewModel 和 Service
     // 持有的引用在各自生命周期内始终指向仍然存活的对象。
     /// 任务 SQLite 适配器，同时实现任务、依赖、批量命令和类别 Repository 端口。
     std::unique_ptr<model::persistence::SqliteTaskRepository> m_taskRepository;
+    /// 专注业务入口；由完整 AppViewModel 构造注入 FocusContract 展示链路。
+    std::unique_ptr<model::FocusService> m_focusService;
     /// 任务业务用例入口；通过抽象 Repository 端口访问同一个 SQLite 适配器。
     std::unique_ptr<model::TaskService> m_taskService;
     /// 类别业务用例入口，与任务服务共享类别 Repository 数据源。

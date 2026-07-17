@@ -1,6 +1,7 @@
 #pragma once
 
 #include "repositories/ITaskActivityRepository.h"
+#include "repositories/IFocusSessionRepository.h"
 #include "repositories/ITaskCategoryRepository.h"
 #include "repositories/ITaskCreationRepository.h"
 #include "repositories/ITaskDeletionRepository.h"
@@ -23,7 +24,8 @@ class SqliteTaskRepository final : public ITaskRepository,
                                    public ITaskTransitionRepository,
                                    public ITaskDeletionRepository,
                                    public ITaskCategoryRepository,
-                                   public ITaskActivityRepository {
+                                   public ITaskActivityRepository,
+                                   public IFocusSessionRepository {
 public:
     /// 打开指定文件或 :memory: 数据库，配置连接并在原子迁移中升级 Schema。
     explicit SqliteTaskRepository(QString databasePath);
@@ -76,6 +78,39 @@ public:
         const QDateTime &endExclusiveUtc) const override;
     [[nodiscard]] std::optional<TaskActivityEvent> findLatestCompletionBefore(
         const QDateTime &endExclusiveUtc) const override;
+    [[nodiscard]] std::optional<TaskActivityEvent> findLatestStartForTaskBefore(
+        const TaskId &taskId,
+        const QDateTime &endExclusiveUtc) const override;
+
+    [[nodiscard]] std::optional<FocusSession> findActiveFocusSession() const override;
+    [[nodiscard]] std::optional<FocusSession> findFocusSessionById(
+        const FocusSessionId &sessionId) const override;
+    [[nodiscard]] QList<FocusInterval> findFocusIntervals(
+        const FocusSessionId &sessionId) const override;
+    [[nodiscard]] QList<FocusSession> findRecentCompletedFocusSessions(
+        int limit) const override;
+    [[nodiscard]] FocusSessionWriteResult startFocusSessionAtomically(
+        const FocusSession &session) override;
+    [[nodiscard]] FocusSessionWriteResult pauseFocusSessionAtomically(
+        const FocusSessionId &sessionId,
+        FocusSessionState expectedState,
+        const QDateTime &pausedAtUtc) override;
+    [[nodiscard]] FocusSessionWriteResult resumeFocusSessionAtomically(
+        const FocusSessionId &sessionId,
+        FocusSessionState expectedState,
+        const QDateTime &resumedAtUtc) override;
+    [[nodiscard]] FocusSessionWriteResult completeFocusSessionAtomically(
+        const FocusSessionId &sessionId,
+        FocusSessionState expectedState,
+        const QDateTime &completedAtUtc) override;
+    [[nodiscard]] FocusSessionWriteResult abandonFocusSessionAtomically(
+        const FocusSessionId &sessionId,
+        FocusSessionState expectedState) override;
+    [[nodiscard]] FocusSessionWriteResult updateFocusCheckpointAtomically(
+        const FocusSessionId &sessionId,
+        FocusSessionState expectedState,
+        const QDateTime &checkpointAtUtc) override;
+    [[nodiscard]] FocusSessionWriteResult recoverRunningFocusSessionAtomically() override;
 
 private:
     /// 启用外键、锁等待和文件数据库 WAL；inMemory 为 true 时不启用 WAL。
